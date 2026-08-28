@@ -125,8 +125,16 @@ export function resolveGenerationProviderRuntime(args: GenerationProviderRuntime
     }
     runtime.customParameters = mergeCustomParameters(runtime.customParameters, params.customParameters);
     if (params.enabledParameters) {
-      runtime.enabledParameters = { ...(runtime.enabledParameters ?? {}), ...params.enabledParameters };
-      for (const key of Object.keys(params.enabledParameters)) parameterSources[`send:${key}`] = source;
+      const mergedEnabled = { ...(runtime.enabledParameters ?? {}) };
+      for (const [key, value] of Object.entries(params.enabledParameters)) {
+        if (value === false && runtime.enabledParameters?.[key as keyof GenerationParameterSendMap] === true) {
+          const hasExplicitOverride = (params as Record<string, unknown>)[key] !== undefined;
+          if (!hasExplicitOverride) continue;
+        }
+        (mergedEnabled as Record<string, boolean>)[key] = value;
+        parameterSources[`send:${key}`] = source;
+      }
+      runtime.enabledParameters = mergedEnabled;
     }
     if (Array.isArray(params.stopSequences)) {
       runtime.stopSequences = params.stopSequences.map((value) => value.trim()).filter((value) => value.length > 0);
@@ -159,10 +167,18 @@ export function resolveGenerationProviderRuntime(args: GenerationProviderRuntime
   );
 
   if (args.isSceneChat) {
-    forceParameters("scene", { maxTokens: 8192, reasoningEffort: "maximum", verbosity: "high" });
+    const effectiveReasoningEffort = chatParams?.reasoningEffort ?? connectionParams?.reasoningEffort ?? null;
+    const effectiveVerbosity = chatParams?.verbosity ?? connectionParams?.verbosity ?? "high";
+    forceParameters("scene", {
+      maxTokens: 8192,
+      reasoningEffort: effectiveReasoningEffort,
+      verbosity: effectiveVerbosity,
+    });
   }
 
   if (args.chatMode === "game" && !isLocalGemma) {
+    const effectiveReasoningEffort = chatParams?.reasoningEffort ?? connectionParams?.reasoningEffort ?? null;
+    const effectiveVerbosity = chatParams?.verbosity ?? connectionParams?.verbosity ?? null;
     forceParameters("game", {
       temperature: 1,
       maxTokens: 16_384,
@@ -171,9 +187,11 @@ export function resolveGenerationProviderRuntime(args: GenerationProviderRuntime
       minP: 0,
       frequencyPenalty: 0,
       presencePenalty: 0,
-      reasoningEffort: "maximum",
-      verbosity: null,
+      reasoningEffort: effectiveReasoningEffort,
+      verbosity: effectiveVerbosity,
     });
+  } else if (args.chatMode === "game" && typeof chatParams?.maxTokens !== "number") {
+    forceParameters("game", { maxTokens: Math.max(runtime.maxTokens, 16_384) });
   }
 
   if (args.chatMode === "game") {
