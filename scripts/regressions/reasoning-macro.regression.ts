@@ -64,7 +64,7 @@ assert.equal(
   "low",
 );
 assert.equal(level({ chatParameters: { reasoningEffort: null } }), "off");
-// Scenes always run at the top level.
-assert.equal(level({ isSceneChat: true, baseReasoningEffort: null }), "max");
+// custom-mods: scenes no longer force the top level; they follow the configured effort.
+assert.equal(level({ isSceneChat: true, baseReasoningEffort: null }), "off");
 
 console.log("reasoning macro regression passed");

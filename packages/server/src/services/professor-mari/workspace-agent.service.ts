@@ -113,7 +113,7 @@ import { isMariReviewVisibleInChat } from "./mari-session.js";
 import { createAppSettingsStorage } from "../storage/app-settings.storage.js";
 import { getProfessorMariWorkspaceSkillsService } from "./workspace-skills.service.js";
 import { sidecarModelService } from "../sidecar/sidecar-model.service.js";
-import { getWorkspaceShellSandboxStatus } from "./workspace-shell-sandbox.js";
+import { getWorkspaceShellSandboxStatus, type WorkspaceShellSandboxStatus } from "./workspace-shell-sandbox.js";
 import { isLocalInferenceBaseUrl } from "../../middleware/ip-allowlist.js";
 import {
   BUILD_OUTPUT_WRITE_REFUSAL,
@@ -980,10 +980,15 @@ ${workspaceCommandKnowledgePrompt()}
 </workspace_tools>`;
 }
 
-export function workspaceCommandProtocolPrompt(maxOutputTokens?: number) {
-  const toolDocs = WORKSPACE_TOOL_DEFINITIONS.map(
-    (tool) => `- ${tool.name}: ${tool.description}\n  JSON arguments: ${JSON.stringify(tool.parameters)}`,
-  ).join("\n");
+export function workspaceCommandProtocolPrompt(maxOutputTokens?: number, sandboxStatus?: WorkspaceShellSandboxStatus) {
+  const status = sandboxStatus ?? getWorkspaceShellSandboxStatus();
+  const availableTools = status.available
+    ? WORKSPACE_TOOL_DEFINITIONS
+    : WORKSPACE_TOOL_DEFINITIONS.filter((tool) => tool.name !== "bash");
+  const toolDocs = availableTools
+    .map((tool) => `- ${tool.name}: ${tool.description}\n  JSON arguments: ${JSON.stringify(tool.parameters)}`)
+    .join("\n");
+  const commandEnum = availableTools.map((tool) => tool.name).join("|");
   return `<workspace_command_protocol>
 Always return exactly one JSON object and nothing else. Your assistant message must begin with \`{\` and end with \`}\`.
 No prose, markdown, XML, or code fences outside the JSON. Put every user-visible word, including progress narration, inside \`say\`.
@@ -994,7 +999,7 @@ Required schema:
   "awaitingAuthorization": false,
   "understoodRequest": "the exact words you are treating as the request or permission, when any command mutates data",
   "commands": [
-    { "name": "docs_search|docs_read|read|grep|find|ls|edit|write|copy|move|remove|bash|dependency|app_data|package_service", "arguments": {} }
+    { "name": "${commandEnum}", "arguments": {} }
   ],
   "suggestions": [
     { "label": "short button text", "prompt": "exact message to send if tapped", "detail": "one short fact", "entity": "characters|lorebooks|personas|presets|connections|agents|settings|chat", "tone": "danger|caution|success", "action": { "kind": "resource|chat|panel|start-chat|peek-prompt" } }
@@ -4660,6 +4665,7 @@ export class ProfessorMariWorkspaceService {
     const decisionContext = currentUserMessage
       ? await mariDecisionContext({ db: this.app.db, chatId, userMessageId: currentUserMessage.id })
       : null;
+    const shellSandboxStatus = getWorkspaceShellSandboxStatus();
     const workspaceInfo = [
       `<workspace_context>`,
       `workspaceRoot: ${this.commands.workspaceRoot}`,
@@ -4672,6 +4678,12 @@ export class ProfessorMariWorkspaceService {
       `permissionsMode: ${permissionsMode}`,
       `decisionAuthoring: ${JSON.stringify(decisionContext)}`,
       ...(seasonalPackId === "raccoon" ? [MARI_RACCOON_SEASON_FLAVOR] : []),
+      `shellSandboxAvailable: ${shellSandboxStatus.available}`,
+      ...(!shellSandboxStatus.available
+        ? [
+            `note: Shell commands (bash) are disabled in this environment because no supported OS sandbox is available. Use structured tools (app_data, read, grep, find, ls, edit, write, copy, move, remove) exclusively.`,
+          ]
+        : []),
       `</workspace_context>`,
     ].join("\n");
     const messages: ChatMessage[] = [
@@ -4681,7 +4693,7 @@ export class ProfessorMariWorkspaceService {
         content:
           runtime === "pi"
             ? piRuntimePrompt(mariMaxOutputTokens(connection))
-            : workspaceCommandProtocolPrompt(mariMaxOutputTokens(connection)),
+            : workspaceCommandProtocolPrompt(mariMaxOutputTokens(connection), shellSandboxStatus),
         contextKind: "prompt",
       },
     ];
@@ -4972,9 +4984,14 @@ export class ProfessorMariWorkspaceService {
     // chat_template_kwargs.enable_thinking=false from the provider layer.
     // Escape hatch for a local endpoint that still chokes: disable the
     // reasoning-effort parameter on the connection (enabledParameters).
+    const storedReasoningEffort =
+      typeof defaultParameters?.reasoningEffort === "string" ? defaultParameters.reasoningEffort : undefined;
+    const hasExplicitReasoningEffort =
+      storedReasoningEffort !== undefined && storedReasoningEffort !== null && storedReasoningEffort !== "none";
     // The pi runtime uses native tool calls, not a JSON frame, so reasoning follows the connection's own settings.
     const disableHiddenReasoning =
       runtime === "classic" &&
+      !hasExplicitReasoningEffort &&
       enabledParameters?.reasoningEffort !== false &&
       (isLocalSidecarConnection(connection) ||
         connection.provider.toLowerCase() !== "custom" ||
@@ -4997,13 +5014,23 @@ export class ProfessorMariWorkspaceService {
       openrouterProvider: connection.openrouterProvider,
       responseFormat: runtime === "classic" ? professorMariWorkspaceResponseFormat(connection.provider) : undefined,
       customParameters: mergeCustomParameters(customParameters, null),
-      enabledParameters: !disableHiddenReasoning
+      enabledParameters: hasExplicitReasoningEffort
         ? enabledParameters
-        : { ...(enabledParameters ?? {}), reasoningEffort: true },
+        : !disableHiddenReasoning
+          ? enabledParameters
+          : { ...(enabledParameters ?? {}), reasoningEffort: true },
       // Mari's command protocol is JSON. Hidden reasoning can consume the whole
       // response before local OpenAI-compatible servers emit the JSON frame.
-      reasoningEffort: disableHiddenReasoning ? "none" : piReasoning,
-      ...(piReasoning && piReasoning !== "none" ? { enableThinking: true } : {}),
+      reasoningEffort: runtime === "pi"
+        ? (piReasoning && piReasoning !== "none" ? piReasoning : undefined)
+        : hasExplicitReasoningEffort
+          ? storedReasoningEffort === "maximum"
+            ? "max"
+            : (storedReasoningEffort as any)
+          : disableHiddenReasoning
+            ? "none"
+            : undefined,
+      ...(runtime === "pi" && piReasoning && piReasoning !== "none" ? { enableThinking: true } : {}),
       verbosity,
       signal,
       onThinking,
