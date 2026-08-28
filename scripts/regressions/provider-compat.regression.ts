@@ -1201,9 +1201,33 @@ applyGlmThinkingParameters(glm52DisabledBody, {
 });
 assert.deepEqual(glm52DisabledBody, { thinking: { type: "disabled" } });
 
+const glm53HighBody: Record<string, unknown> = {};
+assert.equal(
+  applyGlmThinkingParameters(glm53HighBody, {
+    model: "glm-5.3",
+    baseUrl: "https://api.z.ai/api/paas/v4/",
+    providerKind: "custom",
+    enableThinking: true,
+    reasoningEffort: "high",
+  }),
+  true,
+);
+assert.deepEqual(glm53HighBody.thinking, { type: "enabled" });
+assert.equal(glm53HighBody.reasoning_effort, "high");
+
+const glm53DisabledBody: Record<string, unknown> = {};
+applyGlmThinkingParameters(glm53DisabledBody, {
+  model: "glm-5.3",
+  baseUrl: "https://api.z.ai/api/paas/v4/",
+  providerKind: "custom",
+  enableThinking: false,
+  reasoningEffort: "none",
+});
+assert.deepEqual(glm53DisabledBody, { thinking: { type: "disabled" } });
+
 const legacyGlmBody: Record<string, unknown> = {};
 applyGlmThinkingParameters(legacyGlmBody, {
-  model: "glm-5",
+  model: "glm-4",
   baseUrl: "https://api.z.ai/api/paas/v4/",
   providerKind: "custom",
   reasoningEffort: "high",
