@@ -541,6 +541,8 @@ export const MOONSHOT_MODELS: KnownModel[] = [
 
 // Z.AI / GLM (from #model_zai_select)
 export const ZAI_MODELS: KnownModel[] = [
+  { id: "glm-5.3", name: "glm-5.3", context: 1048576, maxOutput: 128000 },
+  { id: "glm-5.3-flash", name: "glm-5.3-flash", context: 1048576, maxOutput: 128000 },
   { id: "glm-5.2", name: "glm-5.2", context: 1000000, maxOutput: 128000 },
   { id: "glm-5.1", name: "glm-5.1", context: 200_000, maxOutput: 128_000 },
   { id: "glm-5", name: "glm-5", context: 200000, maxOutput: 128000 },

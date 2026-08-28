@@ -25,7 +25,7 @@ import {
 } from "@marinara-engine/shared";
 import { logger } from "../../../lib/logger.js";
 import { isLoopbackIp, isNonRoutableNetworkIp } from "../../../middleware/ip-allowlist.js";
-import { applyGlmThinkingParameters } from "./glm-request-compat.js";
+import { applyGlmThinkingParameters, isGlm53Model, isGlmModel } from "./glm-request-compat.js";
 
 /**
  * Models that ONLY support the Responses API (`/responses`) and not Chat Completions.
@@ -786,8 +786,7 @@ export class OpenAIProvider extends BaseLLMProvider {
     return (
       this.supportsOpenAIReasoningDisable(normalized) ||
       this.supportsXAIReasoningDisable(normalized) ||
-      normalized.startsWith("z-ai/glm-") ||
-      normalized.startsWith("thudm/glm-") ||
+      (!normalized.includes("glm-5.3") && (normalized.startsWith("z-ai/glm-") || normalized.startsWith("thudm/glm-"))) ||
       /^google\/gemini-2\.5-flash(?:-lite)?(?:$|-preview|-latest|:)/u.test(normalized) ||
       /^anthropic\/claude-(?:opus|sonnet)-5(?:$|[-.])/u.test(normalized)
     );
@@ -874,6 +873,16 @@ export class OpenAIProvider extends BaseLLMProvider {
       } else if (this.shouldSendReasoningEffort(options.model, options.reasoningEffort)) {
         body.reasoning_effort = options.reasoningEffort;
       }
+      return;
+    }
+
+    if (this.isOpenRouterEndpoint() && isGlm53Model(options.model)) {
+      const effort = this.hasExplicitReasoningDisable(options.reasoningEffort) ? "low" : (options.reasoningEffort ?? "low");
+      const existingReasoning =
+        body.reasoning && typeof body.reasoning === "object" && !Array.isArray(body.reasoning)
+          ? (body.reasoning as Record<string, unknown>)
+          : {};
+      body.reasoning = { ...existingReasoning, effort };
       return;
     }
 
@@ -1229,7 +1238,7 @@ export class OpenAIProvider extends BaseLLMProvider {
     }
 
     if (
-      this.shouldSendParameter(options, "reasoningEffort") &&
+      (this.shouldSendParameter(options, "reasoningEffort") || isGlmModel(options.model)) &&
       (!suppressModelParameters || this.isOpenRouterEndpoint())
     ) {
       this.applyChatCompletionsReasoning(body, options);
@@ -1516,7 +1525,7 @@ export class OpenAIProvider extends BaseLLMProvider {
     }
 
     if (
-      this.shouldSendParameter(options, "reasoningEffort") &&
+      (this.shouldSendParameter(options, "reasoningEffort") || isGlmModel(options.model)) &&
       (!suppressModelParameters || this.isOpenRouterEndpoint())
     ) {
       this.applyChatCompletionsReasoning(body, options);
