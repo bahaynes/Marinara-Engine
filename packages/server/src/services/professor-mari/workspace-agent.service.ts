@@ -131,6 +131,7 @@ import {
   spawnWorkspaceSandboxedShell,
   type SensitiveScanResult,
   type SensitiveWorkspaceSnapshot,
+  type WorkspaceShellSandboxStatus,
 } from "./workspace-shell-sandbox.js";
 import { personalServerExtensionRuntime } from "../extensions/personal-server-extension-runtime.js";
 import { isLocalInferenceBaseUrl } from "../../middleware/ip-allowlist.js";
@@ -890,10 +891,16 @@ Workspace files:
 For user-facing questions about Marinara features, configuration, installation, or troubleshooting, use \`docs_search\` and then \`docs_read\` before broad workspace searches. Cite the documentation path and heading in the answer. Use built-in or CLI help when exact command syntax matters. Inspect source only when canonical documentation is missing or ambiguous, or when the user explicitly asks about internals; if source inspection was required, say that the answer used an implementation-level source.
 Use other workspace files to understand Marinara internals, answer source-code questions, or find content that is not available through documentation, CLI, or app-data commands. Do not inspect source files instead of live app data when the user asks about saved characters, chats, agents, tools, presets, lorebooks, or other app content.`;
 
-export function workspaceCommandProtocolPrompt() {
-  const toolDocs = WORKSPACE_TOOL_DEFINITIONS.map(
-    (tool) => `- ${tool.name}: ${tool.description}\n  JSON arguments: ${JSON.stringify(tool.parameters)}`,
-  ).join("\n");
+// Schema command names: docs_search|docs_read|read|grep|find|ls|edit|write|copy|move|remove|bash|dependency|app_data|package_service
+export function workspaceCommandProtocolPrompt(sandboxStatus?: WorkspaceShellSandboxStatus) {
+  const status = sandboxStatus ?? getWorkspaceShellSandboxStatus();
+  const availableTools = status.available
+    ? WORKSPACE_TOOL_DEFINITIONS
+    : WORKSPACE_TOOL_DEFINITIONS.filter((tool) => tool.name !== "bash");
+  const toolDocs = availableTools
+    .map((tool) => `- ${tool.name}: ${tool.description}\n  JSON arguments: ${JSON.stringify(tool.parameters)}`)
+    .join("\n");
+  const commandEnum = availableTools.map((tool) => tool.name).join("|");
   return `<workspace_command_protocol>
 Always return exactly one JSON object and nothing else. Your assistant message must begin with \`{\` and end with \`}\`.
 No prose, markdown, XML, or code fences outside the JSON. Put every user-visible word, including progress narration, inside \`say\`.
@@ -904,7 +911,7 @@ Required schema:
   "awaitingAuthorization": false,
   "understoodRequest": "the exact words you are treating as the request or permission, when any command mutates data",
   "commands": [
-    { "name": "docs_search|docs_read|read|grep|find|ls|edit|write|copy|move|remove|bash|dependency|app_data|package_service", "arguments": {} }
+    { "name": "${commandEnum}", "arguments": {} }
   ],
   "suggestions": [
     { "label": "short button text", "prompt": "exact message to send if tapped", "detail": "one short fact", "entity": "characters|lorebooks|personas|presets|connections|agents|settings|chat", "tone": "danger|caution|success", "action": { "kind": "resource|chat|panel|start-chat|peek-prompt" } }
@@ -4091,6 +4098,7 @@ export class ProfessorMariWorkspaceService {
     const decisionContext = currentUserMessage
       ? await mariDecisionContext({ db: this.app.db, chatId, userMessageId: currentUserMessage.id })
       : null;
+    const shellSandboxStatus = getWorkspaceShellSandboxStatus();
     const workspaceInfo = [
       `<workspace_context>`,
       `workspaceRoot: ${this.workspaceRoot}`,
@@ -4102,11 +4110,17 @@ export class ProfessorMariWorkspaceService {
       `Embedding model: ${embeddingModelConfigured ? "configured" : "none"}`,
       `permissionsMode: ${permissionsMode}`,
       `decisionAuthoring: ${JSON.stringify(decisionContext)}`,
+      `shellSandboxAvailable: ${shellSandboxStatus.available}`,
+      ...(!shellSandboxStatus.available
+        ? [
+            `note: Shell commands (bash) are disabled in this environment because no supported OS sandbox is available. Use structured tools (app_data, read, grep, find, ls, edit, write, copy, move, remove) exclusively.`,
+          ]
+        : []),
       `</workspace_context>`,
     ].join("\n");
     const messages: ChatMessage[] = [
       { role: "system", content: MARI_SYSTEM_PROMPT, contextKind: "prompt" },
-      { role: "system", content: workspaceCommandProtocolPrompt(), contextKind: "prompt" },
+      { role: "system", content: workspaceCommandProtocolPrompt(shellSandboxStatus), contextKind: "prompt" },
       { role: "system", content: workspaceInfo, contextKind: "prompt" },
     ];
     if (skillsPrompt) messages.push({ role: "system", content: skillsPrompt, contextKind: "prompt" });
@@ -4322,7 +4336,12 @@ export class ProfessorMariWorkspaceService {
     // chat_template_kwargs.enable_thinking=false from the provider layer.
     // Escape hatch for a local endpoint that still chokes: disable the
     // reasoning-effort parameter on the connection (enabledParameters).
+    const storedReasoningEffort =
+      typeof defaultParameters?.reasoningEffort === "string" ? defaultParameters.reasoningEffort : undefined;
+    const hasExplicitReasoningEffort =
+      storedReasoningEffort !== undefined && storedReasoningEffort !== null && storedReasoningEffort !== "none";
     const disableHiddenReasoning =
+      !hasExplicitReasoningEffort &&
       enabledParameters?.reasoningEffort !== false &&
       (isLocalSidecarConnection(connection) ||
         connection.provider.toLowerCase() !== "custom" ||
@@ -4340,12 +4359,20 @@ export class ProfessorMariWorkspaceService {
       openrouterProvider: connection.openrouterProvider,
       responseFormat: professorMariWorkspaceResponseFormat(connection.provider),
       customParameters: mergeCustomParameters(customParameters, null),
-      enabledParameters: !disableHiddenReasoning
+      enabledParameters: hasExplicitReasoningEffort
         ? enabledParameters
-        : { ...(enabledParameters ?? {}), reasoningEffort: true },
+        : !disableHiddenReasoning
+          ? enabledParameters
+          : { ...(enabledParameters ?? {}), reasoningEffort: true },
       // Mari's command protocol is JSON. Hidden reasoning can consume the whole
       // response before local OpenAI-compatible servers emit the JSON frame.
-      reasoningEffort: disableHiddenReasoning ? "none" : undefined,
+      reasoningEffort: hasExplicitReasoningEffort
+        ? storedReasoningEffort === "maximum"
+          ? "max"
+          : (storedReasoningEffort as any)
+        : disableHiddenReasoning
+          ? "none"
+          : undefined,
       verbosity,
       signal,
       onThinking,

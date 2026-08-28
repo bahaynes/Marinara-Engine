@@ -47,7 +47,7 @@ function hasActiveReasoningEffort(reasoningEffort?: string | null): boolean {
 
 function glm52ReasoningEffort(reasoningEffort?: string | null): "high" | "max" | null {
   if (!hasActiveReasoningEffort(reasoningEffort)) return null;
-  return reasoningEffort === "max" || reasoningEffort === "xhigh" ? "max" : "high";
+  return reasoningEffort === "max" || reasoningEffort === "xhigh" || reasoningEffort === "maximum" ? "max" : "high";
 }
 
 /**
@@ -66,6 +66,7 @@ export function glm53ReasoningEffort(reasoningEffort?: string | null): "low" | "
       return "low";
     case "max":
     case "xhigh":
+    case "maximum":
       return "max";
     default:
       return "high";
