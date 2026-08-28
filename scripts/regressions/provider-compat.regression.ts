@@ -1699,7 +1699,7 @@ assert.deepEqual(
 
 const legacyGlmBody: Record<string, unknown> = {};
 applyGlmThinkingParameters(legacyGlmBody, {
-  model: "glm-5",
+  model: "glm-4",
   baseUrl: "https://api.z.ai/api/paas/v4/",
   providerKind: "custom",
   reasoningEffort: "high",

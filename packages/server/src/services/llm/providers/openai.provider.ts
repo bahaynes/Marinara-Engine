@@ -31,6 +31,7 @@ import {
   applyGlmThinkingParameters,
   glm53CustomGatewayReasoningEffort,
   isGlm53MandatoryReasoningModel,
+  isGlmModel,
 } from "./glm-request-compat.js";
 
 /**
@@ -908,6 +909,18 @@ export class OpenAIProvider extends BaseLLMProvider {
       return;
     }
 
+    if (this.isOpenRouterEndpoint() && isGlm53MandatoryReasoningModel(options.model)) {
+      const effort = this.hasExplicitReasoningDisable(options.reasoningEffort)
+        ? "low"
+        : (options.reasoningEffort ?? "low");
+      const existingReasoning =
+        body.reasoning && typeof body.reasoning === "object" && !Array.isArray(body.reasoning)
+          ? (body.reasoning as Record<string, unknown>)
+          : {};
+      body.reasoning = { ...existingReasoning, effort };
+      return;
+    }
+
     if (
       this.providerKind === "nanogpt" &&
       this.hasExplicitReasoningDisable(options.reasoningEffort) &&
@@ -1290,7 +1303,7 @@ export class OpenAIProvider extends BaseLLMProvider {
     }
 
     if (
-      this.shouldSendParameter(options, "reasoningEffort") &&
+      (this.shouldSendParameter(options, "reasoningEffort") || isGlmModel(options.model)) &&
       (!suppressModelParameters || this.isOpenRouterEndpoint())
     ) {
       this.applyChatCompletionsReasoning(body, options);
@@ -1577,7 +1590,7 @@ export class OpenAIProvider extends BaseLLMProvider {
     }
 
     if (
-      this.shouldSendParameter(options, "reasoningEffort") &&
+      (this.shouldSendParameter(options, "reasoningEffort") || isGlmModel(options.model)) &&
       (!suppressModelParameters || this.isOpenRouterEndpoint())
     ) {
       this.applyChatCompletionsReasoning(body, options);
