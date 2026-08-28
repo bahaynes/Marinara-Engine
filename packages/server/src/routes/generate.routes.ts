@@ -2170,6 +2170,7 @@ export async function generateRoutes(app: FastifyInstance) {
           chatModel: conn.model,
           chatCustomParameters: storedParameters?.customParameters ?? {},
           chatTemperature: storedParameters?.temperature,
+          chatReasoningEffort: storedParameters?.reasoningEffort,
           chatEnabledParameters: storedParameters?.enabledParameters,
           chatSuppressModelParameters: routingModelPolicy.suppressModelParameters,
           chatMaxOutputTokens:
@@ -3920,6 +3921,7 @@ export async function generateRoutes(app: FastifyInstance) {
           chatModel: conn.model,
           chatCustomParameters: connectionParams?.customParameters ?? {},
           chatTemperature: temperature,
+          chatReasoningEffort: connectionParams?.reasoningEffort,
           chatEnabledParameters: enabledParameters,
           chatSuppressModelParameters: suppressModelParameters,
           chatMaxOutputTokens: chatConnectionMaxOutputTokens,

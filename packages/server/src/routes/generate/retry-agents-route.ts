@@ -35,6 +35,7 @@ import {
   type GameMap,
   type WrapFormat,
   type GenerationParameterSendMap,
+  type StoredReasoningEffort,
 } from "@marinara-engine/shared";
 import { and, eq } from "../../db/file-query.js";
 import { listCharacterSprites } from "../../services/game/sprite.service.js";
@@ -1629,6 +1630,7 @@ async function resolveRetryAgents(args: {
       model: string;
       customParameters: Record<string, unknown>;
       temperature?: number;
+      reasoningEffort?: StoredReasoningEffort;
       enabledParameters?: GenerationParameterSendMap;
       suppressModelParameters: boolean;
       maxOutputTokens: number | null;
@@ -1680,6 +1682,7 @@ async function resolveRetryAgents(args: {
         model,
         customParameters: storedParameters?.customParameters ?? {},
         temperature: storedParameters?.temperature,
+        reasoningEffort: storedParameters?.reasoningEffort,
         enabledParameters: storedParameters?.enabledParameters,
         suppressModelParameters: shouldSuppressUnknownModelParameters(storedConn.provider, model),
         maxOutputTokens: knownModel?.maxOutput && knownModel.maxOutput > 0 ? Math.floor(knownModel.maxOutput) : null,
@@ -1910,6 +1913,7 @@ async function resolveRetryAgents(args: {
         settings,
         customParameters: agentConnection.entry.customParameters,
         temperature: agentConnection.entry.temperature,
+        reasoningEffort: agentConnection.entry.reasoningEffort,
         enabledParameters: agentConnection.entry.enabledParameters,
         suppressModelParameters: agentConnection.entry.suppressModelParameters,
         maxOutputTokens: agentConnection.entry.maxOutputTokens,
@@ -2000,6 +2004,7 @@ async function resolveRetryAgents(args: {
         settings,
         customParameters: builtInConnection.entry.customParameters,
         temperature: builtInConnection.entry.temperature,
+        reasoningEffort: builtInConnection.entry.reasoningEffort,
         enabledParameters: builtInConnection.entry.enabledParameters,
         suppressModelParameters: builtInConnection.entry.suppressModelParameters,
         maxOutputTokens: builtInConnection.entry.maxOutputTokens,

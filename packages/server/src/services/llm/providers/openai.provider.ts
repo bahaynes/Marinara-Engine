@@ -35,6 +35,7 @@ import {
   applyGlmThinkingParameters,
   glm53CustomGatewayReasoningEffort,
   isGlm53MandatoryReasoningModel,
+  isGlmModel,
 } from "./glm-request-compat.js";
 
 /**
@@ -1341,7 +1342,7 @@ export class OpenAIProvider extends BaseLLMProvider {
     }
 
     if (
-      this.shouldSendParameter(options, "reasoningEffort") &&
+      (this.shouldSendParameter(options, "reasoningEffort") || isGlmModel(options.model)) &&
       (!suppressModelParameters || this.isOpenRouterEndpoint())
     ) {
       this.applyChatCompletionsReasoning(body, options);
@@ -1631,7 +1632,7 @@ export class OpenAIProvider extends BaseLLMProvider {
     }
 
     if (
-      this.shouldSendParameter(options, "reasoningEffort") &&
+      (this.shouldSendParameter(options, "reasoningEffort") || isGlmModel(options.model)) &&
       (!suppressModelParameters || this.isOpenRouterEndpoint())
     ) {
       this.applyChatCompletionsReasoning(body, options);

@@ -12,8 +12,8 @@ export function isGlmModel(model: string): boolean {
   return model.toLowerCase().includes("glm");
 }
 
-export function isGlm52Model(model: string): boolean {
-  return /(?:^|\/)glm-5\.2(?:$|[-:])/u.test(model.toLowerCase());
+export function isGlm5Model(model: string): boolean {
+  return /(?:^|\/)glm-5(?:\.\d+)?(?:$|[-:])/u.test(model.toLowerCase());
 }
 
 /**
@@ -26,6 +26,9 @@ export function isGlm52Model(model: string): boolean {
 export function isGlm53MandatoryReasoningModel(model: string): boolean {
   return /(?:^|\/)glm-5\.3(?:$|[-:])/u.test(model.toLowerCase());
 }
+
+export const isGlm53Model = isGlm53MandatoryReasoningModel;
+export const isGlm52Model = isGlm5Model;
 
 export function isNativeGlmEndpoint(baseUrl: string): boolean {
   try {
@@ -45,9 +48,11 @@ function hasActiveReasoningEffort(reasoningEffort?: string | null): boolean {
   return !!reasoningEffort && reasoningEffort !== "none";
 }
 
-function glm52ReasoningEffort(reasoningEffort?: string | null): "high" | "max" | null {
+function glm5ReasoningEffort(reasoningEffort?: string | null): "low" | "high" | "max" | null {
   if (!hasActiveReasoningEffort(reasoningEffort)) return null;
-  return reasoningEffort === "max" || reasoningEffort === "xhigh" ? "max" : "high";
+  if (reasoningEffort === "low") return "low";
+  if (reasoningEffort === "max" || reasoningEffort === "xhigh" || reasoningEffort === "maximum") return "max";
+  return "high";
 }
 
 /**
@@ -66,6 +71,7 @@ export function glm53ReasoningEffort(reasoningEffort?: string | null): "low" | "
       return "low";
     case "max":
     case "xhigh":
+    case "maximum":
       return "max";
     default:
       return "high";
@@ -79,19 +85,22 @@ export function applyGlmThinkingParameters(body: Record<string, unknown>, option
   const thinkingEnabled = options.enableThinking === true || hasActiveReasoningEffort(options.reasoningEffort);
 
   if (isGlm53MandatoryReasoningModel(options.model)) {
+    const effort = glm53ReasoningEffort(options.reasoningEffort);
     if (nativeEndpoint) {
       body.thinking = { type: "enabled" };
-    } else {
-      body.enable_thinking = true;
+      if (effort) body.reasoning_effort = effort;
+      return true;
     }
-    const effort = glm53ReasoningEffort(options.reasoningEffort);
-    if (effort) body.reasoning_effort = effort;
-    return true;
+    if (options.providerKind === "nanogpt") {
+      body.enable_thinking = true;
+      if (effort) body.reasoning_effort = effort;
+      return true;
+    }
   }
 
-  if (nativeEndpoint && isGlm52Model(options.model)) {
+  if (nativeEndpoint && isGlm5Model(options.model)) {
     body.thinking = { type: thinkingEnabled ? "enabled" : "disabled" };
-    const effort = glm52ReasoningEffort(options.reasoningEffort);
+    const effort = glm5ReasoningEffort(options.reasoningEffort);
     if (thinkingEnabled && effort) body.reasoning_effort = effort;
     return true;
   }
