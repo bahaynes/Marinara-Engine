@@ -215,7 +215,12 @@ try {
   assert.equal(sent({}), undefined, "a preset or built-in Maximum keeps Codex's default");
   assert.equal(runtime({}).parameterSources.reasoningEffort, "defaults");
   assert.equal(sent({ scene: true }), undefined, "scene chats keep Codex's default");
-  assert.equal(sent({ scene: true, connection: { reasoningEffort: "medium" } }), "max", "then scenes force Maximum");
+  // custom-mods: scenes keep the connection's chosen level instead of forcing Maximum.
+  assert.equal(
+    sent({ scene: true, connection: { reasoningEffort: "medium" } }),
+    "medium",
+    "then scenes keep the connection's level",
+  );
   assert.equal(sent({ connection: { reasoningEffort: "medium" } }), "medium", "the connection's level is sent");
   assert.equal(sent({ connection: { reasoningEffort: "maximum" } }), "max");
   assert.equal(sent({ model: "gpt-5.5", connection: { reasoningEffort: "maximum" } }), "xhigh");
