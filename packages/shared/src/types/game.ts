@@ -29,6 +29,7 @@ export type GameGmMode = "standalone" | "character";
  * The combat styles the engine ships with.
  * - `classic`: existing cinematic JRPG menu combat (GameCombatUI + combat.service).
  * - `tactical`: Fire Emblem / FFT style grid battle (tactical-combat feature engine).
+ * - `dnd5e`: D&D 5.5e d20 tabletop combat engine (d20 tests, spell DC, cantrip scaling).
  */
 export const BUILT_IN_GAME_COMBAT_STYLES = ["classic", "tactical"] as const;
 export type BuiltInGameCombatStyle = (typeof BUILT_IN_GAME_COMBAT_STYLES)[number];

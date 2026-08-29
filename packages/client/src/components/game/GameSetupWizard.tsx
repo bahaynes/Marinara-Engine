@@ -2321,6 +2321,26 @@ export function GameSetupWizard({
                             </div>
                           </button>
                         )}
+                        {(!combatStyles || combatStyles.includes("dnd5e")) && (
+                          <button
+                            type="button"
+                            onClick={() => setCombatStyle("dnd5e")}
+                            aria-pressed={combatStyle === "dnd5e"}
+                            className={cn(
+                              "min-w-0 flex-1 basis-36 rounded-lg p-3 text-left text-xs break-words transition-colors ring-1",
+                              combatStyle === "dnd5e"
+                                ? "bg-[var(--primary)]/10 ring-[var(--primary)]/40"
+                                : "bg-[var(--secondary)] ring-[var(--border)] hover:ring-[var(--primary)]/20",
+                            )}
+                          >
+                            <div className="font-medium text-[var(--foreground)]">
+                              {localizeUi("ui.game.gamesetupwizard.dD55eTabletop")}
+                            </div>
+                            <div className="mt-1 text-[var(--muted-foreground)]">
+                              {localizeUi("ui.game.gamesetupwizard.d20TestsSpellDcsCantripScalingAdvantage")}
+                            </div>
+                          </button>
+                        )}
                         {listCombatStyles()
                           .filter((id) => !isBuiltInCombatStyle(id) && (!combatStyles || combatStyles.includes(id)))
                           .map((id) => (
