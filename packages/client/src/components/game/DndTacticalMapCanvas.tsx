@@ -11,6 +11,8 @@ import {
   ZoomIn,
   ZoomOut,
   Maximize2,
+  FastForward,
+  Sword,
 } from "lucide-react";
 import { cn } from "../../lib/utils.js";
 import {
@@ -34,6 +36,11 @@ interface DndTacticalMapCanvasProps {
   selectedUnitId: string | null;
   selectedEnemyId: string | null;
   activeAoESpell: DndSpell | null;
+  animatingActorId?: string | null;
+  animatingTargetCoord?: DndGridCoord | null;
+  animatingBannerText?: string | null;
+  isAnimating?: boolean;
+  onSkipAnimation?: () => void;
   onSelectUnit: (unitId: string) => void;
   onSelectEnemy: (enemyId: string) => void;
   onMoveUnit: (unitId: string, to: DndGridCoord, movementCostFt: number) => void;
@@ -57,6 +64,11 @@ export function DndTacticalMapCanvas({
   selectedUnitId,
   selectedEnemyId,
   activeAoESpell,
+  animatingActorId,
+  animatingTargetCoord,
+  animatingBannerText,
+  isAnimating = false,
+  onSkipAnimation,
   onSelectUnit,
   onSelectEnemy,
   onMoveUnit,
@@ -68,52 +80,52 @@ export function DndTacticalMapCanvas({
   const [zoomLevel, setZoomLevel] = useState<number>(1);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const activeUnit = allCombatants.find((c) => c.id === selectedUnitId) || allCombatants.find((c) => c.side === "party");
-  const activeUnitState: DndTacticalUnitState | undefined = activeUnit ? units[activeUnit.id] : undefined;
+  const activeUnit = allCombatants.find((c) => c.id === selectedUnitId);
+  const activeUnitState: DndTacticalUnitState | undefined = selectedUnitId ? units[selectedUnitId] : undefined;
 
-  // ── Calculate reachable tiles for the selected unit ──
+  // Compute movement range for the active selected unit
   const reachableTiles = useMemo(() => {
-    if (!activeUnit || !activeUnitState || activeUnit.side !== "party" || activeUnitState.movementRemainingFt <= 0) {
-      return [];
-    }
-    return getReachableTiles(activeUnitState.coord, activeUnitState.movementRemainingFt, map, units, activeUnit.id);
-  }, [activeUnit, activeUnitState, map, units]);
+    if (!activeUnitState || isAnimating || activeAoESpell) return [];
+    return getReachableTiles(activeUnitState.coord, activeUnitState.movementRemainingFt, map, units);
+  }, [activeUnitState, map, units, isAnimating, activeAoESpell]);
 
-  // ── Calculate AoE blast tiles when hovering with an active AoE spell ──
+  // Compute AoE preview tiles when an AoE spell is active
   const aoeHighlightedTiles = useMemo(() => {
     if (!activeAoESpell || !hoveredCoord) return [];
     const shape = activeAoESpell.aoeShape || "sphere";
     const radiusFt = activeAoESpell.aoeRadiusFt || 20;
-    const casterCoord = activeUnitState?.coord;
-    return getAoEAffectedTiles(hoveredCoord, shape, radiusFt, map, casterCoord);
-  }, [activeAoESpell, hoveredCoord, map, activeUnitState]);
+    const origin = activeUnitState?.coord;
+    return getAoEAffectedTiles(hoveredCoord, shape, radiusFt, map, origin);
+  }, [activeAoESpell, hoveredCoord, activeUnitState?.coord, map]);
 
-  // ── Quick map coordinate lookup for combatants ──
+  // Lookup combatant on a specific tile
   const combatantAtCoord = useCallback(
-    (x: number, y: number): DndCombatant | undefined => {
-      for (const combatant of allCombatants) {
-        if (combatant.hp <= 0) continue;
-        const uState = units[combatant.id];
-        if (uState && uState.coord.x === x && uState.coord.y === y) {
-          return combatant;
+    (x: number, y: number): DndCombatant | null => {
+      for (const [id, unit] of Object.entries(units)) {
+        if (unit.coord.x === x && unit.coord.y === y) {
+          const found = allCombatants.find((c) => c.id === id);
+          if (found && found.hp > 0) return found;
         }
       }
-      return undefined;
+      return null;
     },
-    [allCombatants, units],
+    [units, allCombatants],
   );
 
-  // ── Handle Tile Clicks (Move, Target, or Detonate AoE) ──
+  // Handle tile click: movement or AoE execution or unit targeting
   const handleTileClick = (tile: DndTile) => {
-    const targetCombatant = combatantAtCoord(tile.x, tile.y);
+    if (isAnimating) return;
 
-    // If casting an AoE spell, detonate it centered on this tile
+    const clickedCombatant = combatantAtCoord(tile.x, tile.y);
+
+    // 1. AoE Spell Detonation
     if (activeAoESpell && activeUnit) {
+      const affected = aoeHighlightedTiles;
       const resolution = resolveDndAoESpell(
         activeUnit,
         activeAoESpell,
         { x: tile.x, y: tile.y },
-        aoeHighlightedTiles,
+        affected,
         allCombatants,
         units,
       );
@@ -121,32 +133,43 @@ export function DndTacticalMapCanvas({
       return;
     }
 
-    // If clicking a combatant, select them or target enemy
-    if (targetCombatant) {
-      if (targetCombatant.side === "party") {
-        onSelectUnit(targetCombatant.id);
+    // 2. Click on a combatant: select unit or target enemy
+    if (clickedCombatant) {
+      if (clickedCombatant.side === "party") {
+        onSelectUnit(clickedCombatant.id);
       } else {
-        onSelectEnemy(targetCombatant.id);
+        onSelectEnemy(clickedCombatant.id);
       }
       return;
     }
 
-    // If clicking a reachable empty tile, move the active party member
-    if (activeUnit && activeUnit.side === "party" && activeUnitState) {
+    // 3. Move active selected unit
+    if (activeUnit && activeUnitState) {
       const isReachable = reachableTiles.some((r) => r.x === tile.x && r.y === tile.y);
-      if (isReachable) {
-        const moveDistFt = getDistanceFt(activeUnitState.coord, { x: tile.x, y: tile.y });
+      if (!isReachable) return;
 
-        // Check opportunity attack from adjacent enemies
-        const enemies = allCombatants.filter((c) => c.side === "enemy" && c.hp > 0);
-        const oppAttack = checkOpportunityAttack(activeUnit.id, activeUnitState.coord, { x: tile.x, y: tile.y }, enemies, units);
+      const targetCoord = { x: tile.x, y: tile.y };
+      const moveDistanceFt = getDistanceFt(activeUnitState.coord, targetCoord);
 
-        if (oppAttack) {
-          onLogMessage(oppAttack.enemyName, oppAttack.logText);
-        }
+      // Check Opportunity Attack from adjacent enemies
+      const livingEnemies = allCombatants.filter((c) => c.side === "enemy" && c.hp > 0);
+      const oppAttack = checkOpportunityAttack(
+        activeUnit.id,
+        activeUnitState.coord,
+        targetCoord,
+        livingEnemies,
+        units,
+      );
 
-        onMoveUnit(activeUnit.id, { x: tile.x, y: tile.y }, moveDistFt);
+      if (oppAttack && oppAttack.provoked) {
+        onLogMessage(oppAttack.enemyName, oppAttack.logText);
       }
+
+      onMoveUnit(activeUnit.id, targetCoord, moveDistanceFt);
+      onLogMessage(
+        activeUnit.name,
+        `🏃 Moves ${moveDistanceFt}ft to (${tile.x}, ${tile.y}). Remaining: ${Math.max(0, activeUnitState.movementRemainingFt - moveDistanceFt)}ft.`,
+      );
     }
   };
 
@@ -156,19 +179,40 @@ export function DndTacticalMapCanvas({
       <div className="flex items-center justify-between border-b border-white/10 bg-black/50 px-3 py-2 text-xs">
         <div className="flex items-center gap-3">
           <span className="font-bold text-cyan-300">🗺️ D&D Battlemap (5ft Grid)</span>
-          {activeUnit && activeUnitState && (
-            <span className="flex items-center gap-1 font-semibold text-white/80">
-              <Footprints size={14} className="text-cyan-400" />
-              <span>
-                {activeUnit.name}: <strong className="text-cyan-300">{activeUnitState.movementRemainingFt} ft</strong> Move Remaining
-              </span>
-            </span>
-          )}
-          {activeAoESpell && (
-            <span className="flex items-center gap-1 rounded bg-orange-500/20 px-2 py-0.5 font-bold text-orange-300 animate-pulse border border-orange-500/40">
-              <Flame size={14} />
-              <span>Tap Grid to Cast {activeAoESpell.name} (20ft Radius)</span>
-            </span>
+
+          {/* Turn Animation Live Banner */}
+          {isAnimating ? (
+            <div className="flex items-center gap-2 rounded-lg bg-amber-500/20 px-2.5 py-1 text-xs font-bold text-amber-300 border border-amber-500/40 animate-pulse">
+              <Sword size={14} className="animate-spin" />
+              <span>{animatingBannerText || "Executing Tactical Turn..."}</span>
+              {onSkipAnimation && (
+                <button
+                  type="button"
+                  onClick={onSkipAnimation}
+                  className="flex items-center gap-1 rounded bg-amber-500/30 px-1.5 py-0.5 text-[0.6875rem] font-bold text-amber-100 hover:bg-amber-500/50 ml-2"
+                >
+                  <FastForward size={12} />
+                  <span>Skip</span>
+                </button>
+              )}
+            </div>
+          ) : (
+            <>
+              {activeUnit && activeUnitState && (
+                <span className="flex items-center gap-1 font-semibold text-white/80">
+                  <Footprints size={14} className="text-cyan-400" />
+                  <span>
+                    {activeUnit.name}: <strong className="text-cyan-300">{activeUnitState.movementRemainingFt} ft</strong> Move
+                  </span>
+                </span>
+              )}
+              {activeAoESpell && (
+                <span className="flex items-center gap-1 rounded bg-orange-500/20 px-2 py-0.5 font-bold text-orange-300 animate-pulse border border-orange-500/40">
+                  <Flame size={14} />
+                  <span>Tap Grid to Cast {activeAoESpell.name} (20ft Radius)</span>
+                </span>
+              )}
+            </>
           )}
         </div>
 
@@ -226,6 +270,8 @@ export function DndTacticalMapCanvas({
                 const isHovered = hoveredCoord?.x === x && hoveredCoord?.y === y;
                 const isSelectedCombatant = combatant && combatant.id === selectedUnitId;
                 const isTargetedEnemy = combatant && combatant.id === selectedEnemyId;
+                const isTurnActor = combatant && combatant.id === animatingActorId;
+                const isTargetFlash = animatingTargetCoord?.x === x && animatingTargetCoord?.y === y;
 
                 const terrainConfig = TERRAIN_STYLES[tile.terrain] || TERRAIN_STYLES.plains;
 
@@ -240,13 +286,21 @@ export function DndTacticalMapCanvas({
                       terrainConfig.border,
                       isReachable && "bg-cyan-500/20 border-cyan-400/80 shadow-lg shadow-cyan-900/40 ring-1 ring-cyan-400/50",
                       isAoEHit && "bg-orange-600/40 border-orange-400 shadow-lg shadow-orange-900/50 ring-2 ring-orange-400",
-                      isHovered && !isAoEHit && !isReachable && "border-white/40 bg-white/10",
+                      isHovered && !isAoEHit && !isReachable && !isAnimating && "border-white/40 bg-white/10",
+                      isTargetFlash && "bg-red-500/40 border-red-400 ring-4 ring-red-500/80 animate-ping",
                     )}
                   >
                     {/* Grid Coordinate Watermark */}
                     <span className="absolute top-0.5 left-1 text-[0.5625rem] font-mono text-white/20">
                       {x},{y}
                     </span>
+
+                    {/* Target Hit Flash FX */}
+                    {isTargetFlash && (
+                      <div className="absolute inset-0 z-30 flex items-center justify-center bg-red-600/40 rounded-lg animate-pulse">
+                        <span className="text-sm font-black text-white drop-shadow">💥 HIT!</span>
+                      </div>
+                    )}
 
                     {/* Terrain Cover Badge */}
                     {tile.coverLevel !== "none" && !combatant && (
@@ -266,14 +320,15 @@ export function DndTacticalMapCanvas({
                       <div className="relative flex flex-col items-center justify-center z-10">
                         <div
                           className={cn(
-                            "relative flex h-10 w-10 sm:h-11 sm:w-11 items-center justify-center rounded-full border-2 text-sm font-bold shadow-xl transition-transform duration-200",
+                            "relative flex h-10 w-10 sm:h-11 sm:w-11 items-center justify-center rounded-full border-2 text-sm font-bold shadow-xl transition-all duration-300",
                             combatant.side === "party"
                               ? combatant.isPlayer
                                 ? "border-amber-400 bg-amber-950 text-amber-200 ring-2 ring-amber-400/60"
                                 : "border-cyan-400 bg-cyan-950 text-cyan-200 ring-1 ring-cyan-400/50"
                               : "border-red-500 bg-red-950 text-red-200 ring-1 ring-red-500/50",
-                            isSelectedCombatant && "scale-110 ring-4 ring-white shadow-cyan-400/80",
-                            isTargetedEnemy && "ring-4 ring-red-400 scale-105 shadow-red-500/80",
+                            isSelectedCombatant && !isTurnActor && "scale-110 ring-4 ring-white shadow-cyan-400/80",
+                            isTargetedEnemy && !isTurnActor && "ring-4 ring-red-400 scale-105 shadow-red-500/80",
+                            isTurnActor && "scale-125 ring-4 ring-yellow-300 bg-amber-900 text-yellow-100 shadow-2xl shadow-yellow-400/90 animate-bounce",
                           )}
                         >
                           {combatant.isPlayer && (

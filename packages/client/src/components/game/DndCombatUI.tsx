@@ -2,7 +2,7 @@
 // D&D 5.5e Tabletop & Tactical Combat UI
 // ──────────────────────────────────────────────
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import {
   Sword,
   Sparkles,
@@ -39,6 +39,7 @@ import {
   type DndTacticalState,
   type DndGridCoord,
   type DndAoEResolution,
+  type TacticalStepLog,
   SPELL_CATALOG,
   DEFAULT_CANTRIPS,
   abilityModifier,
@@ -335,9 +336,109 @@ export function DndCombatUI({
     });
   }, []);
 
+  // ── Tactical Turn Sequential Playback System ──
+  const [isAnimating, setIsAnimating] = useState<boolean>(false);
+  const [animatingActorId, setAnimatingActorId] = useState<string | null>(null);
+  const [animatingTargetCoord, setAnimatingTargetCoord] = useState<DndGridCoord | null>(null);
+  const [animatingBannerText, setAnimatingBannerText] = useState<string | null>(null);
+  const animationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const finalStateRef = useRef<{ dnd: DndCombatState; tac: DndTacticalState } | null>(null);
+
+  const handleSkipAnimation = useCallback(() => {
+    if (animationTimerRef.current) {
+      clearTimeout(animationTimerRef.current);
+      animationTimerRef.current = null;
+    }
+    if (finalStateRef.current) {
+      setDndState(finalStateRef.current.dnd);
+      setTacticalState(finalStateRef.current.tac);
+      finalStateRef.current = null;
+    }
+    setIsAnimating(false);
+    setAnimatingActorId(null);
+    setAnimatingTargetCoord(null);
+    setAnimatingBannerText(null);
+  }, []);
+
+  const playTacticalTurnSequence = useCallback(
+    (steps: TacticalStepLog[], nextDnd: DndCombatState, nextTac: DndTacticalState) => {
+      if (steps.length === 0) {
+        setDndState(nextDnd);
+        setTacticalState(nextTac);
+        return;
+      }
+
+      setIsAnimating(true);
+      finalStateRef.current = { dnd: nextDnd, tac: nextTac };
+
+      let stepIndex = 0;
+
+      const runNextStep = () => {
+        if (stepIndex >= steps.length) {
+          // Finished playing all turns
+          setDndState(nextDnd);
+          setTacticalState(nextTac);
+          setIsAnimating(false);
+          setAnimatingActorId(null);
+          setAnimatingTargetCoord(null);
+          setAnimatingBannerText(null);
+          finalStateRef.current = null;
+          return;
+        }
+
+        const step = steps[stepIndex]!;
+        stepIndex += 1;
+
+        setAnimatingActorId(step.actorId);
+        setAnimatingBannerText(step.text);
+
+        if (step.moveTo) {
+          setTacticalState((prev) => {
+            const u = prev.units[step.actorId];
+            if (!u) return prev;
+            return {
+              ...prev,
+              units: {
+                ...prev.units,
+                [step.actorId]: { ...u, coord: step.moveTo! },
+              },
+            };
+          });
+        }
+
+        if (step.targetCoord) {
+          setAnimatingTargetCoord(step.targetCoord);
+        } else {
+          setAnimatingTargetCoord(null);
+        }
+
+        // Incrementally add step log to combat feed
+        setDndState((prev) => ({
+          ...prev,
+          log: [
+            ...prev.log,
+            {
+              id: `anim-step-${Date.now()}-${stepIndex}`,
+              round: prev.round,
+              turnActor: step.actorName,
+              text: step.text,
+            },
+          ],
+        }));
+
+        animationTimerRef.current = setTimeout(runNextStep, 600);
+      };
+
+      runNextStep();
+    },
+    [],
+  );
+
   // ── Handle Tactical AoE Spell Resolution ──
   const handleTacticalAoESpell = useCallback(
     (resolution: DndAoEResolution) => {
+      if (isAnimating) return;
+
       // 1. Apply AoE damage to party & enemies
       const damageMap: Record<string, number> = {};
       for (const t of resolution.targets) {
@@ -380,18 +481,17 @@ export function DndCombatUI({
       }
 
       // 2. Run remaining allies & enemies AI turns in the tactical round
-      const { nextDndState, nextTacticalState } = resolveTacticalCombatRound(
+      const { nextDndState, nextTacticalState, stepLogs } = resolveTacticalCombatRound(
         midState,
         tacticalState,
         // Active caster already acted
         { type: "spell", actorId: activeActor.id, targetId: resolution.targets[0]?.combatantId || "" },
       );
 
-      setDndState(nextDndState);
-      setTacticalState(nextTacticalState);
       setActiveAoESpell(null);
+      playTacticalTurnSequence(stepLogs, nextDndState, nextTacticalState);
     },
-    [dndState, tacticalState, activeActor.id],
+    [dndState, tacticalState, activeActor.id, isAnimating, playTacticalTurnSequence],
   );
 
   // ── Add Log Message ──
@@ -413,7 +513,7 @@ export function DndCombatUI({
   // ── Handle Full Combat Round Execution ──
   const executePlayerAction = useCallback(
     (actionReq: Partial<DndActionRequest>) => {
-      if (!activeActor || dndState.outcome || !targetEnemy) return;
+      if (!activeActor || dndState.outcome || !targetEnemy || isAnimating) return;
 
       // Check if selected spell is AoE: In tactical mode, activate AoE targeting mode
       if (actionReq.spellId) {
@@ -440,13 +540,12 @@ export function DndCombatUI({
 
         if (viewMode === "tactical") {
           // Autonomous Tactical Grid AI for allies and enemy monsters
-          const { nextDndState, nextTacticalState } = resolveTacticalCombatRound(
+          const { nextDndState, nextTacticalState, stepLogs } = resolveTacticalCombatRound(
             dndState,
             tacticalState,
             fullRequest,
           );
-          setDndState(nextDndState);
-          setTacticalState(nextTacticalState);
+          playTacticalTurnSequence(stepLogs, nextDndState, nextTacticalState);
         } else {
           const { nextState: updatedState } = resolveFullCombatRound(dndState, fullRequest);
           setDndState(updatedState);
@@ -461,7 +560,7 @@ export function DndCombatUI({
         console.error("Combat action error:", err);
       }
     },
-    [activeActor, dndState, targetEnemy, advantageState, sneakAttackEnabled, smiteEnabled, viewMode, tacticalState],
+    [activeActor, dndState, targetEnemy, advantageState, sneakAttackEnabled, smiteEnabled, viewMode, tacticalState, isAnimating, playTacticalTurnSequence],
   );
 
   // ── Quick Stat / Level / Class Updates ──
@@ -635,6 +734,11 @@ export function DndCombatUI({
               selectedUnitId={selectedPartyId}
               selectedEnemyId={selectedEnemyId}
               activeAoESpell={activeAoESpell}
+              animatingActorId={animatingActorId}
+              animatingTargetCoord={animatingTargetCoord}
+              animatingBannerText={animatingBannerText}
+              isAnimating={isAnimating}
+              onSkipAnimation={handleSkipAnimation}
               onSelectUnit={(id) => setSelectedPartyId(id)}
               onSelectEnemy={(id) => setSelectedEnemyId(id)}
               onMoveUnit={handleTacticalMove}
@@ -1045,11 +1149,29 @@ export function DndCombatUI({
           {/* Dodge Action */}
           <button
             type="button"
+            disabled={isAnimating}
             onClick={() => executePlayerAction({ type: "dodge" })}
-            className="flex flex-col items-center justify-center gap-0.5 sm:gap-1 rounded-xl border border-blue-500/40 bg-blue-500/15 p-2 sm:p-2.5 font-bold text-blue-200 transition-all hover:bg-blue-500/30 active:scale-95 text-center min-h-[3.25rem]"
+            className={cn(
+              "flex flex-col items-center justify-center gap-0.5 sm:gap-1 rounded-xl border border-blue-500/40 bg-blue-500/15 p-2 sm:p-2.5 font-bold text-blue-200 transition-all hover:bg-blue-500/30 active:scale-95 text-center min-h-[3.25rem]",
+              isAnimating && "opacity-40 cursor-not-allowed",
+            )}
           >
             <Shield size={15} />
             <span className="text-[0.6875rem] sm:text-xs">Dodge (Evade)</span>
+          </button>
+
+          {/* End Turn / Pass Action */}
+          <button
+            type="button"
+            disabled={isAnimating}
+            onClick={() => executePlayerAction({ type: "dodge" })}
+            className={cn(
+              "flex flex-col items-center justify-center gap-0.5 sm:gap-1 rounded-xl border border-purple-500/40 bg-purple-500/15 p-2 sm:p-2.5 font-bold text-purple-200 transition-all hover:bg-purple-500/30 active:scale-95 text-center min-h-[3.25rem]",
+              isAnimating && "opacity-40 cursor-not-allowed",
+            )}
+          >
+            <RotateCcw size={15} className="rotate-180" />
+            <span className="text-[0.6875rem] sm:text-xs">End Turn</span>
           </button>
         </div>
       </div>
