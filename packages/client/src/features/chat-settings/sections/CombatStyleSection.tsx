@@ -34,6 +34,9 @@ export function CombatStyleSection({ style, combatStyle, onCombatStyleChange }: 
               {localizeUi("ui.chatSettings.combatstylesection.classicCinematicMenuBattles")}
             </option>
             <option value="tactical">{localizeUi("game.combat.preference.tacticalLabel")}</option>
+            <option value="dnd5e">
+              {localizeUi("ui.chatSettings.combatstylesection.dD55eD20TabletopSpellDcCantrips")}
+            </option>
           </select>
         </label>
         <p className="text-[0.575rem] leading-relaxed text-[var(--muted-foreground)]">

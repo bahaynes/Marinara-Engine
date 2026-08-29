@@ -172,8 +172,8 @@ export * from "./utils/dice-branch.js";
 export * from "./utils/dice-notation.js";
 export * from "./utils/dice-placeholder.js";
 export * from "./utils/dice-pool.js";
-
 export { parseChoiceOptions, resolveChoiceVariableValue, type ChoiceOptionValue } from "./utils/preset-choices.js";
-
 export * from "./features/combat-ai.js";
 export * from "./features/combat-director.js";
+export * from "./features/dnd-combat/index.js";
+export * from "./features/dnd-tactical/index.js";
