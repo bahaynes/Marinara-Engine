@@ -27,6 +27,10 @@ export interface DndSpell {
   description: string;
   isMultiBeam?: boolean; // Eldritch blast multi-beam
   isCantrip?: boolean;
+  isAoE?: boolean;
+  aoeShape?: "sphere" | "cone" | "line" | "single";
+  aoeRadiusFt?: number; // e.g. 20 for Fireball
+  rangeFt?: number; // e.g. 120, 60, 5
   classes?: string[]; // Recommended classes e.g. ["Wizard", "Sorcerer"]
 }
 

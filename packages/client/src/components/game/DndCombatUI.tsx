@@ -1,5 +1,5 @@
 // ──────────────────────────────────────────────
-// D&D 5.5e Tabletop Combat UI
+// D&D 5.5e Tabletop & Tactical Combat UI
 // ──────────────────────────────────────────────
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -24,6 +24,8 @@ import {
   Heart,
   Brain,
   Crosshair,
+  Map,
+  LayoutGrid,
 } from "lucide-react";
 import { cn } from "../../lib/utils.js";
 import {
@@ -34,6 +36,9 @@ import {
   type DndAdvantageState,
   type DndActionRequest,
   type DndSpell,
+  type DndTacticalState,
+  type DndGridCoord,
+  type DndAoEResolution,
   SPELL_CATALOG,
   DEFAULT_CANTRIPS,
   abilityModifier,
@@ -44,7 +49,9 @@ import {
   martialAttackCount,
   rogueSneakAttackDice,
   resolveFullCombatRound,
+  initializeTacticalState,
 } from "@marinara-engine/shared";
+import { DndTacticalMapCanvas } from "./DndTacticalMapCanvas.js";
 
 interface DndCombatUIProps {
   chatId: string;
@@ -99,12 +106,10 @@ function mapToDndCombatant(c: Combatant, side: "party" | "enemy", index: number,
   const rawRecord = c as unknown as Record<string, unknown>;
   const rawStats = (rawRecord.rawAttributes as Record<string, number> | undefined) || {};
 
-  // Look for exact character card match
   const card = cards.find(
     (entry) => typeof entry?.name === "string" && entry.name.toLowerCase().trim() === c.name.toLowerCase().trim(),
   );
 
-  // Build searchable text from card description/personality for regex fallback
   const cardText = [
     card?.description,
     card?.personality,
@@ -115,7 +120,6 @@ function mapToDndCombatant(c: Combatant, side: "party" | "enemy", index: number,
     .filter(Boolean)
     .join(" ");
 
-  // Extract RPG Stats from card attributes, falling back to text regex, then rawRecord, then defaults
   const str =
     readCardAttribute(card, "str", "strength", "str score") ??
     extractStatFromText(cardText, "str") ??
@@ -156,12 +160,10 @@ function mapToDndCombatant(c: Combatant, side: "party" | "enemy", index: number,
       1,
   );
 
-  // Determine Class
   let unitClass = String(
     card?.class || rawRecord.unitClass || rawRecord.combatClass || (side === "party" ? "Warlock" : "Monster"),
   ).trim();
 
-  // If unitClass is default, check cardText for class keywords
   if (unitClass === "Warlock" && side === "party") {
     const classMatch = cardText.match(/\b(wizard|warlock|cleric|rogue|paladin|sorcerer|bard|druid|barbarian|fighter|ranger|monk)\b/i);
     if (classMatch && classMatch[1]) {
@@ -213,6 +215,9 @@ export function DndCombatUI({
   const initialParty = useMemo(() => party.map((p, i) => mapToDndCombatant(p, "party", i, gameCharacterCards)), [party, gameCharacterCards]);
   const initialEnemies = useMemo(() => enemies.map((e, i) => mapToDndCombatant(e, "enemy", i, gameCharacterCards)), [enemies, gameCharacterCards]);
 
+  // View Mode: "tactical" (battlemap grid) | "cards" (classic tabletop cards)
+  const [viewMode, setViewMode] = useState<"tactical" | "cards">("tactical");
+
   const [dndState, setDndState] = useState<DndCombatState>(() => ({
     round: 1,
     party: initialParty,
@@ -230,7 +235,15 @@ export function DndCombatUI({
     activePartyIndex: 0,
   }));
 
+  // Tactical Grid State
+  const [tacticalState, setTacticalState] = useState<DndTacticalState>(() =>
+    initializeTacticalState(initialParty, initialEnemies),
+  );
+
+  const [selectedPartyId, setSelectedPartyId] = useState<string>(() => initialParty[0]?.id || "");
   const [selectedEnemyId, setSelectedEnemyId] = useState<string>(() => initialEnemies[0]?.id || "");
+  const [activeAoESpell, setActiveAoESpell] = useState<DndSpell | null>(null);
+
   const [advantageState, setAdvantageState] = useState<DndAdvantageState>("none");
   const [sneakAttackEnabled, setSneakAttackEnabled] = useState<boolean>(false);
   const [smiteEnabled, setSmiteEnabled] = useState<boolean>(false);
@@ -260,7 +273,10 @@ export function DndCombatUI({
       phase: "player",
       activePartyIndex: 0,
     });
+    setTacticalState(initializeTacticalState(initialParty, initialEnemies));
+    setSelectedPartyId(initialParty[0]?.id || "");
     setSelectedEnemyId(initialEnemies[0]?.id || "");
+    setActiveAoESpell(null);
     setAdvantageState("none");
     setSneakAttackEnabled(false);
     setSmiteEnabled(false);
@@ -268,24 +284,25 @@ export function DndCombatUI({
     setEditingCombatantId(null);
   }, [chatId, initialParty, initialEnemies]);
 
-  const activePlayer = dndState.party[0];
+  // Selected party member (who is actively casting/moving)
+  const activeActor = dndState.party.find((p) => p.id === selectedPartyId) || dndState.party[0];
   const targetEnemy = dndState.enemies.find((e) => e.id === selectedEnemyId) || dndState.enemies.find((e) => e.hp > 0);
 
-  const playerLevel = activePlayer?.level || 1;
-  const playerProf = proficiencyBonus(playerLevel);
-  const castingStatKey = primaryCastingStat(activePlayer?.unitClass);
-  const playerCastMod = abilityModifier(activePlayer?.stats[castingStatKey] || 10);
-  const spellDc = 8 + playerProf + playerCastMod;
-  const spellAttackBonus = playerProf + playerCastMod;
+  const actorLevel = activeActor?.level || 1;
+  const actorProf = proficiencyBonus(actorLevel);
+  const castingStatKey = primaryCastingStat(activeActor?.unitClass);
+  const actorCastMod = abilityModifier(activeActor?.stats[castingStatKey] || 10);
+  const spellDc = 8 + actorProf + actorCastMod;
+  const spellAttackBonus = actorProf + actorCastMod;
 
-  const martialAttacks = martialAttackCount(activePlayer?.unitClass, playerLevel);
-  const sneakDice = rogueSneakAttackDice(playerLevel);
-  const isPaladin = /paladin/i.test(activePlayer?.unitClass || "");
-  const isRogue = /rogue|soulknife/i.test(activePlayer?.unitClass || "");
+  const martialAttacks = martialAttackCount(activeActor?.unitClass, actorLevel);
+  const sneakDice = rogueSneakAttackDice(actorLevel);
+  const isPaladin = /paladin/i.test(activeActor?.unitClass || "");
+  const isRogue = /rogue|soulknife/i.test(activeActor?.unitClass || "");
 
-  // ── Filter available spells for active character ──
+  // ── Filter available spells for active selected character ──
   const visibleSpells = useMemo(() => {
-    const cls = activePlayer?.unitClass || "Warlock";
+    const cls = activeActor?.unitClass || "Warlock";
     if (spellTab === "all") return SPELL_CATALOG;
     if (spellTab === "cantrips") return SPELL_CATALOG.filter((s) => s.level === 0);
     if (spellTab === "low") return SPELL_CATALOG.filter((s) => s.level >= 1 && s.level <= 3);
@@ -296,17 +313,108 @@ export function DndCombatUI({
       if (!s.classes || s.classes.length === 0) return true;
       return s.classes.some((c) => cls.toLowerCase().includes(c.toLowerCase()));
     });
-  }, [activePlayer?.unitClass, spellTab]);
+  }, [activeActor?.unitClass, spellTab]);
 
-  // ── Handle Full Combat Round Execution (Player -> Allies -> Enemies) ──
+  // ── Handle Tactical Movement ──
+  const handleTacticalMove = useCallback((unitId: string, to: DndGridCoord, costFt: number) => {
+    setTacticalState((prev) => {
+      const currentUnit = prev.units[unitId];
+      if (!currentUnit) return prev;
+      return {
+        ...prev,
+        units: {
+          ...prev.units,
+          [unitId]: {
+            ...currentUnit,
+            coord: to,
+            movementRemainingFt: Math.max(0, currentUnit.movementRemainingFt - costFt),
+          },
+        },
+      };
+    });
+  }, []);
+
+  // ── Handle Tactical AoE Spell Resolution ──
+  const handleTacticalAoESpell = useCallback(
+    (resolution: DndAoEResolution) => {
+      // Apply damage to party & enemies
+      const damageMap: Record<string, number> = {};
+      for (const t of resolution.targets) {
+        damageMap[t.combatantId] = t.damageDealt;
+      }
+
+      setDndState((prev) => {
+        const nextParty = prev.party.map((p) => {
+          const dmg = damageMap[p.id] || 0;
+          return dmg > 0 ? { ...p, hp: Math.max(0, p.hp - dmg) } : p;
+        });
+
+        const nextEnemies = prev.enemies.map((e) => {
+          const dmg = damageMap[e.id] || 0;
+          return dmg > 0 ? { ...e, hp: Math.max(0, e.hp - dmg) } : e;
+        });
+
+        const allEnemiesDead = nextEnemies.every((e) => e.hp <= 0);
+        const allPartyDead = nextParty.every((p) => p.hp <= 0);
+
+        return {
+          ...prev,
+          party: nextParty,
+          enemies: nextEnemies,
+          outcome: allEnemiesDead ? "victory" : allPartyDead ? "defeat" : null,
+          log: [
+            ...prev.log,
+            {
+              id: `aoe-${Date.now()}`,
+              round: prev.round,
+              turnActor: resolution.casterName,
+              text: resolution.logText,
+            },
+          ],
+        };
+      });
+
+      setActiveAoESpell(null);
+    },
+    [],
+  );
+
+  // ── Add Log Message ──
+  const handleLogMessage = useCallback((actor: string, text: string) => {
+    setDndState((prev) => ({
+      ...prev,
+      log: [
+        ...prev.log,
+        {
+          id: `log-${Date.now()}`,
+          round: prev.round,
+          turnActor: actor,
+          text,
+        },
+      ],
+    }));
+  }, []);
+
+  // ── Handle Full Combat Round Execution ──
   const executePlayerAction = useCallback(
     (actionReq: Partial<DndActionRequest>) => {
-      if (!activePlayer || dndState.outcome || !targetEnemy) return;
+      if (!activeActor || dndState.outcome || !targetEnemy) return;
+
+      // Check if selected spell is AoE: In tactical mode, activate AoE targeting mode
+      if (actionReq.spellId) {
+        const spell = SPELL_CATALOG.find((s) => s.id === actionReq.spellId);
+        if (spell && (spell.id === "fireball" || spell.id === "synaptic_static" || spell.id === "cone_of_cold" || spell.id === "lightning_bolt")) {
+          if (viewMode === "tactical") {
+            setActiveAoESpell(spell);
+            return;
+          }
+        }
+      }
 
       try {
         const fullRequest: DndActionRequest = {
           type: actionReq.type || "attack",
-          actorId: activePlayer.id,
+          actorId: activeActor.id,
           targetId: targetEnemy.id,
           spellId: actionReq.spellId,
           cantripId: actionReq.cantripId,
@@ -318,15 +426,27 @@ export function DndCombatUI({
         const { nextState: updatedState } = resolveFullCombatRound(dndState, fullRequest);
         setDndState(updatedState);
 
+        // Reset tactical movement budget for next round
+        setTacticalState((prev) => {
+          const nextUnits = { ...prev.units };
+          for (const [id, unit] of Object.entries(nextUnits)) {
+            const combatant = dndState.party.find((p) => p.id === id) || dndState.enemies.find((e) => e.id === id);
+            const speed = combatant && /wizard|sorcerer/i.test(combatant.unitClass) && combatant.level >= 10 ? 40 : 30;
+            nextUnits[id] = { ...unit, movementRemainingFt: speed, actionsRemaining: 1, reactionAvailable: true };
+          }
+          return { ...prev, units: nextUnits };
+        });
+
         // Reset turn-specific toggles
         setAdvantageState("none");
         setSneakAttackEnabled(false);
         setSmiteEnabled(false);
+        setActiveAoESpell(null);
       } catch (err) {
         console.error("Combat action error:", err);
       }
     },
-    [activePlayer, dndState, targetEnemy, advantageState, sneakAttackEnabled, smiteEnabled],
+    [activeActor, dndState, targetEnemy, advantageState, sneakAttackEnabled, smiteEnabled, viewMode],
   );
 
   // ── Quick Stat / Level / Class Updates ──
@@ -368,7 +488,9 @@ export function DndCombatUI({
       phase: "player",
       activePartyIndex: 0,
     });
+    setTacticalState(initializeTacticalState(initialParty, initialEnemies));
     setEditingCombatantId(null);
+    setActiveAoESpell(null);
   }, [initialParty, initialEnemies]);
 
   // ── Finish Combat & Return to Story ──
@@ -425,6 +547,32 @@ export function DndCombatUI({
             <span>D&D 5.5e Combat</span>
           </div>
           <span className="text-xs font-semibold text-white/60">Round {dndState.round}</span>
+
+          {/* View Mode Toggle: Tactical Grid vs Tabletop Cards */}
+          <div className="flex items-center gap-1 rounded-lg bg-black/60 p-0.5 border border-white/10 ml-2">
+            <button
+              type="button"
+              onClick={() => setViewMode("tactical")}
+              className={cn(
+                "flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-bold transition-all",
+                viewMode === "tactical" ? "bg-cyan-500 text-slate-950 shadow" : "text-white/60 hover:text-white",
+              )}
+            >
+              <Map size={13} />
+              <span>Battlemap</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode("cards")}
+              className={cn(
+                "flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-bold transition-all",
+                viewMode === "cards" ? "bg-cyan-500 text-slate-950 shadow" : "text-white/60 hover:text-white",
+              )}
+            >
+              <LayoutGrid size={13} />
+              <span>Cards</span>
+            </button>
+          </div>
         </div>
 
         <div className="flex items-center gap-1.5 sm:gap-2">
@@ -450,161 +598,246 @@ export function DndCombatUI({
       </div>
 
       {/* ── Main Battlefield Area ── */}
-      <div className="flex min-h-0 flex-1 flex-col gap-3 sm:gap-4 overflow-y-auto p-3 sm:p-6 overscroll-contain">
-        {/* Enemy Cards Formation */}
-        <div>
-          <h3 className="mb-1.5 sm:mb-2 text-xs font-bold uppercase tracking-wider text-red-400/80">Enemies (Tap to Target)</h3>
-          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
-            {dndState.enemies.map((enemy) => {
-              const isSelected = enemy.id === selectedEnemyId;
-              const isDead = enemy.hp <= 0;
-              const hpPct = Math.max(0, Math.min(100, Math.round((enemy.hp / enemy.maxHp) * 100)));
+      {viewMode === "tactical" ? (
+        <div className="flex min-h-0 flex-1 flex-col p-2 sm:p-3 gap-2">
+          <div className="flex-1 min-h-0">
+            <DndTacticalMapCanvas
+              tacticalState={tacticalState}
+              allCombatants={[...dndState.party, ...dndState.enemies]}
+              selectedUnitId={selectedPartyId}
+              selectedEnemyId={selectedEnemyId}
+              activeAoESpell={activeAoESpell}
+              onSelectUnit={(id) => setSelectedPartyId(id)}
+              onSelectEnemy={(id) => setSelectedEnemyId(id)}
+              onMoveUnit={handleTacticalMove}
+              onExecuteAoESpell={handleTacticalAoESpell}
+              onLogMessage={handleLogMessage}
+            />
+          </div>
 
+          {/* Quick Party Member Selector Tray */}
+          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1 shrink-0 bg-black/30 p-2 rounded-xl border border-white/10">
+            <span className="text-[0.6875rem] font-bold uppercase text-white/50 shrink-0">Actor:</span>
+            {dndState.party.map((member) => {
+              const isSelected = member.id === selectedPartyId;
+              const isDead = member.hp <= 0;
+              return (
+                <button
+                  key={member.id}
+                  type="button"
+                  onClick={() => !isDead && setSelectedPartyId(member.id)}
+                  className={cn(
+                    "flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-bold transition-all shrink-0",
+                    isSelected
+                      ? "border-cyan-400 bg-cyan-950 text-cyan-200 shadow ring-1 ring-cyan-400"
+                      : "border-white/10 bg-slate-900/60 text-white/70 hover:bg-slate-800",
+                    isDead && "opacity-40 grayscale",
+                  )}
+                >
+                  <span className="h-2 w-2 rounded-full bg-cyan-400" />
+                  <span>{member.name}</span>
+                  <span className="text-[0.625rem] text-white/50">({member.hp}/{member.maxHp})</span>
+                </button>
+              );
+            })}
+
+            <div className="h-4 w-px bg-white/10 mx-1 shrink-0" />
+
+            <span className="text-[0.6875rem] font-bold uppercase text-red-400/70 shrink-0">Target:</span>
+            {dndState.enemies.map((enemy) => {
+              const isTargeted = enemy.id === selectedEnemyId;
+              const isDead = enemy.hp <= 0;
               return (
                 <button
                   key={enemy.id}
                   type="button"
                   onClick={() => !isDead && setSelectedEnemyId(enemy.id)}
-                  disabled={isDead}
                   className={cn(
-                    "flex flex-col gap-1.5 sm:gap-2 rounded-xl border p-2.5 sm:p-3 text-left transition-all",
-                    isSelected
-                      ? "border-red-500 bg-red-950/40 shadow-lg shadow-red-900/30 ring-2 ring-red-500/50"
-                      : "border-white/10 bg-slate-900/60 hover:border-white/20",
+                    "flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-bold transition-all shrink-0",
+                    isTargeted
+                      ? "border-red-500 bg-red-950 text-red-200 shadow ring-1 ring-red-500"
+                      : "border-white/10 bg-slate-900/60 text-white/70 hover:bg-slate-800",
                     isDead && "opacity-40 grayscale",
                   )}
                 >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-lg bg-red-900/40 text-red-300 font-bold text-sm">
-                        {enemy.name.charAt(0)}
-                      </div>
-                      <div>
-                        <div className="text-xs sm:text-sm font-bold text-white leading-tight">{enemy.name}</div>
-                        <div className="text-[0.6875rem] text-white/50">{enemy.unitClass}</div>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-1 rounded-md bg-white/10 px-1.5 sm:px-2 py-0.5 text-[0.6875rem] font-bold text-amber-200">
-                      <Shield size={11} />
-                      <span>AC {enemy.ac}</span>
-                    </div>
-                  </div>
-
-                  {/* HP Bar */}
-                  <div>
-                    <div className="mb-0.5 sm:mb-1 flex justify-between text-[0.6875rem] sm:text-xs font-semibold">
-                      <span className="text-red-300">HP</span>
-                      <span className="text-white/70">
-                        {enemy.hp} / {enemy.maxHp}
-                      </span>
-                    </div>
-                    <div className="h-1.5 sm:h-2 w-full overflow-hidden rounded-full bg-black/50">
-                      <div
-                        className="h-full rounded-full bg-gradient-to-r from-red-600 to-amber-500 transition-all duration-300"
-                        style={{ width: `${hpPct}%` }}
-                      />
-                    </div>
-                  </div>
+                  <span className="h-2 w-2 rounded-full bg-red-500" />
+                  <span>{enemy.name}</span>
+                  <span className="text-[0.625rem] text-white/50">({enemy.hp}/{enemy.maxHp})</span>
                 </button>
               );
             })}
           </div>
         </div>
+      ) : (
+        <div className="flex min-h-0 flex-1 flex-col gap-3 sm:gap-4 overflow-y-auto p-3 sm:p-6 overscroll-contain">
+          {/* Enemy Cards Formation */}
+          <div>
+            <h3 className="mb-1.5 sm:mb-2 text-xs font-bold uppercase tracking-wider text-red-400/80">Enemies (Tap to Target)</h3>
+            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+              {dndState.enemies.map((enemy) => {
+                const isSelected = enemy.id === selectedEnemyId;
+                const isDead = enemy.hp <= 0;
+                const hpPct = Math.max(0, Math.min(100, Math.round((enemy.hp / enemy.maxHp) * 100)));
 
-        {/* Player & Party Cards */}
-        <div>
-          <div className="mb-1.5 sm:mb-2 flex items-center justify-between">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-cyan-400/80">Party Members</h3>
-            <span className="text-[0.6875rem] text-white/50">Tap card to edit Stats</span>
+                return (
+                  <button
+                    key={enemy.id}
+                    type="button"
+                    onClick={() => !isDead && setSelectedEnemyId(enemy.id)}
+                    disabled={isDead}
+                    className={cn(
+                      "flex flex-col gap-1.5 sm:gap-2 rounded-xl border p-2.5 sm:p-3 text-left transition-all",
+                      isSelected
+                        ? "border-red-500 bg-red-950/40 shadow-lg shadow-red-900/30 ring-2 ring-red-500/50"
+                        : "border-white/10 bg-slate-900/60 hover:border-white/20",
+                      isDead && "opacity-40 grayscale",
+                    )}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-lg bg-red-900/40 text-red-300 font-bold text-sm">
+                          {enemy.name.charAt(0)}
+                        </div>
+                        <div>
+                          <div className="text-xs sm:text-sm font-bold text-white leading-tight">{enemy.name}</div>
+                          <div className="text-[0.6875rem] text-white/50">{enemy.unitClass}</div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1 rounded-md bg-white/10 px-1.5 sm:px-2 py-0.5 text-[0.6875rem] font-bold text-amber-200">
+                        <Shield size={11} />
+                        <span>AC {enemy.ac}</span>
+                      </div>
+                    </div>
+
+                    {/* HP Bar */}
+                    <div>
+                      <div className="mb-0.5 sm:mb-1 flex justify-between text-[0.6875rem] sm:text-xs font-semibold">
+                        <span className="text-red-300">HP</span>
+                        <span className="text-white/70">
+                          {enemy.hp} / {enemy.maxHp}
+                        </span>
+                      </div>
+                      <div className="h-1.5 sm:h-2 w-full overflow-hidden rounded-full bg-black/50">
+                        <div
+                          className="h-full rounded-full bg-gradient-to-r from-red-600 to-amber-500 transition-all duration-300"
+                          style={{ width: `${hpPct}%` }}
+                        />
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
-            {dndState.party.map((member, i) => {
-              const isDead = member.hp <= 0;
-              const hpPct = Math.max(0, Math.min(100, Math.round((member.hp / member.maxHp) * 100)));
-              const castingKey = primaryCastingStat(member.unitClass);
-              const mainMod = abilityModifier(member.stats[castingKey]);
+          {/* Player & Party Cards */}
+          <div>
+            <div className="mb-1.5 sm:mb-2 flex items-center justify-between">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-cyan-400/80">Party Members</h3>
+              <span className="text-[0.6875rem] text-white/50">Tap card to select Actor / edit Stats</span>
+            </div>
 
-              return (
-                <div
-                  key={member.id}
-                  onClick={() => setEditingCombatantId(member.id)}
-                  className={cn(
-                    "group relative flex cursor-pointer flex-col gap-1.5 sm:gap-2 rounded-xl border border-cyan-500/30 bg-cyan-950/30 p-2.5 sm:p-3.5 transition-all hover:border-cyan-400/60 hover:bg-cyan-950/50",
-                    isDead && "opacity-40 grayscale",
-                  )}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className="flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-lg bg-cyan-900/50 text-cyan-200 font-bold border border-cyan-500/30 text-sm sm:text-base">
-                        {member.name.charAt(0)}
+            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+              {dndState.party.map((member, i) => {
+                const isDead = member.hp <= 0;
+                const isSelectedActor = member.id === selectedPartyId;
+                const hpPct = Math.max(0, Math.min(100, Math.round((member.hp / member.maxHp) * 100)));
+                const castingKey = primaryCastingStat(member.unitClass);
+                const mainMod = abilityModifier(member.stats[castingKey]);
+
+                return (
+                  <div
+                    key={member.id}
+                    onClick={() => setSelectedPartyId(member.id)}
+                    className={cn(
+                      "group relative flex cursor-pointer flex-col gap-1.5 sm:gap-2 rounded-xl border p-2.5 sm:p-3.5 transition-all",
+                      isSelectedActor
+                        ? "border-cyan-400 bg-cyan-950/60 shadow-lg shadow-cyan-900/40 ring-2 ring-cyan-400"
+                        : "border-cyan-500/30 bg-cyan-950/30 hover:border-cyan-400/60 hover:bg-cyan-950/50",
+                      isDead && "opacity-40 grayscale",
+                    )}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-lg bg-cyan-900/50 text-cyan-200 font-bold border border-cyan-500/30 text-sm sm:text-base">
+                          {member.name.charAt(0)}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs sm:text-sm font-bold text-white group-hover:text-cyan-200">{member.name}</span>
+                            {i === 0 && <span className="rounded bg-cyan-500/20 px-1 text-[0.5625rem] font-bold text-cyan-300">YOU</span>}
+                          </div>
+                          <div className="text-[0.6875rem] text-cyan-300/70 font-semibold">
+                            Lvl {member.level} {member.unitClass}
+                          </div>
+                        </div>
                       </div>
-                      <div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-xs sm:text-sm font-bold text-white group-hover:text-cyan-200">{member.name}</span>
-                          {i === 0 && <span className="rounded bg-cyan-500/20 px-1 text-[0.5625rem] font-bold text-cyan-300">YOU</span>}
+
+                      <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-1 rounded-md bg-cyan-900/40 px-1.5 sm:px-2 py-0.5 text-[0.6875rem] font-bold text-cyan-200 border border-cyan-500/30">
+                          <Shield size={11} />
+                          <span>AC {member.ac}</span>
                         </div>
-                        <div className="text-[0.6875rem] text-cyan-300/70 font-semibold">
-                          Lvl {member.level} {member.unitClass}
-                        </div>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingCombatantId(member.id);
+                          }}
+                          className="p-1 rounded hover:bg-white/10"
+                        >
+                          <Settings2 size={14} className="text-white/40 hover:text-white/90" />
+                        </button>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-1.5">
-                      <div className="flex items-center gap-1 rounded-md bg-cyan-900/40 px-1.5 sm:px-2 py-0.5 text-[0.6875rem] font-bold text-cyan-200 border border-cyan-500/30">
-                        <Shield size={11} />
-                        <span>AC {member.ac}</span>
-                      </div>
-                      <Settings2 size={14} className="text-white/40 group-hover:text-white/90" />
-                    </div>
-                  </div>
-
-                  {/* Stats Pill Row */}
-                  <div className="flex flex-wrap items-center gap-1 text-[0.5625rem] sm:text-[0.625rem] font-bold text-white/70">
-                    <span className="rounded bg-black/40 px-1 py-0.5">STR {member.stats.str}</span>
-                    <span className="rounded bg-black/40 px-1 py-0.5">DEX {member.stats.dex}</span>
-                    <span className="rounded bg-black/40 px-1 py-0.5">CON {member.stats.con}</span>
-                    <span className="rounded bg-black/40 px-1 py-0.5">INT {member.stats.int}</span>
-                    <span className="rounded bg-black/40 px-1 py-0.5">WIS {member.stats.wis}</span>
-                    <span className="rounded bg-cyan-900/60 text-cyan-200 px-1 py-0.5">
-                      CHA {member.stats.cha} ({formatModifier(mainMod)})
-                    </span>
-                  </div>
-
-                  {/* HP Bar */}
-                  <div>
-                    <div className="mb-0.5 sm:mb-1 flex justify-between text-[0.6875rem] sm:text-xs font-semibold">
-                      <span className="text-cyan-300">HP</span>
-                      <span className="text-white/70">
-                        {member.hp} / {member.maxHp}
+                    {/* Stats Pill Row */}
+                    <div className="flex flex-wrap items-center gap-1 text-[0.5625rem] sm:text-[0.625rem] font-bold text-white/70">
+                      <span className="rounded bg-black/40 px-1 py-0.5">STR {member.stats.str}</span>
+                      <span className="rounded bg-black/40 px-1 py-0.5">DEX {member.stats.dex}</span>
+                      <span className="rounded bg-black/40 px-1 py-0.5">CON {member.stats.con}</span>
+                      <span className="rounded bg-black/40 px-1 py-0.5">INT {member.stats.int}</span>
+                      <span className="rounded bg-black/40 px-1 py-0.5">WIS {member.stats.wis}</span>
+                      <span className="rounded bg-cyan-900/60 text-cyan-200 px-1 py-0.5">
+                        CHA {member.stats.cha} ({formatModifier(mainMod)})
                       </span>
                     </div>
-                    <div className="h-1.5 sm:h-2 w-full overflow-hidden rounded-full bg-black/50">
-                      <div
-                        className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-cyan-400 transition-all duration-300"
-                        style={{ width: `${hpPct}%` }}
-                      />
+
+                    {/* HP Bar */}
+                    <div>
+                      <div className="mb-0.5 sm:mb-1 flex justify-between text-[0.6875rem] sm:text-xs font-semibold">
+                        <span className="text-cyan-300">HP</span>
+                        <span className="text-white/70">
+                          {member.hp} / {member.maxHp}
+                        </span>
+                      </div>
+                      <div className="h-1.5 sm:h-2 w-full overflow-hidden rounded-full bg-black/50">
+                        <div
+                          className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-cyan-400 transition-all duration-300"
+                          style={{ width: `${hpPct}%` }}
+                        />
+                      </div>
                     </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
-        </div>
 
-        {/* ── Combat Feed ── */}
-        <div className="flex-1 rounded-xl border border-white/10 bg-black/40 p-2.5 sm:p-3.5">
-          <div className="mb-1.5 text-xs font-bold uppercase tracking-wider text-white/50">D&D Combat Feed</div>
-          <div className="max-h-32 sm:max-h-40 space-y-1 overflow-y-auto pr-1 text-[0.6875rem] sm:text-xs overscroll-contain">
-            {dndState.log.slice(-8).map((entry) => (
-              <div key={entry.id} className="rounded bg-white/5 p-1.5 sm:p-2 font-mono leading-relaxed">
-                <span className="font-bold text-amber-300">[{entry.turnActor}]</span> {entry.text}
-              </div>
-            ))}
+          {/* ── Combat Feed ── */}
+          <div className="flex-1 rounded-xl border border-white/10 bg-black/40 p-2.5 sm:p-3.5">
+            <div className="mb-1.5 text-xs font-bold uppercase tracking-wider text-white/50">D&D Combat Feed</div>
+            <div className="max-h-32 sm:max-h-40 space-y-1 overflow-y-auto pr-1 text-[0.6875rem] sm:text-xs overscroll-contain">
+              {dndState.log.slice(-8).map((entry) => (
+                <div key={entry.id} className="rounded bg-white/5 p-1.5 sm:p-2 font-mono leading-relaxed">
+                  <span className="font-bold text-amber-300">[{entry.turnActor}]</span> {entry.text}
+                </div>
+              ))}
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* ── Action Control Deck ── */}
       <div className="border-t border-white/10 bg-slate-900/98 p-2.5 sm:p-4 shrink-0 shadow-2xl">
@@ -612,7 +845,9 @@ export function DndCombatUI({
         <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           {/* Roll Modifiers */}
           <div className="flex items-center gap-1 overflow-x-auto no-scrollbar py-0.5">
-            <span className="text-[0.6875rem] font-bold uppercase text-white/50 mr-1 shrink-0">Roll:</span>
+            <span className="text-[0.6875rem] font-bold uppercase text-white/50 mr-1 shrink-0">
+              {activeActor?.name}:
+            </span>
             <button
               type="button"
               onClick={() => setAdvantageState((prev) => (prev === "advantage" ? "none" : "advantage"))}
@@ -683,7 +918,7 @@ export function DndCombatUI({
                   spellTab === "class" ? "bg-cyan-500 text-slate-950 shadow" : "text-white/60 hover:text-white",
                 )}
               >
-                Class
+                {activeActor?.unitClass || "Class"}
               </button>
               <button
                 type="button"
@@ -744,7 +979,8 @@ export function DndCombatUI({
           {/* Dynamic Spells and Cantrips */}
           {visibleSpells.map((spell) => {
             const isCantrip = spell.level === 0;
-            const diceScaling = isCantrip ? `${cantripScaling(playerLevel)}${spell.damageDie || "d10"}` : `${spell.diceCount || 8}${spell.damageDie || "d6"}`;
+            const diceScaling = isCantrip ? `${cantripScaling(actorLevel)}${spell.damageDie || "d10"}` : `${spell.diceCount || 8}${spell.damageDie || "d6"}`;
+            const isAoE = spell.id === "fireball" || spell.id === "synaptic_static" || spell.id === "cone_of_cold" || spell.id === "lightning_bolt";
 
             return (
               <button
@@ -757,11 +993,20 @@ export function DndCombatUI({
                     cantripId: spell.id,
                   })
                 }
-                className="flex flex-col items-center justify-center gap-0.5 sm:gap-1 rounded-xl border border-cyan-500/30 bg-cyan-950/40 p-2 sm:p-2.5 font-bold text-cyan-200 transition-all hover:border-cyan-400 hover:bg-cyan-900/50 active:scale-95 text-center min-h-[3.25rem]"
+                className={cn(
+                  "flex flex-col items-center justify-center gap-0.5 sm:gap-1 rounded-xl border p-2 sm:p-2.5 font-bold transition-all active:scale-95 text-center min-h-[3.25rem]",
+                  activeAoESpell?.id === spell.id
+                    ? "border-orange-400 bg-orange-950 text-orange-200 shadow-lg shadow-orange-900/50 ring-2 ring-orange-400"
+                    : isAoE
+                      ? "border-orange-500/40 bg-orange-950/30 text-orange-200 hover:border-orange-400 hover:bg-orange-900/40"
+                      : "border-cyan-500/30 bg-cyan-950/40 text-cyan-200 hover:border-cyan-400 hover:bg-cyan-900/50",
+                )}
                 title={spell.description}
               >
                 {getSpellIcon(spell)}
-                <span className="text-[0.6875rem] sm:text-xs truncate w-full px-0.5 leading-tight">{spell.name}</span>
+                <span className="text-[0.6875rem] sm:text-xs truncate w-full px-0.5 leading-tight">
+                  {spell.name} {isAoE ? "💥" : ""}
+                </span>
                 <span className="text-[0.5625rem] sm:text-[0.625rem] text-cyan-300/70 leading-none">
                   {spell.type === "save" ? `DC ${spellDc} ${spell.saveStat?.toUpperCase()} Save` : diceScaling}
                 </span>
@@ -809,7 +1054,6 @@ export function DndCombatUI({
                   </span>
                 </div>
 
-                {/* Freeform input */}
                 <input
                   type="text"
                   value={editingCombatant.unitClass}
@@ -818,7 +1062,6 @@ export function DndCombatUI({
                   className="mb-2 w-full rounded-lg border border-white/10 bg-slate-950 px-2.5 py-1 sm:py-1.5 text-xs sm:text-sm font-bold text-white outline-none focus:border-cyan-400"
                 />
 
-                {/* Quick select pills */}
                 <div className="flex flex-wrap gap-1">
                   {CLASS_OPTIONS.map((cls) => {
                     const isSelected = editingCombatant.unitClass.toLowerCase() === cls.name.toLowerCase();
