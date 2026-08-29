@@ -455,7 +455,19 @@ export function DndCombatUI({
       ...prev,
       party: prev.party.map((c) => {
         if (c.id !== id) return c;
-        if (field === "unitClass") return { ...c, unitClass: String(value).trim() || "Adventurer" };
+        if (field === "unitClass") {
+          const newClass = String(value).trim() || "Adventurer";
+          const newPrimary = primaryCastingStat(newClass);
+          const oldPrimary = primaryCastingStat(c.unitClass);
+          const stats = { ...c.stats };
+          // If changing class to one with a different primary stat, adapt highest stat
+          if (newPrimary !== oldPrimary && stats[newPrimary] < stats[oldPrimary]) {
+            const temp = stats[newPrimary];
+            stats[newPrimary] = stats[oldPrimary];
+            stats[oldPrimary] = temp;
+          }
+          return { ...c, unitClass: newClass, stats };
+        }
         if (field === "level") return { ...c, level: Math.max(1, Math.min(20, Number(value) || 1)) };
         if (field === "ac") return { ...c, ac: Math.max(1, Number(value) || 10) };
         if (field === "maxHp") return { ...c, maxHp: Math.max(1, Number(value) || 10), hp: Math.min(c.hp, Number(value) || 10) };
@@ -540,16 +552,16 @@ export function DndCombatUI({
   return (
     <div className="relative flex h-full w-full flex-col overflow-hidden bg-slate-950/90 text-white backdrop-blur-md">
       {/* ── Top Header ── */}
-      <div className="flex items-center justify-between border-b border-white/10 bg-black/40 px-3 sm:px-4 py-2 sm:py-2.5">
-        <div className="flex items-center gap-2 sm:gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 bg-black/50 px-3 sm:px-4 py-2 sm:py-2.5 pr-28 sm:pr-36">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
           <div className="flex items-center gap-1.5 rounded-lg bg-amber-500/20 px-2 sm:px-2.5 py-1 text-xs font-bold text-amber-300">
             <Sword size={14} />
-            <span>D&D 5.5e Combat</span>
+            <span>D&D 5.5e</span>
           </div>
           <span className="text-xs font-semibold text-white/60">Round {dndState.round}</span>
 
           {/* View Mode Toggle: Tactical Grid vs Tabletop Cards */}
-          <div className="flex items-center gap-1 rounded-lg bg-black/60 p-0.5 border border-white/10 ml-2">
+          <div className="flex items-center gap-1 rounded-lg bg-black/60 p-0.5 border border-white/10">
             <button
               type="button"
               onClick={() => setViewMode("tactical")}
@@ -573,27 +585,28 @@ export function DndCombatUI({
               <span>Cards</span>
             </button>
           </div>
-        </div>
 
-        <div className="flex items-center gap-1.5 sm:gap-2">
-          <button
-            type="button"
-            onClick={handleRestart}
-            className="flex items-center gap-1 rounded-lg border border-white/15 bg-white/5 px-2 sm:px-2.5 py-1 text-xs font-semibold text-white/70 hover:bg-white/10"
-            title="Restart Battle"
-          >
-            <RotateCcw size={13} />
-            <span className="hidden sm:inline">Restart</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setFleeConfirm(true)}
-            className="flex items-center gap-1 rounded-lg border border-red-500/30 bg-red-500/10 px-2 sm:px-2.5 py-1 text-xs font-semibold text-red-300 hover:bg-red-500/20"
-            title="Flee Battle"
-          >
-            <Flag size={13} />
-            <span className="hidden sm:inline">Flee</span>
-          </button>
+          {/* Restart & Flee Buttons Inlined in Header Flow */}
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={handleRestart}
+              className="flex items-center gap-1 rounded-lg border border-white/15 bg-white/5 px-2 py-0.5 text-xs font-semibold text-white/70 hover:bg-white/10"
+              title="Restart Battle"
+            >
+              <RotateCcw size={13} />
+              <span className="hidden md:inline">Restart</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setFleeConfirm(true)}
+              className="flex items-center gap-1 rounded-lg border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-xs font-semibold text-red-300 hover:bg-red-500/20"
+              title="Flee Battle"
+            >
+              <Flag size={13} />
+              <span className="hidden md:inline">Flee</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -800,7 +813,7 @@ export function DndCombatUI({
                       <span className="rounded bg-black/40 px-1 py-0.5">INT {member.stats.int}</span>
                       <span className="rounded bg-black/40 px-1 py-0.5">WIS {member.stats.wis}</span>
                       <span className="rounded bg-cyan-900/60 text-cyan-200 px-1 py-0.5">
-                        CHA {member.stats.cha} ({formatModifier(mainMod)})
+                        {castingKey.toUpperCase()} {member.stats[castingKey]} ({formatModifier(mainMod)})
                       </span>
                     </div>
 
