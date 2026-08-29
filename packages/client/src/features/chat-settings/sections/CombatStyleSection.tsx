@@ -52,6 +52,9 @@ export function CombatStyleSection({
               {localizeUi("ui.chatSettings.combatstylesection.classicCinematicMenuBattles")}
             </option>
             <option value="tactical">{localizeUi("game.combat.preference.tacticalLabel")}</option>
+            <option value="dnd5e">
+              {localizeUi("ui.chatSettings.combatstylesection.dD55eD20TabletopSpellDcCantrips")}
+            </option>
           </select>
         </label>
         {/* A ruleset's own fights roll initiative by its own rules, so the choice is for Tactical battles. */}
