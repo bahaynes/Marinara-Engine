@@ -1772,6 +1772,23 @@ export function GameSetupWizard({
                             {localizeUi("ui.game.gamesetupwizard.fireEmblemStyleGridBattlesMovementTerrainForecasts")}
                           </div>
                         </button>
+                        <button
+                          onClick={() => setCombatStyle("dnd5e")}
+                          aria-pressed={combatStyle === "dnd5e"}
+                          className={cn(
+                            "flex-1 rounded-lg p-3 text-left text-xs transition-colors ring-1",
+                            combatStyle === "dnd5e"
+                              ? "bg-[var(--primary)]/10 ring-[var(--primary)]/40"
+                              : "bg-[var(--secondary)] ring-[var(--border)] hover:ring-[var(--primary)]/20",
+                          )}
+                        >
+                          <div className="font-medium text-[var(--foreground)]">
+                            D&D 5.5e Tabletop
+                          </div>
+                          <div className="mt-1 text-[var(--muted-foreground)]">
+                            d20 tests, Spell DCs, Cantrip scaling & Advantage
+                          </div>
+                        </button>
                       </div>
                     </div>
 

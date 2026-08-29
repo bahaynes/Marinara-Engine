@@ -219,7 +219,12 @@ function parseShareConfig(value: unknown): GameSetupConfig {
     }
   }
 
-  if (value.combatStyle !== undefined && value.combatStyle !== "classic" && value.combatStyle !== "tactical") {
+  if (
+    value.combatStyle !== undefined &&
+    value.combatStyle !== "classic" &&
+    value.combatStyle !== "tactical" &&
+    value.combatStyle !== "dnd5e"
+  ) {
     throw new Error("This file has an invalid combat style.");
   }
   if (

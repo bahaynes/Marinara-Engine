@@ -152,3 +152,5 @@ export * from "./utils/noodle-interactions.js";
 export * from "./utils/noodle-unseen.js";
 export * from "./utils/spatial-context.js";
 export * from "./utils/inventory-tracker-rows.js";
+export * from "./features/dnd-combat/index.js";
+
