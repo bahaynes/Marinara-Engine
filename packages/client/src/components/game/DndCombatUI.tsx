@@ -50,6 +50,7 @@ import {
   rogueSneakAttackDice,
   resolveFullCombatRound,
   initializeTacticalState,
+  resolveTacticalCombatRound,
 } from "@marinara-engine/shared";
 import { DndTacticalMapCanvas } from "./DndTacticalMapCanvas.js";
 
@@ -337,46 +338,60 @@ export function DndCombatUI({
   // ── Handle Tactical AoE Spell Resolution ──
   const handleTacticalAoESpell = useCallback(
     (resolution: DndAoEResolution) => {
-      // Apply damage to party & enemies
+      // 1. Apply AoE damage to party & enemies
       const damageMap: Record<string, number> = {};
       for (const t of resolution.targets) {
         damageMap[t.combatantId] = t.damageDealt;
       }
 
-      setDndState((prev) => {
-        const nextParty = prev.party.map((p) => {
-          const dmg = damageMap[p.id] || 0;
-          return dmg > 0 ? { ...p, hp: Math.max(0, p.hp - dmg) } : p;
-        });
-
-        const nextEnemies = prev.enemies.map((e) => {
-          const dmg = damageMap[e.id] || 0;
-          return dmg > 0 ? { ...e, hp: Math.max(0, e.hp - dmg) } : e;
-        });
-
-        const allEnemiesDead = nextEnemies.every((e) => e.hp <= 0);
-        const allPartyDead = nextParty.every((p) => p.hp <= 0);
-
-        return {
-          ...prev,
-          party: nextParty,
-          enemies: nextEnemies,
-          outcome: allEnemiesDead ? "victory" : allPartyDead ? "defeat" : null,
-          log: [
-            ...prev.log,
-            {
-              id: `aoe-${Date.now()}`,
-              round: prev.round,
-              turnActor: resolution.casterName,
-              text: resolution.logText,
-            },
-          ],
-        };
+      const midParty = dndState.party.map((p) => {
+        const dmg = damageMap[p.id] || 0;
+        return dmg > 0 ? { ...p, hp: Math.max(0, p.hp - dmg) } : p;
       });
 
+      const midEnemies = dndState.enemies.map((e) => {
+        const dmg = damageMap[e.id] || 0;
+        return dmg > 0 ? { ...e, hp: Math.max(0, e.hp - dmg) } : e;
+      });
+
+      const allEnemiesDead = midEnemies.every((e) => e.hp <= 0);
+      const allPartyDead = midParty.every((p) => p.hp <= 0);
+
+      const midState: DndCombatState = {
+        ...dndState,
+        party: midParty,
+        enemies: midEnemies,
+        outcome: allEnemiesDead ? "victory" : allPartyDead ? "defeat" : null,
+        log: [
+          ...dndState.log,
+          {
+            id: `aoe-${Date.now()}`,
+            round: dndState.round,
+            turnActor: resolution.casterName,
+            text: resolution.logText,
+          },
+        ],
+      };
+
+      if (midState.outcome) {
+        setDndState(midState);
+        setActiveAoESpell(null);
+        return;
+      }
+
+      // 2. Run remaining allies & enemies AI turns in the tactical round
+      const { nextDndState, nextTacticalState } = resolveTacticalCombatRound(
+        midState,
+        tacticalState,
+        // Active caster already acted
+        { type: "spell", actorId: activeActor.id, targetId: resolution.targets[0]?.combatantId || "" },
+      );
+
+      setDndState(nextDndState);
+      setTacticalState(nextTacticalState);
       setActiveAoESpell(null);
     },
-    [],
+    [dndState, tacticalState, activeActor.id],
   );
 
   // ── Add Log Message ──
@@ -423,19 +438,19 @@ export function DndCombatUI({
           useDivineSmite: smiteEnabled,
         };
 
-        const { nextState: updatedState } = resolveFullCombatRound(dndState, fullRequest);
-        setDndState(updatedState);
-
-        // Reset tactical movement budget for next round
-        setTacticalState((prev) => {
-          const nextUnits = { ...prev.units };
-          for (const [id, unit] of Object.entries(nextUnits)) {
-            const combatant = dndState.party.find((p) => p.id === id) || dndState.enemies.find((e) => e.id === id);
-            const speed = combatant && /wizard|sorcerer/i.test(combatant.unitClass) && combatant.level >= 10 ? 40 : 30;
-            nextUnits[id] = { ...unit, movementRemainingFt: speed, actionsRemaining: 1, reactionAvailable: true };
-          }
-          return { ...prev, units: nextUnits };
-        });
+        if (viewMode === "tactical") {
+          // Autonomous Tactical Grid AI for allies and enemy monsters
+          const { nextDndState, nextTacticalState } = resolveTacticalCombatRound(
+            dndState,
+            tacticalState,
+            fullRequest,
+          );
+          setDndState(nextDndState);
+          setTacticalState(nextTacticalState);
+        } else {
+          const { nextState: updatedState } = resolveFullCombatRound(dndState, fullRequest);
+          setDndState(updatedState);
+        }
 
         // Reset turn-specific toggles
         setAdvantageState("none");
@@ -446,7 +461,7 @@ export function DndCombatUI({
         console.error("Combat action error:", err);
       }
     },
-    [activeActor, dndState, targetEnemy, advantageState, sneakAttackEnabled, smiteEnabled, viewMode],
+    [activeActor, dndState, targetEnemy, advantageState, sneakAttackEnabled, smiteEnabled, viewMode, tacticalState],
   );
 
   // ── Quick Stat / Level / Class Updates ──
