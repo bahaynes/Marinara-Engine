@@ -1592,6 +1592,11 @@ const TacticalCombatUI = lazy(async () => {
   return { default: module.TacticalCombatUI };
 });
 
+const DndCombatUI = lazy(async () => {
+  const module = await import("./DndCombatUI");
+  return { default: module.DndCombatUI };
+});
+
 const StoryboardBackgroundControls = lazy(async () => {
   const module = await import("./StoryboardBackgroundControls");
   return { default: module.StoryboardBackgroundControls };
@@ -1602,6 +1607,7 @@ import type {
   Chat,
   SessionSummary,
   Combatant,
+  DndCombatant,
   Message,
   GameCombatStateSnapshot,
   GameCombatStyle,
@@ -9941,6 +9947,60 @@ function GameSurfaceComponent({
     partyCards,
   ]);
 
+  const handleSaveCombatantDndStats = useCallback(
+    async (combatant: DndCombatant) => {
+      if (!activeChatId) return;
+      const normalizedTitle = combatant.name.trim();
+      if (!normalizedTitle) return;
+
+      const currentCards = Array.isArray(chatMeta.gameCharacterCards)
+        ? (chatMeta.gameCharacterCards as Array<Record<string, unknown>>)
+        : [];
+      const currentIndex = currentCards.findIndex(
+        (entry) => typeof entry.name === "string" && entry.name.toLowerCase() === normalizedTitle.toLowerCase(),
+      );
+
+      const existingCard = currentIndex >= 0 ? currentCards[currentIndex] : {};
+      const updatedCard = {
+        ...existingCard,
+        name: normalizedTitle,
+        class: combatant.unitClass,
+        level: combatant.level,
+        rpgStats: {
+          attributes: [
+            { name: "STR", value: combatant.stats.str },
+            { name: "DEX", value: combatant.stats.dex },
+            { name: "CON", value: combatant.stats.con },
+            { name: "INT", value: combatant.stats.int },
+            { name: "WIS", value: combatant.stats.wis },
+            { name: "CHA", value: combatant.stats.cha },
+            { name: "AC", value: combatant.ac },
+            { name: "Level", value: combatant.level },
+          ],
+          hp: {
+            value: combatant.hp,
+            max: combatant.maxHp,
+          },
+        },
+      };
+
+      const updatedCards = [...currentCards];
+      if (currentIndex >= 0) {
+        updatedCards[currentIndex] = updatedCard;
+      } else {
+        updatedCards.push(updatedCard);
+      }
+
+      try {
+        await updateChatMetadata.mutateAsync({ id: activeChatId, gameCharacterCards: updatedCards });
+        toast.success(localizeUi("ui.game.gamesurfacecomponent.value1SheetUpdated", { value1: normalizedTitle }));
+      } catch (error) {
+        console.warn("Failed to persist D&D combatant sheet", error);
+      }
+    },
+    [activeChatId, chatMeta.gameCharacterCards, updateChatMetadata, localizeUi],
+  );
+
   // Keep the last settled transcript visible until generation and its scene/agent
   // pipeline are finished. Query refreshes may expose the durable assistant row
   // before those later stages settle, which otherwise previews the next segment.
@@ -12712,6 +12772,7 @@ function GameSurfaceComponent({
                 <div
                   className={cn(
                     "pointer-events-auto absolute left-3 right-14 z-20 flex min-w-0 items-start gap-2 md:right-auto",
+                    combatUiActive && "hidden",
                     tacticalCombatActive ? "top-14" : topOverlayOffsetClass,
                     replayActive && "hidden",
                     // The package draws its own header and party bar, so the built-in ones would collide.
@@ -13053,7 +13114,21 @@ function GameSurfaceComponent({
                             </div>
                           }
                         >
-                          {combatSetupConfig?.combatDirector && combatStartMessageId ? (
+                          {effectiveCombatStyle === "dnd5e" ? (
+                            <DndCombatUI
+                              key={`${activeChatId}-${combatParty?.map((p) => p.id).join(",") || "empty"}-${combatEnemies?.map((e) => e.id).join(",") || "empty"}`}
+                              chatId={activeChatId}
+                              party={combatParty}
+                              enemies={combatEnemies}
+                              gameCharacterCards={
+                                Array.isArray(chatMeta.gameCharacterCards) ? (chatMeta.gameCharacterCards as any[]) : []
+                              }
+                              difficulty={(combatSetupConfig?.difficulty as string | undefined) ?? "normal"}
+                              onCombatEnd={handleCombatEnd}
+                              onCustomInstruction={handleCombatCustomInstruction}
+                              onSaveCharacterStats={handleSaveCombatantDndStats}
+                            />
+                          ) : combatSetupConfig?.combatDirector && combatStartMessageId ? (
                             <DirectedCombatUI
                               key={`${activeChatId}:${combatStartMessageId}`}
                               chatId={activeChatId}
