@@ -1758,7 +1758,7 @@ const gameSetupConfigSchema = z.object({
   setting: z.string().min(1),
   tone: z.string().min(1).max(200),
   difficulty: z.string().min(1).max(100),
-  combatStyle: z.enum(["classic", "tactical"]).optional(),
+  combatStyle: z.enum(["classic", "tactical", "dnd5e"]).optional(),
   spatialMapInstructions: z.string().max(4000).optional(),
   gameWorldMapMode: z.enum(["standard", "hierarchical"]).optional(),
   spatialMapDraftSize: z.enum(["small", "medium", "large"]).optional(),

@@ -16,8 +16,9 @@ export type GameGmMode = "standalone" | "character";
  * Combat presentation preference for Game Mode.
  * - `classic`: existing cinematic JRPG menu combat (GameCombatUI + combat.service).
  * - `tactical`: Fire Emblem / FFT style grid battle (tactical-combat feature engine).
+ * - `dnd5e`: D&D 5.5e d20 tabletop combat engine (d20 tests, spell DC, cantrip scaling).
  */
-export type GameCombatStyle = "classic" | "tactical";
+export type GameCombatStyle = "classic" | "tactical" | "dnd5e";
 
 /** Status of a game session. */
 export type GameSessionStatus = "setup" | "active" | "concluded";

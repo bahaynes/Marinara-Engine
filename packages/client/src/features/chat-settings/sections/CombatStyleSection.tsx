@@ -36,6 +36,9 @@ export function CombatStyleSection({ style, combatStyle, onCombatStyleChange }: 
             <option value="tactical">
               {localizeUi("ui.chatSettings.combatstylesection.tacticalFireEmblemStyleGridBattles")}
             </option>
+            <option value="dnd5e">
+              D&D 5.5e (d20 Tabletop, Spell DC & Cantrips)
+            </option>
           </select>
         </label>
         <p className="text-[0.575rem] leading-relaxed text-[var(--muted-foreground)]">
