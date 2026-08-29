@@ -2003,6 +2003,23 @@ export function GameSetupWizard({
                             {localizeUi("game.combat.preference.tacticalDescription")}
                           </div>
                         </button>
+                        <button
+                          onClick={() => setCombatStyle("dnd5e")}
+                          aria-pressed={combatStyle === "dnd5e"}
+                          className={cn(
+                            "flex-1 rounded-lg p-3 text-left text-xs transition-colors ring-1",
+                            combatStyle === "dnd5e"
+                              ? "bg-[var(--primary)]/10 ring-[var(--primary)]/40"
+                              : "bg-[var(--secondary)] ring-[var(--border)] hover:ring-[var(--primary)]/20",
+                          )}
+                        >
+                          <div className="font-medium text-[var(--foreground)]">
+                            {localizeUi("ui.game.gamesetupwizard.dD55eTabletop")}
+                          </div>
+                          <div className="mt-1 text-[var(--muted-foreground)]">
+                            {localizeUi("ui.game.gamesetupwizard.d20TestsSpellDcsCantripScalingAdvantage")}
+                          </div>
+                        </button>
                       </div>
                       <label className="mt-3 flex cursor-pointer items-start gap-3 rounded-lg border border-[var(--border)] p-3 text-sm text-[var(--foreground)]">
                         <input
