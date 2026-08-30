@@ -117,6 +117,18 @@ function buildLibraryCardParts(data: any, fallbackName = "Unknown"): { name: str
   return { name, parts };
 }
 
+function buildPartyCompanionCardParts(data: any, fallbackName = "Unknown"): { name: string; parts: string[] } {
+  const name = data.name || fallbackName;
+  const parts = [`Name: ${name}`];
+  const description = cardPromptText(data.description);
+  const personality = cardPromptText(data.personality);
+  const appearance = cardPromptText(data.extensions?.appearance || data.appearance);
+  if (description) parts.push(`Description: ${description}`);
+  if (personality) parts.push(`Personality: ${personality}`);
+  if (appearance) parts.push(`Appearance: ${appearance}`);
+  return { name, parts };
+}
+
 export async function injectGameGmPromptRuntime(args: {
   messages: PromptMessage[];
   chatId: string;
@@ -190,7 +202,7 @@ export async function injectGameGmPromptRuntime(args: {
       const pc = await args.chars.getById(pcId);
       if (pc) {
         const pcData = parseMaybeJson(pc.data) as any;
-        const { name, parts } = buildLibraryCardParts(pcData);
+        const { name, parts } = buildPartyCompanionCardParts(pcData);
         partyNames.push(name);
         partyIdNamePairs.push({ id: pcId, name });
         appendGameCardDetails(parts, gameCardByName.get(normalizeTextForMatch(name)));
@@ -351,6 +363,8 @@ export async function injectGameGmPromptRuntime(args: {
     })(),
     characterSprites: listPartySprites(partyIdNamePairs),
     language: (setupConfig?.language as string) || undefined,
+    sessionHistoryMode:
+      (args.chatMetadata.gameSessionHistoryMode as "tiered" | "full" | "compact" | "disabled") || "tiered",
     gameSystemPrompt: resolveGameGmPromptTemplate(args.chatMetadata, setupConfig),
     gameSpecialInstructions:
       typeof args.chatMetadata.gameSpecialInstructions === "string"

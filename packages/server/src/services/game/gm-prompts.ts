@@ -73,6 +73,8 @@ export interface GmPromptContext {
   playerInventory?: Array<{ name: string; quantity: number }>;
   /** Language for all narration and dialogue */
   language?: string;
+  /** Session history fidelity mode for previous session summaries. */
+  sessionHistoryMode?: "tiered" | "full" | "compact" | "disabled" | null;
   /** User-overridable GM instruction body. Wrapped in <instructions> before sending. */
   gameSystemPrompt?: string | null;
   gameSpecialInstructions?: string | null;
@@ -197,18 +199,98 @@ function normalizePromptLanguage(language?: string | null): string | null {
   return PROMPT_LANGUAGE_LOOKUP.get(trimmed.toLowerCase()) ?? trimmed;
 }
 
-function buildSessionHistoryLines(summaries: SessionSummary[]): string[] {
-  const lines: string[] = [];
+function compactMediumSessionSummary(summary: string): string {
+  const paragraphs = summary.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
+  if (paragraphs.length <= 2) return summary;
+  return paragraphs.slice(0, 2).join("\n\n");
+}
 
-  for (const [index, summary] of summaries.entries()) {
+function extractOneLineSessionRecap(summary: string): string {
+  const clean = summary.replace(/\n+/g, " ").trim();
+  if (!clean) return "Session concluded.";
+  const firstSentence = clean.split(/(?<=[.!?])\s+/)[0]?.trim() ?? clean;
+  return firstSentence.length > 180 ? `${firstSentence.slice(0, 177)}...` : firstSentence;
+}
+
+function extractSessionKeywords(summary: SessionSummary): string {
+  const candidates = [
+    ...summary.keyDiscoveries.map((d) => d.split(/[:;,—]/)[0]?.trim() || d),
+    ...summary.npcUpdates.map((u) => u.split(/[:;,—]/)[0]?.trim() || u),
+  ].filter(Boolean);
+  const deduped = Array.from(new Set(candidates)).slice(0, 6);
+  return deduped.join(", ");
+}
+
+/**
+ * Tiered sliding window for previous session summaries to keep prompt context bounded:
+ * - High fidelity (last 2 completed sessions): Full narrative summary.
+ * - Medium fidelity (prior 3 completed sessions, i.e. 3 to 5 sessions back): First 1-2 paragraphs of narrative summary + key discoveries.
+ * - Low fidelity (older sessions, i.e. 6+ sessions back): One-line recap + searchable topic keywords for LTM and lorebook recall.
+ */
+export function buildTieredSessionHistoryLines(summaries: SessionSummary[]): string[] {
+  if (summaries.length === 0) return [];
+  const lines: string[] = [];
+  const total = summaries.length;
+
+  for (let index = 0; index < total; index++) {
+    const summary = summaries[index]!;
     const normalized = normalizePromptSessionSummary(summary, index);
-    lines.push(`Session ${normalized.sessionNumber} summary:`, normalized.summary);
-    if (index < summaries.length - 1) {
+    const distanceFromEnd = total - 1 - index; // 0 = latest, 1 = 2nd latest, etc.
+
+    if (distanceFromEnd < 2) {
+      lines.push(`Session ${normalized.sessionNumber} summary (recent):`, normalized.summary);
+    } else if (distanceFromEnd < 5) {
+      const mediumSummary = compactMediumSessionSummary(normalized.summary);
+      const discoveries =
+        normalized.keyDiscoveries.length > 0
+          ? `Key discoveries: ${normalized.keyDiscoveries.slice(0, 5).join("; ")}`
+          : "";
+      lines.push(
+        `Session ${normalized.sessionNumber} summary:`,
+        mediumSummary,
+        ...(discoveries ? [discoveries] : []),
+      );
+    } else {
+      const oneLine = extractOneLineSessionRecap(normalized.summary);
+      const keywords = extractSessionKeywords(normalized);
+      lines.push(
+        `- Session ${normalized.sessionNumber}: ${oneLine}${keywords ? ` [Topics: ${keywords}]` : ""}`,
+      );
+    }
+
+    if (index < total - 1) {
       lines.push("");
     }
   }
 
   return lines;
+}
+
+function buildSessionHistoryLines(
+  summaries: SessionSummary[],
+  mode?: "tiered" | "full" | "compact" | "disabled" | null,
+): string[] {
+  if (mode === "disabled" || summaries.length === 0) return [];
+  if (mode === "full") {
+    const lines: string[] = [];
+    for (const [index, summary] of summaries.entries()) {
+      const normalized = normalizePromptSessionSummary(summary, index);
+      lines.push(`Session ${normalized.sessionNumber} summary:`, normalized.summary);
+      if (index < summaries.length - 1) lines.push("");
+    }
+    return lines;
+  }
+  if (mode === "compact") {
+    const recent = summaries.slice(-2);
+    const lines: string[] = [];
+    for (const [index, summary] of recent.entries()) {
+      const normalized = normalizePromptSessionSummary(summary, index);
+      lines.push(`Session ${normalized.sessionNumber} summary:`, normalized.summary);
+      if (index < recent.length - 1) lines.push("");
+    }
+    return lines;
+  }
+  return buildTieredSessionHistoryLines(summaries);
 }
 
 function buildLatestSessionContinuityLines(summary: SessionSummary): string[] {
@@ -561,17 +643,20 @@ export function buildGmSystemPrompt(ctx: GmPromptContext): string {
     sections.push(`<tracked_npcs>`, ...buildTrackedNpcLines(npcs), `</tracked_npcs>`);
   }
 
-  // ── Previous Sessions (all summaries, latest session continuity in detail) ──
-  if (sessionSummaries.length > 0) {
+  // ── Previous Sessions (sliding-window tiered summaries, latest session continuity in detail) ──
+  if (sessionSummaries.length > 0 && ctx.sessionHistoryMode !== "disabled") {
     const sorted = [...sessionSummaries].sort((a, b) => a.sessionNumber - b.sessionNumber);
     const latest = sorted[sorted.length - 1]!;
+    const historyLines = buildSessionHistoryLines(sorted, ctx.sessionHistoryMode);
 
-    sections.push(
-      `<previous_sessions>`,
-      `Every completed session summary is included below for long-term continuity.`,
-      ...buildSessionHistoryLines(sorted),
-      `</previous_sessions>`,
-    );
+    if (historyLines.length > 0) {
+      sections.push(
+        `<previous_sessions>`,
+        `Previous session summaries are included below in tiered fidelity for continuity:`,
+        ...historyLines,
+        `</previous_sessions>`,
+      );
+    }
 
     sections.push(
       `<latest_session_continuity>`,
