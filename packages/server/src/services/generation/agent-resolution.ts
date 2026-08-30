@@ -14,6 +14,7 @@ import {
   shouldSuppressUnknownModelParameters,
   type APIProvider,
   type GenerationParameterSendMap,
+  type StoredReasoningEffort,
 } from "@marinara-engine/shared";
 import type { BaseLLMProvider } from "../llm/base-provider.js";
 import { createLLMProvider } from "../llm/provider-registry.js";
@@ -54,6 +55,7 @@ type ResolveAgentPipelineAgentsArgs = {
   chatModel: string;
   chatCustomParameters: Record<string, unknown>;
   chatTemperature?: number;
+  chatReasoningEffort?: StoredReasoningEffort;
   chatEnabledParameters?: GenerationParameterSendMap;
   chatSuppressModelParameters: boolean;
   chatMaxOutputTokens: number | null;
@@ -72,6 +74,7 @@ type AgentProviderCacheEntry = {
   model: string;
   customParameters: Record<string, unknown>;
   temperature?: number;
+  reasoningEffort?: StoredReasoningEffort;
   enabledParameters?: GenerationParameterSendMap;
   suppressModelParameters: boolean;
   maxOutputTokens: number | null;
@@ -237,6 +240,7 @@ async function resolveAgentConnectionProvider(args: {
   fallbackModel: string;
   fallbackCustomParameters: Record<string, unknown>;
   fallbackTemperature?: number;
+  fallbackReasoningEffort?: StoredReasoningEffort;
   fallbackEnabledParameters?: GenerationParameterSendMap;
   fallbackSuppressModelParameters: boolean;
   fallbackMaxOutputTokens: number | null;
@@ -266,6 +270,7 @@ async function resolveAgentConnectionProvider(args: {
       model: args.fallbackModel,
       customParameters: args.fallbackCustomParameters,
       temperature: args.fallbackTemperature,
+      reasoningEffort: args.fallbackReasoningEffort,
       enabledParameters: args.fallbackEnabledParameters,
       suppressModelParameters: args.fallbackSuppressModelParameters,
       maxOutputTokens: args.fallbackMaxOutputTokens,
@@ -325,6 +330,7 @@ async function resolveAgentConnectionProvider(args: {
     model,
     customParameters: storedParameters?.customParameters ?? {},
     temperature: storedParameters?.temperature,
+    reasoningEffort: storedParameters?.reasoningEffort,
     enabledParameters: storedParameters?.enabledParameters,
     suppressModelParameters: shouldSuppressUnknownModelParameters(agentConn.provider, model),
     maxOutputTokens: resolveConnectionMaxOutputTokens({ provider: agentConn.provider, model }),
@@ -350,6 +356,7 @@ export async function resolveAgentPipelineAgents({
   chatModel,
   chatCustomParameters,
   chatTemperature,
+  chatReasoningEffort,
   chatEnabledParameters,
   chatSuppressModelParameters,
   chatMaxOutputTokens,
@@ -469,6 +476,7 @@ export async function resolveAgentPipelineAgents({
       fallbackModel: chatModel,
       fallbackCustomParameters: chatCustomParameters,
       fallbackTemperature: chatTemperature,
+      fallbackReasoningEffort: chatReasoningEffort,
       fallbackEnabledParameters: chatEnabledParameters,
       fallbackSuppressModelParameters: chatSuppressModelParameters,
       fallbackMaxOutputTokens: chatMaxOutputTokens,
@@ -509,6 +517,7 @@ export async function resolveAgentPipelineAgents({
       model: resolvedProvider.entry.model,
       customParameters: resolvedProvider.entry.customParameters,
       temperature: resolvedProvider.entry.temperature,
+      reasoningEffort: resolvedProvider.entry.reasoningEffort,
       enabledParameters: resolvedProvider.entry.enabledParameters,
       suppressModelParameters: resolvedProvider.entry.suppressModelParameters,
       maxOutputTokens: resolvedProvider.entry.maxOutputTokens,
@@ -558,6 +567,7 @@ export async function resolveAgentPipelineAgents({
       fallbackModel: chatModel,
       fallbackCustomParameters: chatCustomParameters,
       fallbackTemperature: chatTemperature,
+      fallbackReasoningEffort: chatReasoningEffort,
       fallbackEnabledParameters: chatEnabledParameters,
       fallbackSuppressModelParameters: chatSuppressModelParameters,
       fallbackMaxOutputTokens: chatMaxOutputTokens,
@@ -607,6 +617,7 @@ export async function resolveAgentPipelineAgents({
       model: builtInConnection.entry.model,
       customParameters: builtInConnection.entry.customParameters,
       temperature: builtInConnection.entry.temperature,
+      reasoningEffort: builtInConnection.entry.reasoningEffort,
       enabledParameters: builtInConnection.entry.enabledParameters,
       suppressModelParameters: builtInConnection.entry.suppressModelParameters,
       maxOutputTokens: builtInConnection.entry.maxOutputTokens,

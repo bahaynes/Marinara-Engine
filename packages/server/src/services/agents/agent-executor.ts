@@ -14,6 +14,7 @@ import type {
   TrackerHiddenFields,
   WrapFormat,
   GenerationParameterSendMap,
+  StoredReasoningEffort,
 } from "@marinara-engine/shared";
 import {
   AGENT_RESULT_TYPE_VALUES,
@@ -100,6 +101,7 @@ export interface AgentExecConfig {
   customParameters?: Record<string, unknown>;
   /** Temperature inherited from the selected connection. */
   temperature?: number;
+  reasoningEffort?: StoredReasoningEffort;
   enabledParameters?: GenerationParameterSendMap;
   suppressModelParameters?: boolean;
   maxOutputTokens?: number | null;

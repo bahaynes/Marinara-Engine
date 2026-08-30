@@ -2856,7 +2856,14 @@ ${sections.join("\n\n")}
     const defaultParameters = parseJsonObject(connection.defaultParameters);
     const customParameters = isRecord(defaultParameters?.customParameters) ? defaultParameters.customParameters : {};
     const enabledParameters = normalizeGenerationParameterSendMap(defaultParameters?.enabledParameters);
+    const storedReasoningEffort =
+      typeof defaultParameters?.reasoningEffort === "string" ? defaultParameters.reasoningEffort : undefined;
+    const hasExplicitReasoningEffort =
+      storedReasoningEffort !== undefined &&
+      storedReasoningEffort !== null &&
+      storedReasoningEffort !== "none";
     const disableHiddenReasoning =
+      !hasExplicitReasoningEffort &&
       enabledParameters?.reasoningEffort !== false &&
       (isLocalSidecarConnection(connection) || connection.provider.toLowerCase() !== "custom");
     const verbosity = normalizeMariVerbosity(defaultParameters?.verbosity);
@@ -2872,12 +2879,18 @@ ${sections.join("\n\n")}
       openrouterProvider: connection.openrouterProvider,
       responseFormat: professorMariWorkspaceResponseFormat(connection.provider),
       customParameters: mergeCustomParameters(customParameters, null),
-      enabledParameters: !disableHiddenReasoning
+      enabledParameters: hasExplicitReasoningEffort
         ? enabledParameters
-        : { ...(enabledParameters ?? {}), reasoningEffort: true },
+        : !disableHiddenReasoning
+          ? enabledParameters
+          : { ...(enabledParameters ?? {}), reasoningEffort: true },
       // Mari's command protocol is JSON. Hidden reasoning can consume the whole
       // response before local OpenAI-compatible servers emit the JSON frame.
-      reasoningEffort: disableHiddenReasoning ? "none" : undefined,
+      reasoningEffort: hasExplicitReasoningEffort
+        ? (storedReasoningEffort === "maximum" ? "max" : (storedReasoningEffort as any))
+        : disableHiddenReasoning
+          ? "none"
+          : undefined,
       verbosity,
       signal,
       onThinking,

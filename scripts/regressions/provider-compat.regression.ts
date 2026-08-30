@@ -1223,7 +1223,25 @@ applyGlmThinkingParameters(glm53DisabledBody, {
   enableThinking: false,
   reasoningEffort: "none",
 });
-assert.deepEqual(glm53DisabledBody, { thinking: { type: "disabled" } });
+assert.deepEqual(
+  glm53DisabledBody,
+  { thinking: { type: "enabled" }, reasoning_effort: "low" },
+  "GLM-5.3 thinking is mandatory and falls back to low",
+);
+
+const glm53NanoGptDisabledBody: Record<string, unknown> = {};
+applyGlmThinkingParameters(glm53NanoGptDisabledBody, {
+  model: "glm-5.3-flash",
+  baseUrl: "https://nano-gpt.com/api/v1",
+  providerKind: "nanogpt",
+  enableThinking: false,
+  reasoningEffort: "none",
+});
+assert.deepEqual(
+  glm53NanoGptDisabledBody,
+  { enable_thinking: true, reasoning_effort: "low" },
+  "GLM-5.3 on NanoGPT thinking is mandatory and falls back to low",
+);
 
 const legacyGlmBody: Record<string, unknown> = {};
 applyGlmThinkingParameters(legacyGlmBody, {
