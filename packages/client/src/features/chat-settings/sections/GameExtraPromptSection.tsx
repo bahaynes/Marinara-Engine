@@ -14,6 +14,7 @@ interface PromptPresetOption {
 interface GameExtraPromptSectionProps {
   storedValue: string;
   specialInstructionsValue: string;
+  sessionHistoryMode?: string | null;
   promptPresetId: string | null;
   promptPresets: PromptPresetOption[];
   selectedPresetPrompt: string;
@@ -22,6 +23,7 @@ interface GameExtraPromptSectionProps {
   onCommit: (value: string | null) => void;
   onSpecialInstructionsCommit: (value: string | null) => void;
   onSpecialInstructionsChange: (value: string) => void;
+  onSessionHistoryModeChange?: (mode: string | null) => void;
   onPromptPresetChange: (presetId: string | null) => void;
   onGmPromptTemplateChange: (templateId: string | null) => void;
 }
@@ -29,6 +31,7 @@ interface GameExtraPromptSectionProps {
 export function GameExtraPromptSection({
   storedValue,
   specialInstructionsValue,
+  sessionHistoryMode,
   promptPresetId,
   promptPresets,
   selectedPresetPrompt,
@@ -37,6 +40,7 @@ export function GameExtraPromptSection({
   onCommit,
   onSpecialInstructionsCommit,
   onSpecialInstructionsChange,
+  onSessionHistoryModeChange,
   onPromptPresetChange,
   onGmPromptTemplateChange,
 }: GameExtraPromptSectionProps) {
@@ -118,6 +122,34 @@ export function GameExtraPromptSection({
           </select>
           <span className="text-[0.575rem] leading-relaxed text-[var(--muted-foreground)]">
             {localizeUi("ui.chatSettings.gameextrapromptsection.aSelectedGmStyleReplacesOnlyTheGamePrompt")}
+          </span>
+        </label>
+        <label className="flex flex-col gap-1.5">
+          <span className="text-[0.6875rem] font-medium text-[var(--muted-foreground)]">
+            {localizeUi("ui.chatSettings.gameextrapromptsection.sessionHistoryContext")}
+          </span>
+          <select
+            value={sessionHistoryMode || "tiered"}
+            onChange={(event) =>
+              onSessionHistoryModeChange?.(event.target.value === "tiered" ? null : event.target.value)
+            }
+            className="mari-preset-native-select w-full truncate rounded-lg bg-[var(--secondary)] px-3 py-2 pr-8 text-xs text-[var(--foreground)] outline-none ring-1 ring-[var(--border)] transition-shadow focus:ring-[var(--primary)]/40"
+          >
+            <option value="tiered">
+              {localizeUi("ui.chatSettings.gameextrapromptsection.tieredSlidingWindowHigh2Med3LowIndex")}
+            </option>
+            <option value="full">
+              {localizeUi("ui.chatSettings.gameextrapromptsection.fullHistoryAllPastSessionsInFullLegacy")}
+            </option>
+            <option value="compact">
+              {localizeUi("ui.chatSettings.gameextrapromptsection.compactLatest2SessionsOnly")}
+            </option>
+            <option value="disabled">
+              {localizeUi("ui.chatSettings.gameextrapromptsection.disabledLatestSessionCarryoverOnly")}
+            </option>
+          </select>
+          <span className="text-[0.575rem] leading-relaxed text-[var(--muted-foreground)]">
+            {localizeUi("ui.chatSettings.gameextrapromptsection.controlsHowPastSessionSummariesAreCompressedInThe")}
           </span>
         </label>
 
