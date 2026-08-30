@@ -40,8 +40,12 @@ import {
   type DndGridCoord,
   type DndAoEResolution,
   type TacticalStepLog,
+  type DndWeapon,
   SPELL_CATALOG,
   DEFAULT_CANTRIPS,
+  WEAPON_CATALOG,
+  getCombatantWeapon,
+  getWeaponAttackModifier,
   abilityModifier,
   formatModifier,
   proficiencyBonus,
@@ -302,6 +306,17 @@ export function DndCombatUI({
   const isPaladin = /paladin/i.test(activeActor?.unitClass || "");
   const isRogue = /rogue|soulknife/i.test(activeActor?.unitClass || "");
 
+  // ── Generic Weapon Resolution from Data Source ──
+  const activeWeapon: DndWeapon = useMemo(() => {
+    return activeActor ? getCombatantWeapon(activeActor) : WEAPON_CATALOG[0]!;
+  }, [activeActor]);
+
+  const weaponMod = useMemo(() => {
+    return activeActor ? getWeaponAttackModifier(activeWeapon, activeActor.stats) : 0;
+  }, [activeActor, activeWeapon]);
+
+  const weaponAttackBonus = actorProf + weaponMod;
+
   // ── Filter available spells for active selected character ──
   const visibleSpells = useMemo(() => {
     const cls = activeActor?.unitClass || "Warlock";
@@ -518,7 +533,7 @@ export function DndCombatUI({
       // Check if selected spell is AoE: In tactical mode, activate AoE targeting mode
       if (actionReq.spellId) {
         const spell = SPELL_CATALOG.find((s) => s.id === actionReq.spellId);
-        if (spell && (spell.id === "fireball" || spell.id === "synaptic_static" || spell.id === "cone_of_cold" || spell.id === "lightning_bolt")) {
+        if (spell && (spell.isAoE || spell.id === "fireball" || spell.id === "synaptic_static" || spell.id === "cone_of_cold" || spell.id === "lightning_bolt")) {
           if (viewMode === "tactical") {
             setActiveAoESpell(spell);
             return;
@@ -1098,26 +1113,38 @@ export function DndCombatUI({
 
         {/* Action Buttons Grid (Smooth Touch Scrollable on Mobile) */}
         <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 max-h-48 sm:max-h-40 overflow-y-auto overscroll-contain touch-pan-y pr-1 pb-1 scrollbar-thin scrollbar-thumb-white/20">
-          {/* Standard Weapon Attack */}
+          {/* Dynamic Generic Weapon Attack */}
           <button
             type="button"
+            disabled={isAnimating}
             onClick={() => executePlayerAction({ type: "attack" })}
-            className="flex flex-col items-center justify-center gap-0.5 sm:gap-1 rounded-xl border border-amber-500/40 bg-amber-500/15 p-2 sm:p-2.5 font-bold text-amber-200 transition-all hover:bg-amber-500/30 active:scale-95 text-center min-h-[3.25rem]"
+            className={cn(
+              "flex flex-col items-center justify-center gap-0.5 sm:gap-1 rounded-xl border border-amber-500/40 bg-amber-500/15 p-2 sm:p-2.5 font-bold text-amber-200 transition-all hover:bg-amber-500/30 active:scale-95 text-center min-h-[3.25rem]",
+              isAnimating && "opacity-40 cursor-not-allowed",
+            )}
+            title={`${activeWeapon.name} (+${weaponAttackBonus} to hit): ${activeWeapon.description}`}
           >
-            <Sword size={15} />
-            <span className="text-[0.6875rem] sm:text-xs">Weapon ({martialAttacks}×)</span>
+            <div className="flex items-center gap-1">
+              <span className="text-xs">{activeWeapon.icon}</span>
+              <span className="text-[0.6875rem] sm:text-xs truncate font-bold">{activeWeapon.name}</span>
+            </div>
+            <span className="text-[0.5625rem] sm:text-[0.625rem] text-amber-300/80 leading-none">
+              {martialAttacks > 1 ? `${martialAttacks}× ` : ""}{activeWeapon.damageDie}+{formatModifier(weaponMod)} {activeWeapon.mastery ? `[${activeWeapon.mastery}]` : ""}
+            </span>
           </button>
 
           {/* Dynamic Spells and Cantrips */}
           {visibleSpells.map((spell) => {
             const isCantrip = spell.level === 0;
             const diceScaling = isCantrip ? `${cantripScaling(actorLevel)}${spell.damageDie || "d10"}` : `${spell.diceCount || 8}${spell.damageDie || "d6"}`;
-            const isAoE = spell.id === "fireball" || spell.id === "synaptic_static" || spell.id === "cone_of_cold" || spell.id === "lightning_bolt";
+            const isAoE = Boolean(spell.isAoE || spell.id === "fireball" || spell.id === "synaptic_static" || spell.id === "cone_of_cold" || spell.id === "lightning_bolt");
+            const aoeBadge = spell.aoeShape === "cone" ? "📐" : spell.aoeShape === "line" ? "⚡" : isAoE ? "💥" : "";
 
             return (
               <button
                 key={spell.id}
                 type="button"
+                disabled={isAnimating}
                 onClick={() =>
                   executePlayerAction({
                     type: isCantrip ? "cantrip" : "spell",
@@ -1132,12 +1159,13 @@ export function DndCombatUI({
                     : isAoE
                       ? "border-orange-500/40 bg-orange-950/30 text-orange-200 hover:border-orange-400 hover:bg-orange-900/40"
                       : "border-cyan-500/30 bg-cyan-950/40 text-cyan-200 hover:border-cyan-400 hover:bg-cyan-900/50",
+                  isAnimating && "opacity-40 cursor-not-allowed",
                 )}
                 title={spell.description}
               >
                 {getSpellIcon(spell)}
                 <span className="text-[0.6875rem] sm:text-xs truncate w-full px-0.5 leading-tight">
-                  {spell.name} {isAoE ? "💥" : ""}
+                  {spell.name} {aoeBadge}
                 </span>
                 <span className="text-[0.5625rem] sm:text-[0.625rem] text-cyan-300/70 leading-none">
                   {spell.type === "save" ? `DC ${spellDc} ${spell.saveStat?.toUpperCase()} Save` : diceScaling}
@@ -1232,6 +1260,31 @@ export function DndCombatUI({
                     );
                   })}
                 </div>
+              </div>
+
+              {/* Weapon Selection from Catalog */}
+              <div className="rounded-xl bg-black/40 p-2.5 sm:p-3">
+                <div className="mb-1.5 flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-xs sm:text-sm font-bold text-white">
+                    <Sword size={14} className="text-amber-300" />
+                    <span>Equipped Weapon</span>
+                  </div>
+                  <span className="text-[0.6875rem] text-amber-300 font-semibold">
+                    {getCombatantWeapon(editingCombatant).damageDie} ({getCombatantWeapon(editingCombatant).damageType})
+                  </span>
+                </div>
+                <select
+                  value={editingCombatant.weaponId || ""}
+                  onChange={(e) => updateCombatantStat(editingCombatant.id, "weaponId", e.target.value || undefined)}
+                  className="w-full rounded-lg border border-white/10 bg-slate-950 px-2.5 py-1.5 text-xs sm:text-sm font-bold text-white outline-none focus:border-amber-400 cursor-pointer"
+                >
+                  <option value="">Auto (Class Default: {getCombatantWeapon({ ...editingCombatant, weaponId: undefined }).name})</option>
+                  {WEAPON_CATALOG.map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {w.icon} {w.name} ({w.damageDie} {w.damageType}{w.mastery ? ` • Mastery: ${w.mastery}` : ""})
+                    </option>
+                  ))}
+                </select>
               </div>
 
               {/* Level Control */}

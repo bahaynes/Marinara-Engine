@@ -28,7 +28,7 @@ export interface DndSpell {
   isMultiBeam?: boolean; // Eldritch blast multi-beam
   isCantrip?: boolean;
   isAoE?: boolean;
-  aoeShape?: "sphere" | "cone" | "line" | "single";
+  aoeShape?: "sphere" | "cone" | "line" | "cube" | "cylinder" | "single";
   aoeRadiusFt?: number; // e.g. 20 for Fireball
   rangeFt?: number; // e.g. 120, 60, 5
   classes?: string[]; // Recommended classes e.g. ["Wizard", "Sorcerer"]
@@ -36,6 +36,22 @@ export interface DndSpell {
 
 // Backward compatibility alias
 export type DndCantrip = DndSpell;
+
+export interface DndWeapon {
+  id: string;
+  name: string;
+  category: "simple_melee" | "martial_melee" | "simple_ranged" | "martial_ranged";
+  damageDie: string; // e.g. "1d8", "2d6", "1d10", "1d6", "1d4", "1d12"
+  damageType: "slashing" | "piercing" | "bludgeoning";
+  attackStat?: "str" | "dex" | "finesse" | "versatile";
+  rangeFt: number; // 5 for melee, 10 for reach, 80/320 for shortbow, etc.
+  maxRangeFt?: number;
+  properties: Array<"finesse" | "versatile" | "heavy" | "two-handed" | "light" | "reach" | "thrown" | "range" | "loading">;
+  mastery?: "Sap" | "Vex" | "Push" | "Topple" | "Slow" | "Graze" | "Nick" | "Cleave";
+  icon: string;
+  description: string;
+  defaultForClasses?: string[];
+}
 
 export interface DndCombatant {
   id: string;
@@ -50,6 +66,8 @@ export interface DndCombatant {
   ac: number;
   stats: DndStats;
   cantrips?: DndSpell[];
+  weaponId?: string;
+  equippedWeapon?: DndWeapon;
   statusEffects: Array<{ name: string; turnsLeft: number; effect: string }>;
   isDefending?: boolean;
   isFleeing?: boolean;
@@ -61,6 +79,7 @@ export interface DndActionRequest {
   type: "attack" | "cantrip" | "spell" | "dodge" | "dash" | "heal" | "flee";
   actorId: string;
   targetId?: string;
+  weaponId?: string;
   cantripId?: string;
   spellId?: string;
   advantage?: DndAdvantageState;

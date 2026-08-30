@@ -32,7 +32,7 @@ export interface DndTacticalMap {
   theme: "forest" | "dungeon" | "ruins" | "cavern" | "mountain" | "default";
 }
 
-export type DndAoEShape = "sphere" | "cone" | "line" | "single";
+export type DndAoEShape = "sphere" | "cone" | "line" | "cube" | "cylinder" | "single";
 
 export interface DndAoETargetRequest {
   center: DndGridCoord;

@@ -9,6 +9,7 @@ import {
   primaryCastingStat,
   cantripScaling,
 } from "../dnd-combat/math.js";
+import { AoETemplateFactory } from "./templates.js";
 import type {
   DndGridCoord,
   DndTile,
@@ -222,7 +223,7 @@ export function getReachableTiles(
   return reachable;
 }
 
-/** Calculate all grid coordinates covered by an AoE spell (sphere, cone, line) */
+/** Calculate all grid coordinates covered by an AoE template using the polymorphic Strategy Pattern */
 export function getAoEAffectedTiles(
   center: DndGridCoord,
   shape: DndAoEShape,
@@ -230,56 +231,8 @@ export function getAoEAffectedTiles(
   map: DndTacticalMap,
   casterCoord?: DndGridCoord,
 ): DndGridCoord[] {
-  const affected: DndGridCoord[] = [];
-  const radiusSquares = radiusFt / 5;
-
-  if (shape === "sphere" || shape === "single") {
-    for (let y = 0; y < map.height; y++) {
-      for (let x = 0; x < map.width; x++) {
-        const dist = Math.hypot(x - center.x, y - center.y);
-        if (dist <= radiusSquares + 0.35) {
-          affected.push({ x, y });
-        }
-      }
-    }
-  } else if (shape === "line" && casterCoord) {
-    // Ray from caster through center up to line length
-    const dx = center.x - casterCoord.x;
-    const dy = center.y - casterCoord.y;
-    const length = Math.hypot(dx, dy) || 1;
-    const normX = dx / length;
-    const normY = dy / length;
-
-    for (let step = 1; step <= radiusSquares; step++) {
-      const tx = Math.round(casterCoord.x + normX * step);
-      const ty = Math.round(casterCoord.y + normY * step);
-      if (tx >= 0 && tx < map.width && ty >= 0 && ty < map.height) {
-        if (!affected.some((a) => a.x === tx && a.y === ty)) {
-          affected.push({ x: tx, y: ty });
-        }
-      }
-    }
-  } else if (shape === "cone" && casterCoord) {
-    // Cone facing from caster to center
-    for (let y = 0; y < map.height; y++) {
-      for (let x = 0; x < map.width; x++) {
-        const dist = Math.hypot(x - casterCoord.x, y - casterCoord.y);
-        if (dist <= radiusSquares && dist > 0) {
-          // Angle check
-          const angleToTile = Math.atan2(y - casterCoord.y, x - casterCoord.x);
-          const angleToCenter = Math.atan2(center.y - casterCoord.y, center.x - casterCoord.x);
-          let diff = Math.abs(angleToTile - angleToCenter);
-          if (diff > Math.PI) diff = 2 * Math.PI - diff;
-          if (diff <= Math.PI / 4) {
-            // 90-degree cone
-            affected.push({ x, y });
-          }
-        }
-      }
-    }
-  }
-
-  return affected;
+  const template = AoETemplateFactory.create(shape, radiusFt);
+  return template.getAffectedTiles(center, map, casterCoord);
 }
 
 /** Check if moving from `from` to `to` provokes an Opportunity Attack from adjacent enemies */

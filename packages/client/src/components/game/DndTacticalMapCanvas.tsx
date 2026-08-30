@@ -209,7 +209,9 @@ export function DndTacticalMapCanvas({
               {activeAoESpell && (
                 <span className="flex items-center gap-1 rounded bg-orange-500/20 px-2 py-0.5 font-bold text-orange-300 animate-pulse border border-orange-500/40">
                   <Flame size={14} />
-                  <span>Tap Grid to Cast {activeAoESpell.name} (20ft Radius)</span>
+                  <span>
+                    {activeAoESpell.aoeShape === "cone" ? "📐" : activeAoESpell.aoeShape === "line" ? "⚡" : "💥"} Tap to Cast {activeAoESpell.name} ({activeAoESpell.aoeRadiusFt || 20}ft {activeAoESpell.aoeShape || "sphere"})
+                  </span>
                 </span>
               )}
             </>

@@ -12,11 +12,14 @@ import {
   abilityModifier,
   proficiencyBonus,
   primaryCastingStat,
-  primaryAttackStat,
   cantripScaling,
   martialAttackCount,
   SPELL_CATALOG,
 } from "../dnd-combat/math.js";
+import {
+  getCombatantWeapon,
+  getWeaponAttackModifier,
+} from "../dnd-combat/weapons.js";
 import type {
   DndGridCoord,
   DndTacticalMap,
@@ -113,10 +116,15 @@ function executeStandardAttack(
   target: DndCombatant,
   isMartial: boolean = false,
 ): { isHit: boolean; damageDealt: number; logText: string } {
-  const attackStatKey = primaryAttackStat(attacker.unitClass, attacker.stats);
-  const attMod = abilityModifier(attacker.stats[attackStatKey] || 10);
+  const weapon = getCombatantWeapon(attacker);
+  const attMod = getWeaponAttackModifier(weapon, attacker.stats);
   const prof = proficiencyBonus(attacker.level);
   const attackCount = isMartial ? martialAttackCount(attacker.unitClass, attacker.level) : 1;
+
+  // Parse weapon damage die (e.g. "2d6" -> count 2, die 6; "1d12" -> count 1, die 12)
+  const dieParts = weapon.damageDie.toLowerCase().split("d");
+  const baseDiceCount = parseInt(dieParts[0] || "1", 10) || 1;
+  const dieSides = parseInt(dieParts[1] || "8", 10) || 8;
 
   let totalDamage = 0;
   const rollDetails: string[] = [];
@@ -128,8 +136,7 @@ function executeStandardAttack(
     const isHit = isCrit || (d20 !== 1 && toHit >= target.ac);
 
     if (isHit) {
-      const dieSides = isMartial ? 8 : 6;
-      const dice = isCrit ? 2 : 1;
+      const dice = isCrit ? baseDiceCount * 2 : baseDiceCount;
       let dmg = 0;
       for (let d = 0; d < dice; d++) {
         dmg += Math.floor(Math.random() * dieSides) + 1;
@@ -137,20 +144,27 @@ function executeStandardAttack(
       dmg += attMod;
       const applied = Math.max(1, dmg);
       totalDamage += applied;
+      const masteryNote = weapon.mastery ? ` [${weapon.mastery}]` : "";
       rollDetails.push(
         isCrit
-          ? `💥 CRITICAL HIT! (${d20}+${attMod + prof}=${toHit} vs AC ${target.ac}) for ${applied} dmg`
-          : `Hit (${d20}+${attMod + prof}=${toHit} vs AC ${target.ac}) for ${applied} dmg`,
+          ? `💥 CRITICAL! (${d20}+${attMod + prof}=${toHit} vs AC ${target.ac}) for ${applied} ${weapon.damageType} dmg${masteryNote}`
+          : `Hit (${d20}+${attMod + prof}=${toHit} vs AC ${target.ac}) for ${applied} ${weapon.damageType} dmg${masteryNote}`,
       );
     } else {
-      rollDetails.push(`Miss (${d20}+${attMod + prof}=${toHit} vs AC ${target.ac})`);
+      // 5.5e Weapon Mastery Graze: Deals ability modifier damage on a miss!
+      if (weapon.mastery === "Graze" && attMod > 0) {
+        totalDamage += attMod;
+        rollDetails.push(`Miss (${d20}+${attMod + prof}=${toHit} vs AC ${target.ac}) but Graze deals ${attMod} dmg!`);
+      } else {
+        rollDetails.push(`Miss (${d20}+${attMod + prof}=${toHit} vs AC ${target.ac})`);
+      }
     }
   }
 
   const isHit = totalDamage > 0;
   const logText = isHit
-    ? `⚔️ ${attacker.name} strikes ${target.name}: ${rollDetails.join(", ")}!`
-    : `🛡️ ${attacker.name} attacks ${target.name}: ${rollDetails.join(", ")}.`;
+    ? `${weapon.icon} ${attacker.name} attacks ${target.name} with ${weapon.name}: ${rollDetails.join("; ")}!`
+    : `🛡️ ${attacker.name} attacks ${target.name} with ${weapon.name}: ${rollDetails.join("; ")}.`;
 
   return { isHit, damageDealt: totalDamage, logText };
 }
