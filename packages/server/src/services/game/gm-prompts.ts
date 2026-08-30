@@ -197,18 +197,75 @@ function normalizePromptLanguage(language?: string | null): string | null {
   return PROMPT_LANGUAGE_LOOKUP.get(trimmed.toLowerCase()) ?? trimmed;
 }
 
-function buildSessionHistoryLines(summaries: SessionSummary[]): string[] {
-  const lines: string[] = [];
+function compactMediumSessionSummary(summary: string): string {
+  const paragraphs = summary.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
+  if (paragraphs.length <= 2) return summary;
+  return paragraphs.slice(0, 2).join("\n\n");
+}
 
-  for (const [index, summary] of summaries.entries()) {
+function extractOneLineSessionRecap(summary: string): string {
+  const clean = summary.replace(/\n+/g, " ").trim();
+  if (!clean) return "Session concluded.";
+  const firstSentence = clean.split(/(?<=[.!?])\s+/)[0]?.trim() ?? clean;
+  return firstSentence.length > 180 ? `${firstSentence.slice(0, 177)}...` : firstSentence;
+}
+
+function extractSessionKeywords(summary: SessionSummary): string {
+  const candidates = [
+    ...summary.keyDiscoveries.map((d) => d.split(/[:;,—]/)[0]?.trim() || d),
+    ...summary.npcUpdates.map((u) => u.split(/[:;,—]/)[0]?.trim() || u),
+  ].filter(Boolean);
+  const deduped = Array.from(new Set(candidates)).slice(0, 6);
+  return deduped.join(", ");
+}
+
+/**
+ * Tiered sliding window for previous session summaries to keep prompt context bounded:
+ * - High fidelity (last 2 completed sessions): Full narrative summary.
+ * - Medium fidelity (prior 3 completed sessions, i.e. 3 to 5 sessions back): First 1-2 paragraphs of narrative summary + key discoveries.
+ * - Low fidelity (older sessions, i.e. 6+ sessions back): One-line recap + searchable topic keywords for LTM and lorebook recall.
+ */
+export function buildTieredSessionHistoryLines(summaries: SessionSummary[]): string[] {
+  if (summaries.length === 0) return [];
+  const lines: string[] = [];
+  const total = summaries.length;
+
+  for (let index = 0; index < total; index++) {
+    const summary = summaries[index]!;
     const normalized = normalizePromptSessionSummary(summary, index);
-    lines.push(`Session ${normalized.sessionNumber} summary:`, normalized.summary);
-    if (index < summaries.length - 1) {
+    const distanceFromEnd = total - 1 - index; // 0 = latest, 1 = 2nd latest, etc.
+
+    if (distanceFromEnd < 2) {
+      lines.push(`Session ${normalized.sessionNumber} summary (recent):`, normalized.summary);
+    } else if (distanceFromEnd < 5) {
+      const mediumSummary = compactMediumSessionSummary(normalized.summary);
+      const discoveries =
+        normalized.keyDiscoveries.length > 0
+          ? `Key discoveries: ${normalized.keyDiscoveries.slice(0, 5).join("; ")}`
+          : "";
+      lines.push(
+        `Session ${normalized.sessionNumber} summary:`,
+        mediumSummary,
+        ...(discoveries ? [discoveries] : []),
+      );
+    } else {
+      const oneLine = extractOneLineSessionRecap(normalized.summary);
+      const keywords = extractSessionKeywords(normalized);
+      lines.push(
+        `- Session ${normalized.sessionNumber}: ${oneLine}${keywords ? ` [Topics: ${keywords}]` : ""}`,
+      );
+    }
+
+    if (index < total - 1) {
       lines.push("");
     }
   }
 
   return lines;
+}
+
+function buildSessionHistoryLines(summaries: SessionSummary[]): string[] {
+  return buildTieredSessionHistoryLines(summaries);
 }
 
 function buildLatestSessionContinuityLines(summary: SessionSummary): string[] {

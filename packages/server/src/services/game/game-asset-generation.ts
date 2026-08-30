@@ -46,7 +46,7 @@ const GENERATED_BACKGROUND_MAX_INPUT_PIXELS = 32_000_000;
 const GAME_PORTRAIT_NEGATIVE_PROMPT =
   "text, letters, captions, subtitles, UI, watermark, logo, signature, speech bubble, split screen, panel, collage, contact sheet, grid, four portraits, multiple portraits, duplicated face, extra head, extra person, bad anatomy, low quality";
 const GAME_BACKGROUND_NEGATIVE_PROMPT =
-  "text, letters, captions, subtitles, UI, watermark, logo, signature, foreground character, main character, named character, portrait, close-up person, posed subject, split screen, panel, collage, contact sheet, grid, multiple frames, low quality";
+  "person, people, human, woman, man, character, face, crowd, silhouette, foreground character, main character, named character, portrait, close-up person, posed subject, split screen, panel, collage, contact sheet, grid, multiple frames, text, letters, captions, subtitles, UI, watermark, logo, signature, low quality";
 const GAME_ILLUSTRATION_NEGATIVE_PROMPT =
   "text, letters, captions, subtitles, UI, watermark, logo, signature, speech bubble, split screen, panel, collage, contact sheet, character sheet, grid, four images, duplicated face, extra head, unrelated character, bad anatomy, low quality";
 const MAX_SCENE_ILLUSTRATION_APPEARANCE_NOTES_CHARS = 4800;
