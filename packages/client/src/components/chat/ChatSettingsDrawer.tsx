@@ -5529,6 +5529,7 @@ export function ChatSettingsDrawer({
               <GameExtraPromptSection
                 storedValue={(metadata.gameSystemPrompt as string) ?? ""}
                 specialInstructionsValue={gameSpecialInstructionsDraft}
+                sessionHistoryMode={(metadata.gameSessionHistoryMode as string) ?? "tiered"}
                 promptPresetId={effectiveModePromptPresetId}
                 promptPresets={promptPresetOptions}
                 selectedPresetPrompt={selectedModePromptPreset?.gamePrompt ?? ""}
@@ -5539,6 +5540,9 @@ export function ChatSettingsDrawer({
                   updateMeta.mutate({ id: chat.id, gameSpecialInstructions })
                 }
                 onSpecialInstructionsChange={setGameSpecialInstructionsDraft}
+                onSessionHistoryModeChange={(gameSessionHistoryMode) =>
+                  updateMeta.mutate({ id: chat.id, gameSessionHistoryMode })
+                }
                 onPromptPresetChange={handleModePromptPresetChange}
                 onGmPromptTemplateChange={updateGameGmPromptTemplateSelection}
               />
