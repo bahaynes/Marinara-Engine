@@ -99,7 +99,7 @@ export const GAME_BACKGROUND: PromptOverrideKeyDef<GameBackgroundCtx> = {
     },
   ],
   defaultBuilder: (ctx) =>
-    `${ctx.sceneDescription}. ${ctx.styleLine} SD/Illustrious tags: scenery, environment, wide shot, landscape, full-frame background, background-only location art. Wide-angle landscape, detailed environment, readable spatial layout, single full-frame background, no foreground characters, no main characters, no named characters, no posed character focus. Small distant crowds, shopkeepers, silhouettes, or background figures are allowed only when they make the location feel lived-in. No text, no UI, no panels, no collage, game background art, high quality`,
+    `${ctx.sceneDescription}. ${ctx.styleLine} SD/Illustrious tags: scenery, environment, wide shot, landscape, full-frame background, background-only location art, unpopulated scene. Wide-angle landscape, detailed environment, readable spatial layout, single full-frame background, pure scenery, architecture, no people, no characters, no humanoids, empty location. No text, no UI, no panels, no collage, game background art, high quality`,
   exampleContext: {
     sceneDescription: "moonlit graveyard with crumbling tombstones",
     styleLine:
