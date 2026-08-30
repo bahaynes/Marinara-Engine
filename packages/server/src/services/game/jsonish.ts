@@ -275,6 +275,62 @@ function insertMissingPropertyCommas(raw: string): string {
   return raw.replace(/(["}\]])(\s*\n\s*)("[$A-Za-z_][^"\n]{0,120}"\s*:)/g, "$1,$2$3");
 }
 
+function escapeUnescapedInteriorQuotes(raw: string): string {
+  let output = "";
+  let inString = false;
+  let escaped = false;
+
+  for (let i = 0; i < raw.length; i++) {
+    const char = raw[i]!;
+    if (escaped) {
+      output += char;
+      escaped = false;
+      continue;
+    }
+    if (char === "\\" && inString) {
+      output += char;
+      escaped = true;
+      continue;
+    }
+    if (char === '"') {
+      if (!inString) {
+        inString = true;
+        output += char;
+        continue;
+      }
+      let nextChar = "";
+      let nextIdx = i + 1;
+      while (nextIdx < raw.length) {
+        const c = raw[nextIdx]!;
+        if (!/\s/.test(c)) {
+          nextChar = c;
+          break;
+        }
+        nextIdx++;
+      }
+      const isNextProperty = nextChar === '"' && /^"[A-Za-z0-9_$-]+"\s*:/.test(raw.slice(nextIdx));
+      if (
+        nextChar === "" ||
+        nextChar === "," ||
+        nextChar === "}" ||
+        nextChar === "]" ||
+        nextChar === ":" ||
+        nextChar === "/" ||
+        nextChar === "#" ||
+        isNextProperty
+      ) {
+        inString = false;
+        output += char;
+      } else {
+        output += '\\"';
+      }
+      continue;
+    }
+    output += char;
+  }
+  return output;
+}
+
 function removeTrailingCommas(raw: string): string {
   return raw.replace(/,\s*([}\]])/g, "$1");
 }
@@ -292,7 +348,8 @@ function closeUnbalancedJsonish(raw: string): string {
 
 function repairJsonish(raw: string): string {
   const sanitized = sanitizeControlCharsInStrings(raw);
-  const uncommented = stripCommentsOutsideStrings(sanitized);
+  const quotesRepaired = escapeUnescapedInteriorQuotes(sanitized);
+  const uncommented = stripCommentsOutsideStrings(quotesRepaired);
   const commaRepaired = insertMissingPropertyCommas(uncommented);
   return closeUnbalancedJsonish(removeTrailingCommas(commaRepaired));
 }
