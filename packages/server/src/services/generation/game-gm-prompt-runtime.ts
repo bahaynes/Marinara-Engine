@@ -363,6 +363,8 @@ export async function injectGameGmPromptRuntime(args: {
     })(),
     characterSprites: listPartySprites(partyIdNamePairs),
     language: (setupConfig?.language as string) || undefined,
+    sessionHistoryMode:
+      (args.chatMetadata.gameSessionHistoryMode as "tiered" | "full" | "compact" | "disabled") || "tiered",
     gameSystemPrompt: resolveGameGmPromptTemplate(args.chatMetadata, setupConfig),
     gameSpecialInstructions:
       typeof args.chatMetadata.gameSpecialInstructions === "string"

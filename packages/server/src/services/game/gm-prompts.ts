@@ -73,6 +73,8 @@ export interface GmPromptContext {
   playerInventory?: Array<{ name: string; quantity: number }>;
   /** Language for all narration and dialogue */
   language?: string;
+  /** Session history fidelity mode for previous session summaries. */
+  sessionHistoryMode?: "tiered" | "full" | "compact" | "disabled" | null;
   /** User-overridable GM instruction body. Wrapped in <instructions> before sending. */
   gameSystemPrompt?: string | null;
   gameSpecialInstructions?: string | null;
@@ -264,7 +266,30 @@ export function buildTieredSessionHistoryLines(summaries: SessionSummary[]): str
   return lines;
 }
 
-function buildSessionHistoryLines(summaries: SessionSummary[]): string[] {
+function buildSessionHistoryLines(
+  summaries: SessionSummary[],
+  mode?: "tiered" | "full" | "compact" | "disabled" | null,
+): string[] {
+  if (mode === "disabled" || summaries.length === 0) return [];
+  if (mode === "full") {
+    const lines: string[] = [];
+    for (const [index, summary] of summaries.entries()) {
+      const normalized = normalizePromptSessionSummary(summary, index);
+      lines.push(`Session ${normalized.sessionNumber} summary:`, normalized.summary);
+      if (index < summaries.length - 1) lines.push("");
+    }
+    return lines;
+  }
+  if (mode === "compact") {
+    const recent = summaries.slice(-2);
+    const lines: string[] = [];
+    for (const [index, summary] of recent.entries()) {
+      const normalized = normalizePromptSessionSummary(summary, index);
+      lines.push(`Session ${normalized.sessionNumber} summary:`, normalized.summary);
+      if (index < recent.length - 1) lines.push("");
+    }
+    return lines;
+  }
   return buildTieredSessionHistoryLines(summaries);
 }
 
@@ -618,17 +643,20 @@ export function buildGmSystemPrompt(ctx: GmPromptContext): string {
     sections.push(`<tracked_npcs>`, ...buildTrackedNpcLines(npcs), `</tracked_npcs>`);
   }
 
-  // ── Previous Sessions (all summaries, latest session continuity in detail) ──
-  if (sessionSummaries.length > 0) {
+  // ── Previous Sessions (sliding-window tiered summaries, latest session continuity in detail) ──
+  if (sessionSummaries.length > 0 && ctx.sessionHistoryMode !== "disabled") {
     const sorted = [...sessionSummaries].sort((a, b) => a.sessionNumber - b.sessionNumber);
     const latest = sorted[sorted.length - 1]!;
+    const historyLines = buildSessionHistoryLines(sorted, ctx.sessionHistoryMode);
 
-    sections.push(
-      `<previous_sessions>`,
-      `Every completed session summary is included below for long-term continuity.`,
-      ...buildSessionHistoryLines(sorted),
-      `</previous_sessions>`,
-    );
+    if (historyLines.length > 0) {
+      sections.push(
+        `<previous_sessions>`,
+        `Previous session summaries are included below in tiered fidelity for continuity:`,
+        ...historyLines,
+        `</previous_sessions>`,
+      );
+    }
 
     sections.push(
       `<latest_session_continuity>`,
