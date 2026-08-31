@@ -143,8 +143,8 @@ export function resolveGenerationProviderRuntime(args: GenerationProviderRuntime
 
   if (args.isSceneChat) {
     runtime.maxTokens = 8192;
-    runtime.reasoningEffort = "maximum";
-    runtime.verbosity = "high";
+    runtime.reasoningEffort = chatParams?.reasoningEffort ?? connectionParams?.reasoningEffort ?? "maximum";
+    runtime.verbosity = chatParams?.verbosity ?? connectionParams?.verbosity ?? "high";
   }
 
   if (args.chatMode === "game" && !isLocalGemma) {
@@ -155,8 +155,8 @@ export function resolveGenerationProviderRuntime(args: GenerationProviderRuntime
     runtime.minP = 0;
     runtime.frequencyPenalty = 0;
     runtime.presencePenalty = 0;
-    runtime.reasoningEffort = "maximum";
-    runtime.verbosity = null;
+    runtime.reasoningEffort = chatParams?.reasoningEffort ?? connectionParams?.reasoningEffort ?? "maximum";
+    runtime.verbosity = chatParams?.verbosity ?? connectionParams?.verbosity ?? null;
   } else if (args.chatMode === "game" && typeof chatParams?.maxTokens !== "number") {
     runtime.maxTokens = Math.max(runtime.maxTokens, 16_384);
   }
