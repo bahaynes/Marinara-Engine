@@ -396,11 +396,18 @@ export function GameModelQuotaWidget({
                 <span className="font-semibold text-foreground truncate max-w-[170px]">{displayName}</span>
               </div>
 
-              {/* Claude Subscription Quota Cards */}
+              {/* Session + Weekly Quota Cards (Claude & AGY) */}
               {quota?.session && (
                 <div className="rounded-lg bg-foreground/[0.04] p-2 space-y-1.5 border border-foreground/10 text-xs">
                   <div className="flex items-center justify-between text-[0.6875rem]">
-                    <span className="font-medium text-amber-300/90 flex items-center gap-1">
+                    <span
+                      className={cn(
+                        "font-medium flex items-center gap-1",
+                        activePlan.planType === "agy_sub"
+                          ? "text-indigo-600 dark:text-indigo-300"
+                          : "text-amber-700 dark:text-amber-300",
+                      )}
+                    >
                       <Clock size={11} /> 5h Session Quota
                     </span>
                     <span className="text-foreground/75 font-semibold">
@@ -412,7 +419,13 @@ export function GameModelQuotaWidget({
                     <div
                       className={cn(
                         "h-full transition-all duration-300 rounded-full",
-                        quota.session.percentRemaining > 30 ? "bg-amber-400" : "bg-red-400",
+                        activePlan.planType === "agy_sub"
+                          ? quota.session.percentRemaining > 20
+                            ? "bg-indigo-500"
+                            : "bg-red-400"
+                          : quota.session.percentRemaining > 30
+                            ? "bg-amber-400"
+                            : "bg-red-400",
                       )}
                       style={{ width: `${quota.session.percentRemaining}%` }}
                     />
@@ -474,8 +487,8 @@ export function GameModelQuotaWidget({
                 </div>
               )}
 
-              {/* AGY Subscription info */}
-              {activePlan.planType === "agy_sub" && (
+              {/* AGY Subscription fallback info (when no session metrics available) */}
+              {activePlan.planType === "agy_sub" && !quota?.session && (
                 <div className="rounded-lg bg-indigo-500/10 p-2 text-xs border border-indigo-500/20 text-indigo-700 dark:text-indigo-300 space-y-1">
                   <div className="flex items-center justify-between text-[0.6875rem] font-semibold">
                     <span className="flex items-center gap-1">

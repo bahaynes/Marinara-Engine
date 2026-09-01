@@ -1587,11 +1587,77 @@ export async function connectionsRoutes(app: FastifyInstance) {
         model.includes("gemini") ||
         model.includes("agy") ||
         model.includes("antigravity");
-      result = {
-        provider: isAgy ? "agy_subscription" : conn.provider,
-        isUnlimited: !isAgy,
-        isQuotaTracked: isAgy,
-      };
+      if (isAgy) {
+        try {
+          const baseUrl = (conn.baseUrl || "http://llama-server:8080/v1").replace(/\/+$/, "");
+          const usageUrl = baseUrl.endsWith("/v1") ? `${baseUrl}/usage` : `${baseUrl}/v1/usage`;
+          const resp = await fetch(usageUrl, {
+            headers: {
+              ...(conn.apiKey ? { Authorization: `Bearer ${conn.apiKey}` } : {}),
+            },
+            signal: AbortSignal.timeout(6000),
+          });
+          if (resp.ok) {
+            const agyData: any = await resp.json();
+            const groups: any[] = agyData?.command?.data?.groups || [];
+            const isThirdParty = model.includes("claude") || model.includes("gpt");
+            const targetGroup =
+              groups.find((g) =>
+                isThirdParty
+                  ? g.name?.toLowerCase().includes("claude") || g.name?.toLowerCase().includes("gpt")
+                  : g.name?.toLowerCase().includes("gemini"),
+              ) || groups[0];
+
+            const buckets: any[] = targetGroup?.buckets || [];
+            const bucket5h = buckets.find((b) => b.window === "5h" || b.id?.includes("5h"));
+            const bucketWk = buckets.find((b) => b.window === "weekly" || b.id?.includes("weekly"));
+
+            const sessionRemaining =
+              bucket5h?.remaining_fraction != null ? Math.round(bucket5h.remaining_fraction * 100) : null;
+            const weeklyRemaining =
+              bucketWk?.remaining_fraction != null ? Math.round(bucketWk.remaining_fraction * 100) : null;
+
+            result = {
+              provider: "agy_subscription",
+              isQuotaTracked: true,
+              groupName: targetGroup?.name || "Gemini Models",
+              session:
+                sessionRemaining != null
+                  ? {
+                      percentRemaining: sessionRemaining,
+                      percentUsed: Math.max(0, 100 - sessionRemaining),
+                      resetsAt: bucket5h?.reset_time || null,
+                      resetsAtEpochMs: bucket5h?.reset_time ? new Date(bucket5h.reset_time).getTime() : null,
+                    }
+                  : null,
+              weekly:
+                weeklyRemaining != null
+                  ? {
+                      percentRemaining: weeklyRemaining,
+                      percentUsed: Math.max(0, 100 - weeklyRemaining),
+                      resetsAt: bucketWk?.reset_time || null,
+                      resetsAtEpochMs: bucketWk?.reset_time ? new Date(bucketWk.reset_time).getTime() : null,
+                    }
+                  : null,
+            };
+          } else {
+            result = {
+              provider: "agy_subscription",
+              isQuotaTracked: true,
+            };
+          }
+        } catch {
+          result = {
+            provider: "agy_subscription",
+            isQuotaTracked: true,
+          };
+        }
+      } else {
+        result = {
+          provider: conn.provider,
+          isUnlimited: true,
+        };
+      }
     } else {
       result = {
         provider: conn.provider,
