@@ -1476,6 +1476,198 @@ export async function connectionsRoutes(app: FastifyInstance) {
     };
   });
 
+  // ── Live Quota & Usage endpoint (Claude Subscription 5h/weekly + NanoGPT 60M/wk) ──
+  const quotaCache = new Map<string, { data: Record<string, unknown>; timestamp: number }>();
+  const QUOTA_CACHE_TTL_MS = 30_000;
+
+  app.get<{ Params: { id: string } }>("/:id/quota", async (req, reply) => {
+    const conn = await storage.getWithKey(req.params.id);
+    if (!conn) return reply.status(404).send({ error: "Connection not found" });
+
+    const cached = quotaCache.get(conn.id);
+    if (cached && Date.now() - cached.timestamp < QUOTA_CACHE_TTL_MS) {
+      return cached.data;
+    }
+
+    let result: Record<string, unknown>;
+
+    if (conn.provider === "claude_subscription") {
+      try {
+        const homeDir = process.env.HOME || "/home/node";
+        const credsPath = join(homeDir, ".claude", ".credentials.json");
+        let token: string | null = null;
+        if (existsSync(credsPath)) {
+          const creds = JSON.parse(await readFile(credsPath, "utf8"));
+          token = creds?.claudeAiOauth?.accessToken || creds?.accessToken || null;
+        }
+        if (!token) {
+          result = { provider: "claude_subscription", error: "No Claude subscription credentials found" };
+        } else {
+          const resp = await fetch("https://api.anthropic.com/api/oauth/usage", {
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "anthropic-beta": "oauth-2025-04-20",
+              "User-Agent": "claude-code/2.1.252",
+            },
+          });
+          if (!resp.ok) {
+            result = { provider: "claude_subscription", error: `Usage API returned ${resp.status}` };
+          } else {
+            const json = (await resp.json()) as any;
+            const fiveHour = json.five_hour;
+            const sevenDay = json.seven_day;
+            result = {
+              provider: "claude_subscription",
+              session: fiveHour
+                ? {
+                    percentUsed: Math.round(Number(fiveHour.utilization ?? 0)),
+                    percentRemaining: Math.max(0, 100 - Math.round(Number(fiveHour.utilization ?? 0))),
+                    resetsAt: fiveHour.resets_at ?? null,
+                    resetsAtEpochMs: fiveHour.resets_at ? new Date(fiveHour.resets_at).getTime() : null,
+                  }
+                : undefined,
+              weekly: sevenDay
+                ? {
+                    percentUsed: Math.round(Number(sevenDay.utilization ?? 0)),
+                    percentRemaining: Math.max(0, 100 - Math.round(Number(sevenDay.utilization ?? 0))),
+                    resetsAt: sevenDay.resets_at ?? null,
+                    resetsAtEpochMs: sevenDay.resets_at ? new Date(sevenDay.resets_at).getTime() : null,
+                  }
+                : undefined,
+            };
+          }
+        }
+      } catch (err: any) {
+        result = { provider: "claude_subscription", error: err?.message || "Failed to fetch Claude usage" };
+      }
+    } else if (conn.provider === "nanogpt") {
+      try {
+        if (!conn.apiKey) {
+          result = { provider: "nanogpt", error: "No API key configured" };
+        } else {
+          const resp = await fetch("https://nano-gpt.com/api/subscription/v1/usage", {
+            headers: {
+              "x-api-key": conn.apiKey,
+              Authorization: `Bearer ${conn.apiKey}`,
+            },
+          });
+          if (!resp.ok) {
+            result = { provider: "nanogpt", error: `NanoGPT API returned ${resp.status}` };
+          } else {
+            const json = (await resp.json()) as any;
+            const weekly = json.weeklyInputTokens;
+            const limit = weekly?.limit ?? json.limits?.weeklyInputTokens ?? 60_000_000;
+            const used = weekly?.used ?? 0;
+            const remaining = weekly?.remaining ?? Math.max(0, limit - used);
+            const percentUsed = Math.round((used / limit) * 1000) / 10;
+            const percentRemaining = Math.max(0, Math.round((remaining / limit) * 1000) / 10);
+            result = {
+              provider: "nanogpt",
+              weekly: {
+                limitTokens: limit,
+                usedTokens: used,
+                remainingTokens: remaining,
+                percentUsed,
+                percentRemaining,
+                resetsAt: weekly?.resetAt ? new Date(weekly.resetAt).toISOString() : null,
+                resetsAtEpochMs: weekly?.resetAt ?? null,
+              },
+            };
+          }
+        }
+      } catch (err: any) {
+        result = { provider: "nanogpt", error: err?.message || "Failed to fetch NanoGPT usage" };
+      }
+    } else if (conn.provider === "custom") {
+      const name = (conn.name || "").toLowerCase();
+      const model = (conn.model || "").toLowerCase();
+      const isAgy =
+        name.includes("agy") ||
+        name.includes("antigravity") ||
+        model.includes("gemini") ||
+        model.includes("agy") ||
+        model.includes("antigravity");
+      if (isAgy) {
+        try {
+          const baseUrl = (conn.baseUrl || "http://llama-server:8080/v1").replace(/\/+$/, "");
+          const usageUrl = baseUrl.endsWith("/v1") ? `${baseUrl}/usage` : `${baseUrl}/v1/usage`;
+          const resp = await fetch(usageUrl, {
+            headers: {
+              ...(conn.apiKey ? { Authorization: `Bearer ${conn.apiKey}` } : {}),
+            },
+            signal: AbortSignal.timeout(6000),
+          });
+          if (resp.ok) {
+            const agyData: any = await resp.json();
+            const groups: any[] = agyData?.command?.data?.groups || [];
+            const isThirdParty = model.includes("claude") || model.includes("gpt");
+            const targetGroup =
+              groups.find((g) =>
+                isThirdParty
+                  ? g.name?.toLowerCase().includes("claude") || g.name?.toLowerCase().includes("gpt")
+                  : g.name?.toLowerCase().includes("gemini"),
+              ) || groups[0];
+
+            const buckets: any[] = targetGroup?.buckets || [];
+            const bucket5h = buckets.find((b) => b.window === "5h" || b.id?.includes("5h"));
+            const bucketWk = buckets.find((b) => b.window === "weekly" || b.id?.includes("weekly"));
+
+            const sessionRemaining =
+              bucket5h?.remaining_fraction != null ? Math.round(bucket5h.remaining_fraction * 100) : null;
+            const weeklyRemaining =
+              bucketWk?.remaining_fraction != null ? Math.round(bucketWk.remaining_fraction * 100) : null;
+
+            result = {
+              provider: "agy_subscription",
+              isQuotaTracked: true,
+              groupName: targetGroup?.name || "Gemini Models",
+              session:
+                sessionRemaining != null
+                  ? {
+                      percentRemaining: sessionRemaining,
+                      percentUsed: Math.max(0, 100 - sessionRemaining),
+                      resetsAt: bucket5h?.reset_time || null,
+                      resetsAtEpochMs: bucket5h?.reset_time ? new Date(bucket5h.reset_time).getTime() : null,
+                    }
+                  : null,
+              weekly:
+                weeklyRemaining != null
+                  ? {
+                      percentRemaining: weeklyRemaining,
+                      percentUsed: Math.max(0, 100 - weeklyRemaining),
+                      resetsAt: bucketWk?.reset_time || null,
+                      resetsAtEpochMs: bucketWk?.reset_time ? new Date(bucketWk.reset_time).getTime() : null,
+                    }
+                  : null,
+            };
+          } else {
+            result = {
+              provider: "agy_subscription",
+              isQuotaTracked: true,
+            };
+          }
+        } catch {
+          result = {
+            provider: "agy_subscription",
+            isQuotaTracked: true,
+          };
+        }
+      } else {
+        result = {
+          provider: conn.provider,
+          isUnlimited: true,
+        };
+      }
+    } else {
+      result = {
+        provider: conn.provider,
+      };
+    }
+
+    quotaCache.set(conn.id, { data: result, timestamp: Date.now() });
+    return result;
+  });
+
   // ── Test message — sends "hi" to the model and returns the response ──
   app.post<{ Params: { id: string } }>("/:id/test-message", async (req, reply) => {
     const conn = await storage.getWithKey(req.params.id);
