@@ -71,6 +71,11 @@ const ConversationAutonomousEffects = lazy(async () => {
   return { default: module.ConversationAutonomousEffects };
 });
 
+const GameModelQuotaWidget = lazy(async () => {
+  const module = await import("../game/GameModelQuotaWidget");
+  return { default: module.GameModelQuotaWidget };
+});
+
 interface ConversationViewProps {
   chatId: string;
   messages: Message[] | undefined;
@@ -482,6 +487,9 @@ export function ConversationView({
         variant="roleplay"
         compact={compact}
       />
+      <Suspense fallback={null}>
+        <GameModelQuotaWidget chatId={chatId} compact={compact} />
+      </Suspense>
       <ActiveLorebookEntriesButton chatId={chatId} />
       <ChatToolbarButton
         icon={<ImageIcon size="0.875rem" />}

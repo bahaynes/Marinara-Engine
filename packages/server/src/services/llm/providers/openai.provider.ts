@@ -903,7 +903,7 @@ export class OpenAIProvider extends BaseLLMProvider {
         body.reasoning_effort = customGlmEffort;
       } else if (this.hasExplicitReasoningDisable(options.reasoningEffort)) {
         body.reasoning_effort = "none";
-      } else if (this.shouldSendReasoningEffort(options.model, options.reasoningEffort)) {
+      } else if (this.hasActiveReasoningEffort(options.reasoningEffort)) {
         body.reasoning_effort = options.reasoningEffort;
       }
       return;
