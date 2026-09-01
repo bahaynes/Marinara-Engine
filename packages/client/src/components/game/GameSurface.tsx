@@ -120,6 +120,7 @@ import { parsePartyDialogue } from "../../lib/party-dialogue-parser";
 import { dispatchSpotifySceneTrackChange } from "../../lib/spotify-playback-events";
 import { ttsService } from "../../lib/tts-service";
 import { ActiveLorebookEntriesButton } from "../chat/ActiveLorebookEntriesButton";
+import { GameModelQuotaWidget } from "./GameModelQuotaWidget";
 import type {
   PartyDialogueLine,
   CombatSummary,
@@ -11872,6 +11873,10 @@ function GameSurfaceComponent({
                     buttonClassName={GAME_TOP_ICON_BUTTON}
                     onOpen={dismissOtherFloatingWindows}
                   />
+                  <GameModelQuotaWidget
+                    chatId={activeChatId}
+                    onOpen={dismissOtherFloatingWindows}
+                  />
                   <button
                     data-chat-help="gallery"
                     data-chat-toolbar-panel-action="gallery"
@@ -11951,6 +11956,12 @@ function GameSurfaceComponent({
                           groupId={chat.groupId ?? null}
                           variant="roleplay"
                           compact
+                          onOpen={dismissOtherFloatingWindows}
+                        />
+                        <GameModelQuotaWidget
+                          chatId={activeChatId}
+                          compact
+                          buttonClassName={GAME_TOP_ICON_BUTTON}
                           onOpen={dismissOtherFloatingWindows}
                         />
                         <div>
