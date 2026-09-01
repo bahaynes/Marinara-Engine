@@ -1,12 +1,14 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
-import { Bot, Check, Dices, ChevronDown } from "lucide-react";
+import { Bot, Check, Dices, ChevronDown, Clock, ShieldCheck, Zap } from "lucide-react";
 import { useConnections, useUpdateConnection } from "../../hooks/use-connections";
 import { useChat, useUpdateChat } from "../../hooks/use-chats";
 import { useSidecarStore } from "../../stores/sidecar.store";
 import { appendLocalSidecarConnectionOption, isLocalSidecarConnectionOption } from "../../lib/connection-filters";
 import { cn } from "../../lib/utils";
 import { NEUTRAL_PANEL_SHELL, NEUTRAL_PANEL_SCROLL_AREA } from "../ui/neutral-surface-styles";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "../../lib/api-client";
 
 interface GameModelQuotaWidgetProps {
   chatId: string | null;
@@ -17,6 +19,65 @@ interface GameModelQuotaWidgetProps {
 }
 
 type PlanType = "claude_sub" | "nanogpt" | "local" | "api";
+
+interface QuotaData {
+  provider: string;
+  isUnlimited?: boolean;
+  session?: {
+    percentUsed: number;
+    percentRemaining: number;
+    resetsAt: string | null;
+    resetsAtEpochMs?: number | null;
+  };
+  weekly?: {
+    limitTokens?: number;
+    usedTokens?: number;
+    remainingTokens?: number;
+    percentUsed: number;
+    percentRemaining: number;
+    resetsAt: string | null;
+    resetsAtEpochMs?: number | null;
+  };
+  error?: string;
+}
+
+function formatCountdown(targetMs: number | null | undefined): string {
+  if (!targetMs) return "";
+  const diffMs = targetMs - Date.now();
+  if (diffMs <= 0) return "Ready now";
+
+  const diffMins = Math.round(diffMs / 60000);
+  if (diffMins < 60) return `${diffMins}m`;
+
+  const hours = Math.floor(diffMins / 60);
+  const mins = diffMins % 60;
+  if (hours < 24) return `${hours}h ${mins}m`;
+
+  const days = Math.floor(hours / 24);
+  const remHours = hours % 24;
+  return `${days}d ${remHours}h`;
+}
+
+function formatResetClockTime(target: string | number | null | undefined): string {
+  if (!target) return "";
+  try {
+    const d = typeof target === "number" ? new Date(target) : new Date(target);
+    return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  } catch {
+    return "";
+  }
+}
+
+function formatTokenCount(tokens: number | undefined): string {
+  if (tokens === undefined || tokens === null) return "0";
+  if (tokens >= 1_000_000) {
+    return `${(tokens / 1_000_000).toFixed(1)}M`;
+  }
+  if (tokens >= 1_000) {
+    return `${(tokens / 1_000).toFixed(0)}k`;
+  }
+  return `${tokens}`;
+}
 
 function resolveConnectionPlan(conn: { provider?: string; model?: string } | null | undefined): {
   planType: PlanType;
@@ -29,7 +90,7 @@ function resolveConnectionPlan(conn: { provider?: string; model?: string } | nul
   if (!conn) {
     return {
       planType: "api",
-      label: "Default Model",
+      label: "Default",
       badge: "Default",
       colorClass: "text-foreground/70 bg-foreground/10 border-foreground/15",
       dotClass: "bg-foreground/40",
@@ -63,7 +124,7 @@ function resolveConnectionPlan(conn: { provider?: string; model?: string } | nul
   }
 
   if (
-    provider === "custom" && (model.includes("local") || model.includes("gemma") || model.includes("llama")) ||
+    (provider === "custom" && (model.includes("local") || model.includes("gemma") || model.includes("llama"))) ||
     provider === "local-sidecar"
   ) {
     return {
@@ -136,12 +197,25 @@ export function GameModelQuotaWidget({
     return resolveConnectionPlan(activeConn);
   }, [activeConn]);
 
+  // Fetch live quota for active connection (cached 30s)
+  const { data: quota } = useQuery<QuotaData>({
+    queryKey: ["connection-quota", activeConn?.id],
+    queryFn: async () => {
+      if (!activeConn?.id) return null as any;
+      return await api.get<QuotaData>(`/connections/${activeConn.id}/quota`);
+    },
+    enabled: Boolean(activeConn?.id),
+    refetchInterval: 30_000,
+    staleTime: 20_000,
+  });
+
   const activeEffort = useMemo(() => {
     if (!activeConn?.defaultParameters) return null;
     try {
-      const parsed = typeof activeConn.defaultParameters === "string"
-        ? JSON.parse(activeConn.defaultParameters)
-        : activeConn.defaultParameters;
+      const parsed =
+        typeof activeConn.defaultParameters === "string"
+          ? JSON.parse(activeConn.defaultParameters)
+          : activeConn.defaultParameters;
       return (parsed as { reasoningEffort?: string })?.reasoningEffort ?? null;
     } catch {
       return null;
@@ -200,8 +274,8 @@ export function GameModelQuotaWidget({
     if (!open || !btnRef.current) return;
     const rect = btnRef.current.getBoundingClientRect();
     const menuEl = menuRef.current;
-    const menuHeight = menuEl?.offsetHeight || 320;
-    const menuWidth = menuEl?.offsetWidth || 300;
+    const menuHeight = menuEl?.offsetHeight || 360;
+    const menuWidth = menuEl?.offsetWidth || 320;
 
     let left = rect.left;
     if (left + menuWidth > window.innerWidth - 8) {
@@ -225,6 +299,22 @@ export function GameModelQuotaWidget({
       ? activeConn.name || activeConn.model || "Active Model"
       : "Default Model";
 
+  // Compute live quota display badge for pill
+  const pillQuotaBadge = useMemo(() => {
+    if (!quota) return activePlan.badge;
+    if (quota.session) {
+      const pct = quota.session.percentRemaining;
+      return `${pct}% left (5h)`;
+    }
+    if (quota.weekly?.remainingTokens !== undefined) {
+      return `${formatTokenCount(quota.weekly.remainingTokens)} left`;
+    }
+    if (quota.isUnlimited) {
+      return "Unlimited (Free)";
+    }
+    return activePlan.badge;
+  }, [quota, activePlan]);
+
   const dropdownMenu =
     open && typeof document !== "undefined"
       ? createPortal(
@@ -244,7 +334,7 @@ export function GameModelQuotaWidget({
             }}
             className={cn(
               NEUTRAL_PANEL_SHELL,
-              "fixed z-[9999] flex min-w-[280px] max-w-[340px] max-h-[380px] flex-col overflow-hidden rounded-xl border border-foreground/15 shadow-2xl backdrop-blur-md",
+              "fixed z-[9999] flex min-w-[300px] max-w-[360px] max-h-[420px] flex-col overflow-hidden rounded-xl border border-foreground/15 shadow-2xl backdrop-blur-md",
             )}
             style={pos ? { left: pos.left, top: pos.top } : { visibility: "hidden" as const }}
           >
@@ -275,13 +365,101 @@ export function GameModelQuotaWidget({
               </button>
             </div>
 
-            {/* Current Active Info Banner */}
-            <div className="px-3 py-2 bg-foreground/[0.02] border-b border-foreground/10">
-              <div className="text-[0.6875rem] text-foreground/50 flex items-center justify-between">
-                <span>Active Connection:</span>
-                <span className="font-medium text-foreground/85 truncate max-w-[150px]">{displayName}</span>
+            {/* Current Active Info Banner with Live Quota */}
+            <div className="p-3 bg-foreground/[0.02] border-b border-foreground/10 space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-foreground/50">Active:</span>
+                <span className="font-semibold text-foreground truncate max-w-[170px]">{displayName}</span>
               </div>
-              <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+
+              {/* Claude Subscription Quota Cards */}
+              {quota?.session && (
+                <div className="rounded-lg bg-foreground/[0.04] p-2 space-y-1.5 border border-foreground/10 text-xs">
+                  <div className="flex items-center justify-between text-[0.6875rem]">
+                    <span className="font-medium text-amber-300/90 flex items-center gap-1">
+                      <Clock size={11} /> 5h Session Quota
+                    </span>
+                    <span className="text-foreground/75 font-semibold">
+                      {quota.session.percentRemaining}% remaining
+                    </span>
+                  </div>
+                  {/* Progress bar */}
+                  <div className="h-1.5 w-full bg-foreground/10 rounded-full overflow-hidden">
+                    <div
+                      className={cn(
+                        "h-full transition-all duration-300 rounded-full",
+                        quota.session.percentRemaining > 30 ? "bg-amber-400" : "bg-red-400",
+                      )}
+                      style={{ width: `${quota.session.percentRemaining}%` }}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between text-[0.625rem] text-foreground/50">
+                    <span>Used: {quota.session.percentUsed}%</span>
+                    <span>
+                      {quota.session.resetsAtEpochMs
+                        ? `Replenishes at ${formatResetClockTime(quota.session.resetsAtEpochMs)} (${formatCountdown(quota.session.resetsAtEpochMs)})`
+                        : ""}
+                    </span>
+                  </div>
+
+                  {quota.weekly && (
+                    <div className="pt-1.5 border-t border-foreground/10">
+                      <div className="flex items-center justify-between text-[0.625rem] text-foreground/60">
+                        <span>Weekly Allotted:</span>
+                        <span className="font-medium">{quota.weekly.percentRemaining}% remaining</span>
+                      </div>
+                      <div className="text-[0.5625rem] text-foreground/45 text-right mt-0.5">
+                        {quota.weekly.resetsAtEpochMs
+                          ? `Weekly resets in ${formatCountdown(quota.weekly.resetsAtEpochMs)}`
+                          : ""}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* NanoGPT Quota Cards */}
+              {quota?.weekly && !quota.session && (
+                <div className="rounded-lg bg-foreground/[0.04] p-2 space-y-1.5 border border-foreground/10 text-xs">
+                  <div className="flex items-center justify-between text-[0.6875rem]">
+                    <span className="font-medium text-sky-300/90 flex items-center gap-1">
+                      <ShieldCheck size={11} /> Weekly Allowance
+                    </span>
+                    <span className="text-foreground/80 font-semibold">
+                      {formatTokenCount(quota.weekly.remainingTokens)} / {formatTokenCount(quota.weekly.limitTokens)}
+                    </span>
+                  </div>
+                  {/* Progress bar */}
+                  <div className="h-1.5 w-full bg-foreground/10 rounded-full overflow-hidden">
+                    <div
+                      className={cn(
+                        "h-full transition-all duration-300 rounded-full",
+                        quota.weekly.percentRemaining > 20 ? "bg-sky-400" : "bg-red-400",
+                      )}
+                      style={{ width: `${quota.weekly.percentRemaining}%` }}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between text-[0.625rem] text-foreground/50">
+                    <span>{quota.weekly.percentRemaining}% remaining</span>
+                    <span>
+                      {quota.weekly.resetsAtEpochMs
+                        ? `Resets in ${formatCountdown(quota.weekly.resetsAtEpochMs)}`
+                        : ""}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Local AI status */}
+              {quota?.isUnlimited && (
+                <div className="rounded-lg bg-emerald-500/10 p-2 text-xs border border-emerald-500/20 text-emerald-300/90 flex items-center gap-2">
+                  <Zap size={13} className="shrink-0" />
+                  <span className="text-[0.6875rem]">Local Offline Execution · Unlimited</span>
+                </div>
+              )}
+
+              {/* Badges */}
+              <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
                 <span
                   className={cn(
                     "inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[0.625rem] font-medium border",
@@ -289,18 +467,18 @@ export function GameModelQuotaWidget({
                   )}
                 >
                   <span className={cn("h-1.5 w-1.5 rounded-full", activePlan.dotClass)} />
-                  {activePlan.badge}
+                  {activePlan.label}
                 </span>
                 {activeEffort && (
                   <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[0.625rem] bg-foreground/10 text-foreground/70">
-                    Effort: {activeEffort}
+                    Thinking: {activeEffort}
                   </span>
                 )}
               </div>
             </div>
 
-            {/* Connection List */}
-            <div className={cn(NEUTRAL_PANEL_SCROLL_AREA, "overflow-y-auto p-1 max-h-[220px]")}>
+            {/* Connection Switcher List */}
+            <div className={cn(NEUTRAL_PANEL_SCROLL_AREA, "overflow-y-auto p-1 max-h-[180px]")}>
               {sorted.map((conn) => {
                 const inPool = conn.useForRandom === "true";
                 const isActive = activeConnectionId === conn.id;
@@ -378,7 +556,7 @@ export function GameModelQuotaWidget({
           type="button"
           ref={btnRef}
           onClick={toggleMenu}
-          title={`Active Model: ${displayName} (${activePlan.badge})`}
+          title={`Active Model: ${displayName} (${pillQuotaBadge})`}
           className={cn(
             "flex h-8 w-8 items-center justify-center rounded-xl transition-all",
             open
@@ -410,7 +588,7 @@ export function GameModelQuotaWidget({
         )}
       >
         <span className={cn("h-2 w-2 rounded-full shrink-0", activePlan.dotClass)} />
-        <span className="font-medium text-foreground/80 truncate max-w-[110px] sm:max-w-[140px]">
+        <span className="font-medium text-foreground/80 truncate max-w-[110px] sm:max-w-[130px]">
           {displayName}
         </span>
         <span
@@ -419,7 +597,7 @@ export function GameModelQuotaWidget({
             activePlan.colorClass,
           )}
         >
-          {activePlan.badge}
+          {pillQuotaBadge}
         </span>
         <ChevronDown size={12} className="text-foreground/40 transition-transform group-hover:text-foreground/70" />
       </button>
