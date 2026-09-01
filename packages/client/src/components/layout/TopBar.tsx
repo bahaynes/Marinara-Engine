@@ -16,6 +16,8 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import {
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useId,
@@ -61,6 +63,10 @@ const MARI_EDGE_GLOW_LABEL: Record<Exclude<MariEdgeGlow, null>, string> = {
   approval: "Professor Mari needs your answer",
   error: "Professor Mari's last run failed",
 };
+const GameModelQuotaWidget = lazy(async () => {
+  const module = await import("../game/GameModelQuotaWidget");
+  return { default: module.GameModelQuotaWidget };
+});
 
 type RightPanelButtonPanel = "lorebooks" | "presets" | "connections" | "agents" | "personas";
 
@@ -490,6 +496,11 @@ export function TopBar({ mobileTopbarNavigation }: { mobileTopbarNavigation: boo
           </>
         ) : null}
         <MariTopbarStatus state={mariEdgeGlow} />
+        {activeChatId ? (
+          <Suspense fallback={null}>
+            <GameModelQuotaWidget chatId={activeChatId} compact />
+          </Suspense>
+        ) : null}
       </div>
 
       {/* Right section - Panel toggles */}
