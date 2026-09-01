@@ -120,7 +120,6 @@ import { parsePartyDialogue } from "../../lib/party-dialogue-parser";
 import { dispatchSpotifySceneTrackChange } from "../../lib/spotify-playback-events";
 import { ttsService } from "../../lib/tts-service";
 import { ActiveLorebookEntriesButton } from "../chat/ActiveLorebookEntriesButton";
-import { GameModelQuotaWidget } from "./GameModelQuotaWidget";
 import type {
   PartyDialogueLine,
   CombatSummary,
@@ -1548,6 +1547,11 @@ const DndCombatUI = lazy(async () => {
 const StoryboardBackgroundControls = lazy(async () => {
   const module = await import("./StoryboardBackgroundControls");
   return { default: module.StoryboardBackgroundControls };
+});
+
+const GameModelQuotaWidget = lazy(async () => {
+  const module = await import("./GameModelQuotaWidget");
+  return { default: module.GameModelQuotaWidget };
 });
 
 import { Modal } from "../ui/Modal";
@@ -11873,10 +11877,12 @@ function GameSurfaceComponent({
                     buttonClassName={GAME_TOP_ICON_BUTTON}
                     onOpen={dismissOtherFloatingWindows}
                   />
-                  <GameModelQuotaWidget
-                    chatId={activeChatId}
-                    onOpen={dismissOtherFloatingWindows}
-                  />
+                  <Suspense fallback={null}>
+                    <GameModelQuotaWidget
+                      chatId={activeChatId}
+                      onOpen={dismissOtherFloatingWindows}
+                    />
+                  </Suspense>
                   <button
                     data-chat-help="gallery"
                     data-chat-toolbar-panel-action="gallery"
@@ -11958,12 +11964,14 @@ function GameSurfaceComponent({
                           compact
                           onOpen={dismissOtherFloatingWindows}
                         />
-                        <GameModelQuotaWidget
-                          chatId={activeChatId}
-                          compact
-                          buttonClassName={GAME_TOP_ICON_BUTTON}
-                          onOpen={dismissOtherFloatingWindows}
-                        />
+                        <Suspense fallback={null}>
+                          <GameModelQuotaWidget
+                            chatId={activeChatId}
+                            compact
+                            buttonClassName={GAME_TOP_ICON_BUTTON}
+                            onOpen={dismissOtherFloatingWindows}
+                          />
+                        </Suspense>
                         <div>
                           <button
                             data-chat-help="retry"

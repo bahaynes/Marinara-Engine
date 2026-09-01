@@ -1579,9 +1579,18 @@ export async function connectionsRoutes(app: FastifyInstance) {
         result = { provider: "nanogpt", error: err?.message || "Failed to fetch NanoGPT usage" };
       }
     } else if (conn.provider === "custom") {
+      const name = (conn.name || "").toLowerCase();
+      const model = (conn.model || "").toLowerCase();
+      const isAgy =
+        name.includes("agy") ||
+        name.includes("antigravity") ||
+        model.includes("gemini") ||
+        model.includes("agy") ||
+        model.includes("antigravity");
       result = {
-        provider: conn.provider,
-        isUnlimited: true,
+        provider: isAgy ? "agy_subscription" : conn.provider,
+        isUnlimited: !isAgy,
+        isQuotaTracked: isAgy,
       };
     } else {
       result = {

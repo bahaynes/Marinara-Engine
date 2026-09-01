@@ -18,11 +18,12 @@ interface GameModelQuotaWidgetProps {
   onOpen?: () => void;
 }
 
-type PlanType = "claude_sub" | "nanogpt" | "local" | "api";
+type PlanType = "claude_sub" | "nanogpt" | "agy_sub" | "local" | "api";
 
 interface QuotaData {
   provider: string;
   isUnlimited?: boolean;
+  isQuotaTracked?: boolean;
   session?: {
     percentUsed: number;
     percentRemaining: number;
@@ -79,7 +80,7 @@ function formatTokenCount(tokens: number | undefined): string {
   return `${tokens}`;
 }
 
-function resolveConnectionPlan(conn: { provider?: string; model?: string } | null | undefined): {
+function resolveConnectionPlan(conn: { provider?: string; model?: string; name?: string } | null | undefined): {
   planType: PlanType;
   label: string;
   badge: string;
@@ -100,19 +101,41 @@ function resolveConnectionPlan(conn: { provider?: string; model?: string } | nul
 
   const provider = (conn.provider || "").toLowerCase();
   const model = (conn.model || "").toLowerCase();
+  const name = (conn.name || "").toLowerCase();
 
-  if (provider === "claude_subscription" || model.includes("claude-subscription")) {
+  // Claude subscription
+  if (provider === "claude_subscription" || model.includes("claude-subscription") || name.includes("claude (sub")) {
     return {
       planType: "claude_sub",
       label: "Claude Sub",
       badge: "Claude Sub",
       colorClass: "text-amber-700 bg-amber-500/15 border-amber-500/30 dark:text-amber-300 dark:bg-amber-500/15 dark:border-amber-500/30",
       dotClass: "bg-amber-500 dark:bg-amber-400",
-      detail: "Claude Pro/Max Subscription (5h Rolling Capacity)",
+      detail: "Claude Pro/Max Subscription (5h Rolling & Weekly Quotas)",
     };
   }
 
-  if (provider === "nanogpt" || model.includes("nanogpt")) {
+  // Google Antigravity / AGY via proxy
+  if (
+    name.includes("agy") ||
+    name.includes("antigravity") ||
+    model.includes("gemini-3") ||
+    model.includes("agy") ||
+    model.includes("antigravity") ||
+    (provider === "custom" && (name.includes("google") || model.includes("gemini")))
+  ) {
+    return {
+      planType: "agy_sub",
+      label: "AGY Sub",
+      badge: "AGY Sub (5h/Wk)",
+      colorClass: "text-indigo-700 bg-indigo-500/15 border-indigo-500/30 dark:text-indigo-300 dark:bg-indigo-500/15 dark:border-indigo-500/30",
+      dotClass: "bg-indigo-500 dark:bg-indigo-400",
+      detail: "Google Antigravity Subscription (5h Rolling & Weekly Quotas)",
+    };
+  }
+
+  // NanoGPT subscription
+  if (provider === "nanogpt" || model.includes("nanogpt") || name.includes("nanogpt")) {
     return {
       planType: "nanogpt",
       label: "NanoGPT",
@@ -123,6 +146,7 @@ function resolveConnectionPlan(conn: { provider?: string; model?: string } | nul
     };
   }
 
+  // Truly local models (gemma, llama, local-model, etc.)
   if (
     (provider === "custom" && (model.includes("local") || model.includes("gemma") || model.includes("llama"))) ||
     provider === "local-sidecar"
@@ -450,11 +474,26 @@ export function GameModelQuotaWidget({
                 </div>
               )}
 
+              {/* AGY Subscription info */}
+              {activePlan.planType === "agy_sub" && (
+                <div className="rounded-lg bg-indigo-500/10 p-2 text-xs border border-indigo-500/20 text-indigo-700 dark:text-indigo-300 space-y-1">
+                  <div className="flex items-center justify-between text-[0.6875rem] font-semibold">
+                    <span className="flex items-center gap-1">
+                      <Clock size={11} /> Google Antigravity Sub
+                    </span>
+                    <span>5h & Weekly Tier Quotas</span>
+                  </div>
+                  <div className="text-[0.625rem] text-foreground/60 leading-relaxed">
+                    Routed through local proxy to Antigravity CLI (<code className="text-foreground/80 font-mono">agy</code>). Uses 5-hour rolling session and weekly tier quotas.
+                  </div>
+                </div>
+              )}
+
               {/* Local AI status */}
-              {quota?.isUnlimited && (
+              {quota?.isUnlimited && activePlan.planType === "local" && (
                 <div className="rounded-lg bg-emerald-500/10 p-2 text-xs border border-emerald-500/20 text-emerald-300/90 flex items-center gap-2">
                   <Zap size={13} className="shrink-0" />
-                  <span className="text-[0.6875rem]">Local Offline Execution · Unlimited</span>
+                  <span className="text-[0.6875rem]">Local Offline Execution · Unlimited (Free)</span>
                 </div>
               )}
 
