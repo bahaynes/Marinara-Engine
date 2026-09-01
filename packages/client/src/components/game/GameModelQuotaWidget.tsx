@@ -106,8 +106,8 @@ function resolveConnectionPlan(conn: { provider?: string; model?: string } | nul
       planType: "claude_sub",
       label: "Claude Sub",
       badge: "Claude Sub",
-      colorClass: "text-amber-300/90 bg-amber-500/10 border-amber-500/25",
-      dotClass: "bg-amber-400",
+      colorClass: "text-amber-700 bg-amber-500/15 border-amber-500/30 dark:text-amber-300 dark:bg-amber-500/15 dark:border-amber-500/30",
+      dotClass: "bg-amber-500 dark:bg-amber-400",
       detail: "Claude Pro/Max Subscription (5h Rolling Capacity)",
     };
   }
@@ -117,8 +117,8 @@ function resolveConnectionPlan(conn: { provider?: string; model?: string } | nul
       planType: "nanogpt",
       label: "NanoGPT",
       badge: "NanoGPT (60M/wk)",
-      colorClass: "text-sky-300/90 bg-sky-500/10 border-sky-500/25",
-      dotClass: "bg-sky-400",
+      colorClass: "text-sky-700 bg-sky-500/15 border-sky-500/30 dark:text-sky-300 dark:bg-sky-500/15 dark:border-sky-500/30",
+      dotClass: "bg-sky-500 dark:bg-sky-400",
       detail: "NanoGPT Plan (60M input tokens/week allowance)",
     };
   }
@@ -131,8 +131,8 @@ function resolveConnectionPlan(conn: { provider?: string; model?: string } | nul
       planType: "local",
       label: "Local AI",
       badge: "Local AI (Free)",
-      colorClass: "text-emerald-300/90 bg-emerald-500/10 border-emerald-500/25",
-      dotClass: "bg-emerald-400",
+      colorClass: "text-emerald-700 bg-emerald-500/15 border-emerald-500/30 dark:text-emerald-300 dark:bg-emerald-500/15 dark:border-emerald-500/30",
+      dotClass: "bg-emerald-500 dark:bg-emerald-400",
       detail: "Local LLM execution (Offline, unlimited & free)",
     };
   }
@@ -141,8 +141,8 @@ function resolveConnectionPlan(conn: { provider?: string; model?: string } | nul
     planType: "api",
     label: conn.provider || "API",
     badge: conn.provider || "API",
-    colorClass: "text-foreground/75 bg-foreground/10 border-foreground/15",
-    dotClass: "bg-foreground/50",
+    colorClass: "text-foreground/80 bg-foreground/10 border-foreground/20",
+    dotClass: "bg-foreground/60",
     detail: `API Model (${conn.model || "Standard"})`,
   };
 }
@@ -558,10 +558,9 @@ export function GameModelQuotaWidget({
           onClick={toggleMenu}
           title={`Active Model: ${displayName} (${pillQuotaBadge})`}
           className={cn(
-            "flex h-8 w-8 items-center justify-center rounded-xl transition-all",
-            open
-              ? "bg-foreground/15 text-foreground ring-1 ring-foreground/25"
-              : "text-foreground/50 hover:bg-foreground/10 hover:text-foreground/80",
+            "marinara-chat-toolbar-button flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--marinara-chat-chrome-button-border)] bg-[var(--marinara-chat-chrome-button-bg)] text-[var(--marinara-chat-chrome-button-text)] shadow-sm backdrop-blur-md transition-all hover:border-[var(--marinara-chat-chrome-button-border-hover)] hover:bg-[var(--marinara-chat-chrome-button-bg-hover)] hover:text-[var(--marinara-chat-chrome-button-text-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--marinara-chat-chrome-focus-ring)]",
+            open &&
+              "marinara-chat-toolbar-button--open border-[var(--marinara-chat-chrome-button-border-active)] bg-[var(--marinara-chat-chrome-button-bg-hover)] text-[var(--marinara-chat-chrome-button-text-hover)]",
             buttonClassName,
             className,
           )}
@@ -581,14 +580,15 @@ export function GameModelQuotaWidget({
         onClick={toggleMenu}
         title={`Active Model: ${displayName} — ${activePlan.detail}`}
         className={cn(
-          "group pointer-events-auto flex h-8 items-center gap-1.5 rounded-xl border border-foreground/10 bg-foreground/[0.04] px-2.5 py-1 text-xs transition-all duration-200 hover:border-foreground/20 hover:bg-foreground/[0.08] active:scale-[0.98]",
-          open && "border-foreground/25 bg-foreground/10 ring-1 ring-foreground/20",
+          "marinara-chat-toolbar-button group pointer-events-auto flex h-8 items-center gap-1.5 rounded-lg border border-[var(--marinara-chat-chrome-button-border)] bg-[var(--marinara-chat-chrome-button-bg)] px-2.5 py-1 text-xs text-[var(--marinara-chat-chrome-button-text)] shadow-sm backdrop-blur-md transition-all duration-200 hover:border-[var(--marinara-chat-chrome-button-border-hover)] hover:bg-[var(--marinara-chat-chrome-button-bg-hover)] hover:text-[var(--marinara-chat-chrome-button-text-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--marinara-chat-chrome-focus-ring)] active:scale-[0.98]",
+          open &&
+            "marinara-chat-toolbar-button--open border-[var(--marinara-chat-chrome-button-border-active)] bg-[var(--marinara-chat-chrome-button-bg-hover)] text-[var(--marinara-chat-chrome-button-text-hover)]",
           buttonClassName,
           className,
         )}
       >
         <span className={cn("h-2 w-2 rounded-full shrink-0", activePlan.dotClass)} />
-        <span className="font-medium text-foreground/80 truncate max-w-[110px] sm:max-w-[130px]">
+        <span className="font-medium truncate max-w-[110px] sm:max-w-[130px]">
           {displayName}
         </span>
         <span
@@ -599,7 +599,7 @@ export function GameModelQuotaWidget({
         >
           {pillQuotaBadge}
         </span>
-        <ChevronDown size={12} className="text-foreground/40 transition-transform group-hover:text-foreground/70" />
+        <ChevronDown size={12} className="opacity-60 transition-transform group-hover:opacity-100" />
       </button>
       {dropdownMenu}
     </>
