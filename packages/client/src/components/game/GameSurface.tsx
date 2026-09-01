@@ -1601,6 +1601,11 @@ const StoryboardBackgroundControls = lazy(async () => {
   return { default: module.StoryboardBackgroundControls };
 });
 
+const GameModelQuotaWidget = lazy(async () => {
+  const module = await import("./GameModelQuotaWidget");
+  return { default: module.GameModelQuotaWidget };
+});
+
 import { Modal } from "../ui/Modal";
 import type {
   Chat,
@@ -12398,6 +12403,9 @@ function GameSurfaceComponent({
                     buttonClassName={GAME_TOP_ICON_BUTTON}
                     onOpen={dismissOtherFloatingWindows}
                   />
+                  <Suspense fallback={null}>
+                    <GameModelQuotaWidget chatId={activeChatId} onOpen={dismissOtherFloatingWindows} />
+                  </Suspense>
                   <button
                     data-chat-help="gallery"
                     data-chat-toolbar-panel-action="gallery"
@@ -12479,6 +12487,14 @@ function GameSurfaceComponent({
                           compact
                           onOpen={dismissOtherFloatingWindows}
                         />
+                        <Suspense fallback={null}>
+                          <GameModelQuotaWidget
+                            chatId={activeChatId}
+                            compact
+                            buttonClassName={GAME_TOP_ICON_BUTTON}
+                            onOpen={dismissOtherFloatingWindows}
+                          />
+                        </Suspense>
                         <div>
                           <button
                             data-chat-help="retry"
