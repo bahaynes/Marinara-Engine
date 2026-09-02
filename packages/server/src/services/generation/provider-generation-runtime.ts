@@ -151,14 +151,14 @@ export function resolveGenerationProviderRuntime(args: GenerationProviderRuntime
 
   if (args.isSceneChat) {
     runtime.maxTokens = 8192;
-    const effectiveReasoningEffort = chatParams?.reasoningEffort ?? connectionParams?.reasoningEffort ?? "maximum";
+    const effectiveReasoningEffort = chatParams?.reasoningEffort ?? connectionParams?.reasoningEffort ?? null;
     runtime.reasoningEffort = effectiveReasoningEffort;
     const effectiveVerbosity = chatParams?.verbosity ?? connectionParams?.verbosity ?? "high";
     runtime.verbosity = effectiveVerbosity;
     runtime.enabledParameters = {
       ...(runtime.enabledParameters ?? {}),
-      reasoningEffort: effectiveReasoningEffort !== null,
-      verbosity: effectiveVerbosity !== null,
+      ...(effectiveReasoningEffort !== null ? { reasoningEffort: true } : {}),
+      ...(effectiveVerbosity !== null ? { verbosity: true } : {}),
     };
   }
 
@@ -170,14 +170,14 @@ export function resolveGenerationProviderRuntime(args: GenerationProviderRuntime
     runtime.minP = 0;
     runtime.frequencyPenalty = 0;
     runtime.presencePenalty = 0;
-    const effectiveReasoningEffort = chatParams?.reasoningEffort ?? connectionParams?.reasoningEffort ?? "maximum";
+    const effectiveReasoningEffort = chatParams?.reasoningEffort ?? connectionParams?.reasoningEffort ?? null;
     runtime.reasoningEffort = effectiveReasoningEffort;
     const effectiveVerbosity = chatParams?.verbosity ?? connectionParams?.verbosity ?? null;
     runtime.verbosity = effectiveVerbosity;
     runtime.enabledParameters = {
       ...(runtime.enabledParameters ?? {}),
-      reasoningEffort: effectiveReasoningEffort !== null,
-      verbosity: effectiveVerbosity !== null,
+      ...(effectiveReasoningEffort !== null ? { reasoningEffort: true } : {}),
+      ...(effectiveVerbosity !== null ? { verbosity: true } : {}),
     };
   } else if (args.chatMode === "game" && typeof chatParams?.maxTokens !== "number") {
     runtime.maxTokens = Math.max(runtime.maxTokens, 16_384);
