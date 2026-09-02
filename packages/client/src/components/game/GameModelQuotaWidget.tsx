@@ -367,7 +367,7 @@ export function GameModelQuotaWidget({
               <div className="flex items-center gap-1.5">
                 <Bot size={13} className="text-foreground/60" />
                 <span className="text-[0.6875rem] font-semibold tracking-wide uppercase text-foreground/80">
-                  Game Model & Quota
+                  Active Model & Quota
                 </span>
               </div>
               <button

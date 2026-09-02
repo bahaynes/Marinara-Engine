@@ -150,6 +150,11 @@ const ActiveLorebookEntriesContent = lazy(async () => {
   return { default: module.ActiveLorebookEntriesContent };
 });
 
+const GameModelQuotaWidget = lazy(async () => {
+  const module = await import("../game/GameModelQuotaWidget");
+  return { default: module.GameModelQuotaWidget };
+});
+
 const roleplayNotificationSeenKeys = new Set<string>();
 const MAX_ROLEPLAY_NOTIFICATION_SEEN_KEYS = 5_000;
 const MOBILE_FLOATING_PANEL_PADDING = 8;
@@ -1891,6 +1896,9 @@ export function ChatRoleplaySurface({
                       groupId={chat?.groupId ?? null}
                       variant="roleplay"
                     />
+                    <Suspense fallback={null}>
+                      <GameModelQuotaWidget chatId={activeChatId} />
+                    </Suspense>
                     <ChatToolbarMenu openSummaryOnRequest>
                       <ChatHelpButton mode="roleplay" className="md:hidden" />
                       <SummaryButton
@@ -2025,6 +2033,9 @@ export function ChatRoleplaySurface({
                           variant="roleplay"
                           compact
                         />
+                        <Suspense fallback={null}>
+                          <GameModelQuotaWidget chatId={activeChatId} compact />
+                        </Suspense>
                         <SummaryButton
                           chatId={chat?.id ?? null}
                           summary={chatMeta.summary ?? null}
