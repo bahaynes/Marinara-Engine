@@ -25,7 +25,7 @@ import {
 } from "@marinara-engine/shared";
 import { logger } from "../../../lib/logger.js";
 import { isLoopbackIp, isNonRoutableNetworkIp } from "../../../middleware/ip-allowlist.js";
-import { applyGlmThinkingParameters, isGlm53Model } from "./glm-request-compat.js";
+import { applyGlmThinkingParameters, isGlm53Model, isGlmModel } from "./glm-request-compat.js";
 
 /**
  * Models that ONLY support the Responses API (`/responses`) and not Chat Completions.
@@ -1238,7 +1238,7 @@ export class OpenAIProvider extends BaseLLMProvider {
     }
 
     if (
-      this.shouldSendParameter(options, "reasoningEffort") &&
+      (this.shouldSendParameter(options, "reasoningEffort") || isGlmModel(options.model)) &&
       (!suppressModelParameters || this.isOpenRouterEndpoint())
     ) {
       this.applyChatCompletionsReasoning(body, options);
@@ -1525,7 +1525,7 @@ export class OpenAIProvider extends BaseLLMProvider {
     }
 
     if (
-      this.shouldSendParameter(options, "reasoningEffort") &&
+      (this.shouldSendParameter(options, "reasoningEffort") || isGlmModel(options.model)) &&
       (!suppressModelParameters || this.isOpenRouterEndpoint())
     ) {
       this.applyChatCompletionsReasoning(body, options);
