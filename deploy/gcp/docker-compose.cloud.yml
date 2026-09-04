@@ -1,0 +1,53 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Marinara Engine — Cloudflare Tunnel Deployment
+# ─────────────────────────────────────────────────────────────────────────────
+# Runs Marinara Engine paired with cloudflared in a private Docker bridge network.
+# marinara is reachable by cloudflared at http://marinara:7860.
+# No public incoming firewall ports are opened on the host.
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  marinara:
+    image: marinara-engine:custom-mods
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    init: true
+    # Localhost binding only — enables optional debugging via `ssh -L 7860:localhost:7860 ...`
+    ports:
+      - "127.0.0.1:${PORT:-7860}:7860"
+    volumes:
+      - ${MARINARA_DATA_DIR:-./marinara-data}:/app/data
+    environment:
+      - NODE_ENV=production
+      - DATA_DIR=/app/data
+      - FILE_STORAGE_DIR=/app/data/storage
+      - MARINARA_DOCKER=true
+      - AUTO_CREATE_DEFAULT_CONNECTION=${AUTO_CREATE_DEFAULT_CONNECTION:-true}
+      - TRUSTED_HOSTS=${TRUSTED_HOSTS:-}
+      - CORS_ORIGINS=${CORS_ORIGINS:-}
+      - CSRF_TRUSTED_ORIGINS=${CSRF_TRUSTED_ORIGINS:-}
+      - BASIC_AUTH_USER=${BASIC_AUTH_USER:-}
+      - BASIC_AUTH_PASS=${BASIC_AUTH_PASS:-}
+      - ADMIN_SECRET=${ADMIN_SECRET:-}
+      - REQUIRE_AUTH_FOR_DOCKER_PROXY=true
+      - TZ=${TZ:-America/New_York}
+    networks:
+      - marinara-net
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      - TUNNEL_TOKEN=${TUNNEL_TOKEN}
+    depends_on:
+      - marinara
+    networks:
+      - marinara-net
+
+networks:
+  marinara-net:
+    driver: bridge
+
