@@ -1127,7 +1127,8 @@ try {
     assert.ok(events.some((event) => event.type === "suggestions"));
   }
 
-  // The connection's own reasoning setting reaches a pi run; classic keeps forcing it off.
+  // The connection's own reasoning setting reaches a pi run. custom-mods: classic honors an explicit
+  // level too, and only forces reasoning off when the connection sets none.
   {
     mode = "auto";
     defaultParameters = JSON.stringify({ reasoningEffort: "medium" });
@@ -1142,7 +1143,7 @@ try {
     );
     await classic.done;
     defaultParameters = null;
-    assert.equal(requests[0]!.options.reasoningEffort, "none");
+    assert.equal(requests[0]!.options.reasoningEffort, "medium");
     assert.equal(requests[0]!.options.enableThinking, undefined);
   }
 

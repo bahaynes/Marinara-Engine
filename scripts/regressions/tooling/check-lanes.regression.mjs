@@ -66,8 +66,8 @@ for (const name of skipped[1].split(",")) {
 }
 mustRun("pnpm build:shared", "so the skipped lanes find shared's built declarations");
 
-assert.equal(checkJobs(undefined, 7), 7);
-assert.equal(checkJobs("", 7), 7);
+assert.equal(checkJobs(undefined, 7), 1);
+assert.equal(checkJobs("", 7), 1);
 assert.equal(checkJobs("1", 7), 1);
 assert.equal(checkJobs("12", 7), 7);
 for (const value of ["0", "two", "-1", "1.5"]) assert.throws(() => checkJobs(value, 7), /MARINARA_CHECK_JOBS/u);

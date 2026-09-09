@@ -66,7 +66,8 @@ assert.match(workspaceSource, /Use the dependency tool/u);
 assert.match(workspaceSource, /name: "copy"/u);
 assert.match(workspaceSource, /name: "move"/u);
 assert.match(workspaceSource, /name: "remove"/u);
-assert.match(workspaceSource, /write\|copy\|move\|remove\|bash/u);
+// custom-mods: the protocol lists only the tools offered, so bash drops out when the sandbox is unavailable.
+assert.match(workspaceSource, /const commandEnum = availableTools\.map\(\(tool\) => tool\.name\)\.join\("\|"\);/u);
 assert.match(workspaceSource, /Final prompt messages/u);
 assert.match(sandboxSource, /copy, move, remove/u);
 assert.doesNotMatch(workspaceSource, /spawn\(shell,\s*shellArgs/u);
