@@ -18,12 +18,16 @@ COPY scripts/clean-stale-client-artifacts.mjs scripts/clean-stale-client-artifac
 COPY scripts/ensure-native-deps.mjs scripts/ensure-native-deps.mjs
 COPY scripts/pnpm-runner.mjs scripts/pnpm-runner.mjs
 
+# Avoid downloading multi-gigabyte GPU NuGet packages during onnxruntime-node install
+ENV ONNXRUNTIME_NODE_INSTALL=skip
+
 # Enable corepack — version is read from the packageManager field in package.json
-RUN corepack enable && corepack install
+RUN --mount=type=cache,id=corepack,target=/root/.cache/corepack \
+    corepack enable && corepack install
 
 # Install all dependencies (including dev for building)
 # Use cache mount to avoid storing pnpm store in image
-RUN --mount=type=cache,target=/app/.pnpm-store \
+RUN --mount=type=cache,id=pnpm-store,target=/app/.pnpm-store \
     pnpm install --frozen-lockfile
 
 # Copy source code
@@ -45,15 +49,20 @@ RUN BUILD_COMMIT="$BUILD_COMMIT" BUILD_BRANCH="$BUILD_BRANCH" node -e 'const fs 
 FROM node:24-trixie-slim@sha256:43b9ba1142b8dcf33fa8f922ca1be85714adc444e0586c7cf7726daaeabc1bea AS production
 WORKDIR /app
 
+# Avoid downloading multi-gigabyte GPU NuGet packages during onnxruntime-node install
+ENV ONNXRUNTIME_NODE_INSTALL=skip
+
 # llama-server dynamically links these at runtime
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN rm -f /etc/apt/apt.conf.d/docker-clean; echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache
+RUN --mount=type=cache,id=apt-cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,id=apt-lib,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
       libssl3 \
       libgomp1 \
       libvulkan1 \
       bubblewrap \
       python3 \
-      python3-venv \
-    && rm -rf /var/lib/apt/lists/*
+      python3-venv
 
 # Copy workspace config
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
@@ -66,12 +75,13 @@ COPY scripts/ensure-native-deps.mjs scripts/ensure-native-deps.mjs
 COPY scripts/pnpm-runner.mjs scripts/pnpm-runner.mjs
 
 # Enable corepack — version is read from the packageManager field in package.json
-RUN corepack enable && corepack install
+RUN --mount=type=cache,id=corepack,target=/root/.cache/corepack \
+    corepack enable && corepack install
 
 # Install production deps only
 # Use cache mount to avoid storing pnpm store in image
 # Strip onnxruntime-web WASM blobs, uses onnxruntime-node (native)
-RUN --mount=type=cache,target=/app/.pnpm-store \
+RUN --mount=type=cache,id=pnpm-store,target=/app/.pnpm-store \
     pnpm install --frozen-lockfile --prod && \
     rm -rf /app/node_modules/.pnpm/onnxruntime-web@*
 
