@@ -1,0 +1,5 @@
+#!/bin/sh
+# Fast, staged-files-scoped check. See scripts/pre-commit-check.mjs.
+# Bypass with `git commit --no-verify` when you deliberately need to (rare —
+# the full `pnpm check` still gates push via .githooks/pre-push and CI).
+node "$(git rev-parse --show-toplevel)/scripts/pre-commit-check.mjs"
