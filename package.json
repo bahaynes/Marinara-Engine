@@ -14,6 +14,7 @@
   "scripts": {
     "preinstall": "node ./scripts/clean-stale-client-artifacts.mjs",
     "postinstall": "node ./scripts/ensure-native-deps.mjs",
+    "prepare": "git config core.hooksPath .githooks || true",
     "dev": "node ./scripts/dev.mjs",
     "dev:server": "pnpm build:shared && pnpm --filter @marinara-engine/server dev",
     "dev:client": "pnpm build:shared && pnpm --filter @marinara-engine/client dev",
