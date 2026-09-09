@@ -133,11 +133,14 @@ try {
   const saved = structuredClone(original);
   const provider = {
     chatComplete: async (messages: ChatMessage[]) => {
+      // Only the leading system messages merge into index 0, keeping the cached prefix static;
+      // a late one is sent as a user injection where it stood.
       assert.deepEqual(
         messages.map((message) => message.role),
-        ["system", "user", "assistant", "user"],
+        ["system", "user", "assistant", "user", "user"],
       );
-      assert.equal(messages[0]?.content, "RULES\n\nPERMISSIONS\n\nATTACHED_CONTEXT");
+      assert.equal(messages[0]?.content, "RULES\n\nPERMISSIONS");
+      assert.equal(messages[3]?.content, "ATTACHED_CONTEXT");
       assert.deepEqual(messages[1]?.images, ["image-fixture"]);
       return { content: "OK" };
     },

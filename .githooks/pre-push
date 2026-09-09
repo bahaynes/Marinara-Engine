@@ -1,0 +1,26 @@
+#!/bin/sh
+# Authoritative, full, from-scratch check plus the full regression suite —
+# the last gate before code leaves this machine, right before a PR into
+# custom-mods. Slower on purpose. `pnpm check` alone doesn't run
+# scripts/run-regressions.mjs; add it explicitly so nothing merges on a
+# feature branch whose regressions nobody ran.
+# Bypass with `git push --no-verify` when you deliberately need to.
+cd "$(git rev-parse --show-toplevel)" || exit 1
+# Git exports GIT_DIR (absolute when pushing from a linked worktree) to hooks.
+# Regressions that build throwaway fixture repos would inherit it and commit into,
+# re-init (core.bare=true), and re-config this repo instead of their temp dir.
+for var in $(git rev-parse --local-env-vars); do unset "$var"; done
+# A tree that already passed (here or in bah-nixos's nightly marinara-rebase job) isn't run twice: a
+# force-push of a rebase the nightly validated skips straight through. Only a clean working tree
+# counts, since the suite runs on the files on disk, not on the pushed commit.
+validated="${XDG_CACHE_HOME:-$HOME/.cache}/marinara-rebase/validated-trees"
+tree=$(git rev-parse HEAD^{tree})
+if [ -z "$(git status --porcelain --untracked-files=no)" ] && grep -qx "$tree" "$validated" 2>/dev/null; then
+  echo "[pre-push] tree $tree already passed check + regression; skipping."
+  exit 0
+fi
+# MARINARA_REGRESSION_CONCURRENCY sets the regression workers (default: at most 8, see scripts/run-regressions.mjs).
+pnpm check && pnpm regression -- ${MARINARA_REGRESSION_CONCURRENCY:+--concurrency "$MARINARA_REGRESSION_CONCURRENCY"} || exit 1
+if [ -z "$(git status --porcelain --untracked-files=no)" ]; then
+  mkdir -p "$(dirname "$validated")" && echo "$tree" >> "$validated"
+fi

@@ -274,7 +274,7 @@ class StreamProgress(unittest.TestCase):
         for reply in (reviewer.openai_reply, reviewer.responses_reply, reviewer.claude_reply):
             with self.subTest(provider=reply.__name__), patch.dict(sys.modules, modules):
                 with self.assertRaisesRegex(reviewer.StreamStalled, "stream disconnected"):
-                    reply(ctx, settings, [{"role": "user", "content": "Review."}], [], "auto", 600, 0, {}, "")
+                    reply(ctx, settings, [{"role": "user", "content": "Review."}], [], "auto", 600, reviewer.time.monotonic(), {}, "")
 
         class DroppedStream:
             def __enter__(self): return self
@@ -286,7 +286,7 @@ class StreamProgress(unittest.TestCase):
             for reply in (reviewer.openai_reply, reviewer.responses_reply):
                 with self.subTest(provider=reply.__name__, error=expected), patch.dict(sys.modules, modules):
                     with self.assertRaises(expected) as stopped:
-                        reply(ctx, settings, [{"role": "user", "content": "Review."}], [], "auto", 600, 0, {}, "")
+                        reply(ctx, settings, [{"role": "user", "content": "Review."}], [], "auto", 600, reviewer.time.monotonic(), {}, "")
                     self.assertIs(type(stopped.exception), expected)
 
     def test_a_claude_stream_that_ends_before_message_start_is_resent(self):
