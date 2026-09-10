@@ -244,7 +244,8 @@ function parseShareConfig(value: unknown): GameSetupConfig {
     value.combatStyle !== undefined &&
     value.combatStyle !== "classic" &&
     value.combatStyle !== "tactical" &&
-    value.combatStyle !== "dnd5e"
+    value.combatStyle !== "dnd5e" &&
+    value.combatStyle !== "triage"
   ) {
     throw new Error("This file has an invalid combat style.");
   }
