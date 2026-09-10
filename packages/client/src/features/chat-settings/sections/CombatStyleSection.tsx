@@ -37,6 +37,9 @@ export function CombatStyleSection({ style, combatStyle, onCombatStyleChange }: 
             <option value="dnd5e">
               {localizeUi("ui.chatSettings.combatstylesection.dD55eD20TabletopSpellDcCantrips")}
             </option>
+            <option value="triage">
+              {localizeUi("ui.chatSettings.combatstylesection.triageErTraumaBayInterventions")}
+            </option>
           </select>
         </label>
         <p className="text-[0.575rem] leading-relaxed text-[var(--muted-foreground)]">

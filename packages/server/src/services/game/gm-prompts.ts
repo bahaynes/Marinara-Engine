@@ -545,6 +545,10 @@ export function buildGmSystemPrompt(ctx: GmPromptContext): string {
     gameBlockLines.push(
       `- Combat style: tactical grid-battle. Battles resolve in a dedicated tactical UI (movement, terrain, forecasts); narrate the aftermath from the battle report and do not resolve the tactics yourself in prose.`,
     );
+  } else if (ctx.combatStyle === "triage") {
+    gameBlockLines.push(
+      `- Combat style: ATLS trauma-triage mini-game (in the spirit of a medical drama, not fantasy combat). "Combat" here means an ER patient case: a card/AP-based interface handles vitals, interventions, and diagnosis — narrate the aftermath from the result and do not resolve interventions or diagnoses yourself in prose. Only transition into a triage case when the scene has actually produced a trauma patient (an injury happens on-screen, an incoming case is announced, a patient already being discussed crashes, etc). If a patient's condition has already been substantially worked out through prose roleplay, don't force a fresh triage case on top of it as if it were a new incoming patient — either let it resolve narratively, or treat any triage case you do trigger as the direct continuation of that same patient, never a new unrelated one.`,
+    );
   }
   gameBlockLines.push(`</game>`);
   sections.push(...gameBlockLines);
@@ -942,7 +946,7 @@ export function buildGmFormatReminder(
           `- [inventory: action="add|remove" item="Item A, Item B" count="3"] - every real item gain or loss, keep names short and use count/quantity for stacked items.`,
         ]),
     `- [Note: contents] or [Book: contents] - when a new readable note or book is acquired and should be tracked in the journal.`,
-    `- [state: exploration|dialogue|combat|travel_rest] - only on actual mode transitions. If you're planning to use [state: combat], this one ALWAYS has to be at the end of the turn, as it initiates a new combat generation and UI.`,
+    `- [state: exploration|dialogue|combat|travel_rest] - only on actual mode transitions. Before emitting [state: combat], check the scene: if the party is mid-conversation, processing grief or emotional fallout, or otherwise not at a natural action beat, let that beat land first — don't interrupt an emotional or dialogue-driven moment to force a fight or trauma case unless the scene itself is producing the emergency right now (an attack lands, a patient crashes, etc). If you're planning to use [state: combat], this one ALWAYS has to be at the end of the turn, as it initiates a new combat generation and UI.`,
     `- [reputation: npc="Name" action="helped"] - when an NPC's tracked stance changes because of what happened.`,
     `- [party_change: character="Exact Character Name" change="add|remove"] - only when someone truly joins or leaves the party. Use remove when a party member dies, permanently departs, or is no longer traveling with the player.`,
     `- [session_end: reason="goal achieved|good place to pause"] - only when the current session truly ends.`,
