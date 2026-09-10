@@ -1805,7 +1805,7 @@ const gameSetupConfigSchema = z.object({
   setting: z.string().min(1),
   tone: z.string().min(1).max(200),
   difficulty: z.string().min(1).max(100).transform(normalizeGameDifficulty),
-  combatStyle: z.enum(["classic", "tactical", "dnd5e"]).optional(),
+  combatStyle: z.enum(["classic", "tactical", "dnd5e", "triage"]).optional(),
   combatDirector: z.boolean().optional(),
   gmBossControl: z.boolean().optional(),
   tacticalBattlefield: tacticalBattlefieldSetupSchema.optional(),
