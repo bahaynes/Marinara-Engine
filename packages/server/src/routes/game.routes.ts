@@ -2009,7 +2009,7 @@ const gameSetupConfigSchema = z.object({
   gameStyle: z.enum(["classic", "overworld"]).optional(),
   /** The Game Master's intro message (1.339). */
   gameIntro: gameIntroChoiceSchema.optional(),
-  combatStyle: z.enum(["classic", "tactical", "dnd5e"]).optional(),
+  combatStyle: z.enum(["classic", "tactical", "dnd5e", "triage"]).optional(),
   combatDirector: z.boolean().optional(),
   gmBossControl: z.boolean().optional(),
   tacticalBattlefield: tacticalBattlefieldSetupSchema.optional(),
