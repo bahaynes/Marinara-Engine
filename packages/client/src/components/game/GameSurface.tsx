@@ -59,6 +59,7 @@ import {
   gameKeys,
   patchChatMetadata,
 } from "../../hooks/use-game";
+import { useTriageCombatIntegration } from "./triage/use-triage-combat-integration";
 import {
   gameStoryboardKeys,
   isGameTurnStoryboardRendering,
@@ -8486,6 +8487,9 @@ function GameSurfaceComponent({
     (chatMeta.gameCombatStyle as GameCombatStyle | undefined) ??
     (combatSetupConfig?.combatStyle as GameCombatStyle | undefined) ??
     "classic";
+  // Self-contained ATLS trauma-triage mini-game (packages/client/src/components/game/triage) — an
+  // alternative to the party/enemies pipeline below, not a participant in it.
+  const triageIntegration = useTriageCombatIntegration({ chatId: activeChatId, chatMeta, effectiveCombatStyle });
   // Live snapshot for the identity-stable combat seam (#5094): a package may
   // cache requestCombat at mount, so the callback must read CURRENT values, not
   // its creation render's closure. messageId rides latestAssistantMsgRef.
@@ -8508,6 +8512,12 @@ function GameSurfaceComponent({
     setCombatGenerationError(null);
   }, [activeChatId]);
   const tacticalCombatActive = combatUiActive && effectiveCombatStyle === "tactical";
+  // Triage renders its own full-screen surface (vitals monitor, action wheel) outside the
+  // classic party/enemies pipeline, so combatUiActive alone misses it — the top-left map/party
+  // overlay and the top-right corner controls both need to know about it too (same reason
+  // tacticalCombatActive exists below: those persistent overlays would otherwise sit on top of
+  // the combat UI's own top bar instead of yielding the space to it).
+  const anyCombatUiActive = combatUiActive || triageIntegration.active;
   const topOverlayOffsetClass = "top-3";
   const queuedCombatMatchesLatest =
     !!queuedCombatGeneration?.messageId &&
@@ -8782,6 +8792,12 @@ function GameSurfaceComponent({
 
   const generateCombatStateForMessage = useCallback(
     (messageId: string, notify: boolean) => {
+      // Triage runs its own self-contained init/engine (packages/client/src/components/game/triage) —
+      // delegate entirely instead of touching the classic party/enemies pipeline below.
+      if (effectiveCombatStyle === "triage") {
+        triageIntegration.start(messageId);
+        return;
+      }
       // Both guards: the state flag drives rendering, but it is stale within a
       // frame — same-frame double calls (a package spamming requestCombat, #5094)
       // all read false. The ref flips synchronously and clears with the request.
@@ -8990,6 +9006,8 @@ function GameSurfaceComponent({
       playContextCombatMusic,
       chatMeta.gameSetupConfig,
       localizeUi,
+      effectiveCombatStyle,
+      triageIntegration,
     ],
   );
 
@@ -10746,6 +10764,8 @@ function GameSurfaceComponent({
 
       const recapLines: string[] = [];
       recapLines.push(`OUTCOME: ${outcome.toUpperCase()} (${roundsPhrase})`);
+      if (summary.subjectName) recapLines.push(`Patient: ${summary.subjectName}`);
+      if (summary.outcomeNote) recapLines.push(`Result: ${summary.outcomeNote}`);
       if (defeatedEnemies.length > 0) recapLines.push(`Defeated: ${defeatedEnemies.join(", ")}`);
       if (survivingEnemies.length > 0 && !fought) {
         recapLines.push(`Survived: ${survivingEnemies.map((e) => `${e.name} (${e.hp}/${e.maxHp} HP)`).join(", ")}`);
@@ -10809,6 +10829,21 @@ function GameSurfaceComponent({
       transitionGameState,
     ],
   );
+  // handleCombatEnd is declared after the combat-start seam the triage hook is called
+  // from (temporal dead zone), so it can't be passed in as a constructor arg — this just
+  // refreshes a ref inside the hook every render, cheap and always up to date.
+  triageIntegration.bindOnCombatEnd(handleCombatEnd);
+
+  // Cancel: discard the triage encounter as if it never happened — delete the GM turn that
+  // triggered it, same as handleReturnToPreCombatTurn does for non-triage combat. No summary,
+  // no chat post: the hook itself already resets its own state/snapshot before calling this.
+  const handleCancelTriage = useCallback(
+    (messageId: string) => {
+      onDeleteMessage(messageId);
+    },
+    [onDeleteMessage],
+  );
+  triageIntegration.bindOnCancel(handleCancelTriage);
 
   // Toggle audio mute
   const handleToggleMute = useCallback(() => {
@@ -12224,7 +12259,7 @@ function GameSurfaceComponent({
                 data-tracker-panel-anchor="roleplay-hud"
                 className={cn(
                   "pointer-events-none absolute right-3 z-50",
-                  tacticalCombatActive ? "top-14" : topOverlayOffsetClass,
+                  tacticalCombatActive || triageIntegration.active ? "top-14" : topOverlayOffsetClass,
                   replayActive && "hidden",
                 )}
               >
@@ -12788,8 +12823,8 @@ function GameSurfaceComponent({
                 <div
                   className={cn(
                     "pointer-events-auto absolute left-3 right-14 z-20 flex min-w-0 items-start gap-2 md:right-auto",
-                    combatUiActive && "hidden",
-                    tacticalCombatActive ? "top-14" : topOverlayOffsetClass,
+                    anyCombatUiActive && "hidden",
+                    tacticalCombatActive || triageIntegration.active ? "top-14" : topOverlayOffsetClass,
                     replayActive && "hidden",
                     // The package draws its own header and party bar, so the built-in ones would collide.
                     // Gated on ownership rather than the mount, so they do not flash while the package
@@ -13096,6 +13131,22 @@ function GameSurfaceComponent({
                     );
                   }
 
+                  if (triageIntegration.active) {
+                    return (
+                      <div className="relative h-full min-h-0">
+                        <Suspense
+                          fallback={
+                            <div className="flex h-full items-center justify-center text-sm text-white/70">
+                              {localizeUi("ui.game.gamesurfacecomponent.loadingCombat")}
+                            </div>
+                          }
+                        >
+                          {triageIntegration.render()}
+                        </Suspense>
+                      </div>
+                    );
+                  }
+
                   if (combatUiActive) {
                     const combatControlsSlot = (
                       <>
@@ -13149,7 +13200,13 @@ function GameSurfaceComponent({
                               key={`${activeChatId}:${combatStartMessageId}`}
                               chatId={activeChatId}
                               anchor={combatStartMessageId}
-                              style={rulesetFightDefinition ? "ruleset" : effectiveCombatStyle}
+                              style={
+                                rulesetFightDefinition
+                                  ? "ruleset"
+                                  : effectiveCombatStyle === "tactical"
+                                    ? "tactical"
+                                    : "classic"
+                              }
                               rulesetDefinition={rulesetFightDefinition ?? undefined}
                               positioned={rulesetFightPositioned}
                               battlefield={combatSceneMeta?.battlefield ?? undefined}
@@ -13598,7 +13655,7 @@ function GameSurfaceComponent({
               {/* HUD Widgets - Left & Right, tops aligned */}
               {/* Hidden while the package owns the game — it draws its own HUD. */}
               {!replayActive &&
-                !combatUiActive &&
+                !anyCombatUiActive &&
                 !experienceOwnsGame &&
                 hudWidgets.length > 0 &&
                 !compactHudWidgets && (

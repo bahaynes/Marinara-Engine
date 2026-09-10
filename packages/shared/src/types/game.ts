@@ -30,8 +30,10 @@ export type GameGmMode = "standalone" | "character";
  * - `classic`: existing cinematic JRPG menu combat (GameCombatUI + combat.service).
  * - `tactical`: Fire Emblem / FFT style grid battle (tactical-combat feature engine).
  * - `dnd5e`: D&D 5.5e d20 tabletop combat engine (d20 tests, spell DC, cantrip scaling).
+ * - `triage`: medical trauma triage encounters on the tactical-combat grid engine, reskinned
+ *   as stabilizing a patient instead of fighting an enemy.
  */
-export type GameCombatStyle = "classic" | "tactical" | "dnd5e";
+export type GameCombatStyle = "classic" | "tactical" | "dnd5e" | "triage";
 
 /** Status of a game session. */
 export type GameSessionStatus = "setup" | "active" | "concluded";
@@ -735,6 +737,10 @@ export interface CombatSummary {
   /** What a ruleset fight really ended on, in the ruleset's own numbers. Present only for a fight
    *  the ruleset resolved, and the recap is written from it instead of the shares above. */
   ruleset?: import("../features/ruleset-combat/types.js").RulesetEncounterSummary;
+  /** Triage-only: the actual patient/case identity, so the GM doesn't have to invent one for the aftermath. */
+  subjectName?: string;
+  /** Triage-only: human-readable outcome text (debrief label + detail), so the GM has the real framing. */
+  outcomeNote?: string;
 }
 
 // ── Cinematic Direction ──

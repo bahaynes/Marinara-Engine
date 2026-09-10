@@ -125,6 +125,9 @@ export {
 // Tactical (grid) combat for Game Mode (classic combat's alternative style)
 export * from "./features/tactical-combat/index.js";
 
+// Triage combat: ATLS trauma-triage mini-game (classic combat's other alternative style)
+export * from "./features/triage/index.js";
+
 // Utils
 export * from "./utils/macro-engine.js";
 export * from "./utils/ui-locales.js";

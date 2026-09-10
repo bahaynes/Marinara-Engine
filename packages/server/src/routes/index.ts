@@ -22,6 +22,7 @@ import { regexScriptsRoutes } from "./regex-scripts.routes.js";
 import { customEmojisRoutes } from "./custom-emojis.routes.js";
 import { customStickersRoutes } from "./custom-stickers.routes.js";
 import { encounterRoutes } from "./encounter.routes.js";
+import { triageEncounterRoutes } from "./triage-encounter.routes.js";
 import { sceneRoutes } from "./scene.routes.js";
 import { fontsRoutes } from "./fonts.routes.js";
 import { galleryRoutes } from "./gallery.routes.js";
@@ -94,6 +95,7 @@ export async function registerRoutes(app: FastifyInstance) {
   await app.register(customEmojisRoutes, { prefix: "/api/custom-emojis" });
   await app.register(customStickersRoutes, { prefix: "/api/custom-stickers" });
   await app.register(encounterRoutes, { prefix: "/api/encounter" });
+  await app.register(triageEncounterRoutes, { prefix: "/api/encounter" });
   await app.register(sceneRoutes, { prefix: "/api/scene" });
   await app.register(fontsRoutes, { prefix: "/api/fonts" });
   await app.register(galleryRoutes, { prefix: "/api/gallery" });

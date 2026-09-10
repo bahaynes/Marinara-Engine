@@ -50,6 +50,9 @@ export function CombatStyleSection({
             <option value="dnd5e">
               {localizeUi("ui.chatSettings.combatstylesection.dD55eD20TabletopSpellDcCantrips")}
             </option>
+            <option value="triage">
+              {localizeUi("ui.chatSettings.combatstylesection.triageErTraumaBayInterventions")}
+            </option>
           </select>
         </label>
         {rulesetResolvesFights && (
