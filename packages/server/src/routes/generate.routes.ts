@@ -7419,10 +7419,10 @@ export async function generateRoutes(app: FastifyInstance) {
                 // still running, and remember it for the saved message. The raw tool result the
                 // model reads is untouched.
                 const cardEligible =
-                  (chatMode === "game" || roleplayRollEnabled) &&
                   !input.impersonate &&
-                  tr.name === "roll_dice" &&
-                  tr.success;
+                  tr.success &&
+                  (tr.name === "roll_skill_check" ||
+                    (tr.name === "roll_dice" && (chatMode === "game" || roleplayRollEnabled)));
                 const rolled = cardEligible ? parseRollDiceToolResult(tr.result) : null;
                 if (rolled) toolDiceRollResults.push(rolled);
                 // A roll the model was handed but the player never sees cannot be diagnosed
