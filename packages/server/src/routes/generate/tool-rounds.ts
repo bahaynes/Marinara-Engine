@@ -312,7 +312,10 @@ export async function runToolRounds(ctx: ToolRoundsContext, fullResponse: string
       // still running, and remember it for the saved message. The raw tool result the
       // model reads is untouched.
       const cardEligible =
-        (ctx.chatMode === "game" || roleplayRollEnabled) && !ctx.impersonate && tr.name === "roll_dice" && tr.success;
+        !ctx.impersonate &&
+        tr.success &&
+        (tr.name === "roll_skill_check" ||
+          (tr.name === "roll_dice" && (ctx.chatMode === "game" || roleplayRollEnabled)));
       const rolled = cardEligible ? parseRollDiceToolResult(tr.result) : null;
       if (rolled) ctx.toolDiceRollResults.push(rolled);
       // A roll the model was handed but the player never sees cannot be diagnosed
