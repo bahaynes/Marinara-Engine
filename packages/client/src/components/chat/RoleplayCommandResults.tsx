@@ -11,14 +11,21 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
-import { ChevronDown, Eye, EyeOff, LockKeyhole, Pencil, RotateCcw, Trash2 } from "lucide-react";
+import { ChevronDown, Eye, EyeOff, LockKeyhole, Pencil, RotateCcw, Sparkles, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import {
+  DEFAULT_STARTING_INSPIRATION,
+  MAX_INSPIRATION_CAP,
   getRoleplayCommandActivity,
   getRoleplayCommandNoticeVisibility,
+  isRoleplayCommandAllowed,
   type RoleplayCommandActivity,
   type RoleplayCommandNoticeDisplay,
 } from "@marinara-engine/shared";
+import { useInspirationReroll } from "../../hooks/use-game";
+import { cn } from "../../lib/utils";
+import { parseChatMetadata } from "../../lib/chat-display";
 import { useUpdateMessageExtra } from "../../hooks/use-chats";
 import { useRestoreRoleplayInterrupt, useRoleplayHtmlArtifactRunning } from "../../hooks/use-roleplay-commands";
 import { useChatStore } from "../../stores/chat.store";
@@ -214,23 +221,79 @@ export function RoleplayDiceRoll({
   result,
   createdAt,
   toneMode,
+  rerollTarget,
+  command,
 }: {
   result: string;
   createdAt: string;
   toneMode: RollOutcomeToneMode;
+  /** Set only on the latest reply's last missed roll, the one an Inspiration reroll targets. */
+  rerollTarget?: { chatId: string; messageId: string };
+  command?: RoleplayCommandActivity["command"];
 }) {
+  const { t } = useTranslation();
   const roll = useMemo(() => {
     try {
       const value: unknown = JSON.parse(result);
-      return isDiceRollResult(value) ? value : null;
+      if (!isDiceRollResult(value)) return null;
+      const parsedRoll = { ...value };
+      if (!parsedRoll.skill && command && command.type === "roll") {
+        if (command.skill) parsedRoll.skill = command.skill;
+        if (command.character) parsedRoll.character = command.character;
+        if (command.attribute) parsedRoll.attribute = command.attribute;
+        if (command.modifier !== undefined && parsedRoll.situationalModifier === undefined) {
+          parsedRoll.situationalModifier = command.modifier;
+        }
+      }
+      if (!parsedRoll.skill && parsedRoll.reason) {
+        const parts = parsedRoll.reason.split(" · ");
+        if (parts.length >= 2) {
+          if (!parsedRoll.character && parts[0]) parsedRoll.character = parts[0].trim();
+          const skillMatch = parts[1]?.match(/^(.+?)(?:\s*\(([A-Z]+)\))?$/i);
+          if (skillMatch) {
+            parsedRoll.skill = skillMatch[1]!.trim();
+            if (skillMatch[2] && !parsedRoll.attribute) parsedRoll.attribute = skillMatch[2].toUpperCase();
+          }
+        }
+      }
+      return parsedRoll;
     } catch {
       return null;
     }
-  }, [result]);
+  }, [result, command]);
   const [animate] = useState(() => Date.parse(createdAt) >= loadedAt && shouldAnimateDiceRollMessage(createdAt));
+  const rawMetadata = useChatStore((state) =>
+    rerollTarget && state.activeChat?.id === rerollTarget.chatId ? state.activeChat.metadata : null,
+  );
+  const metadata = useMemo(() => (rawMetadata ? parseChatMetadata(rawMetadata) : null), [rawMetadata]);
+  const reroll = useInspirationReroll();
+  const inspiration = metadata
+    ? typeof metadata.gameInspiration === "number"
+      ? metadata.gameInspiration
+      : DEFAULT_STARTING_INSPIRATION
+    : 0;
+  const canReroll = !!rerollTarget && !!metadata && isRoleplayCommandAllowed(metadata, "inspire", null);
   return roll ? (
     <div className="my-3 min-w-0 max-w-full whitespace-normal" data-roleplay-inline-roll>
       <AnimatedDiceRoll {...roll} tone={rollTone(roll, toneMode)} animate={animate} />
+      {canReroll && (
+        <button
+          type="button"
+          disabled={inspiration <= 0 || reroll.isPending}
+          onClick={() =>
+            reroll.mutate(rerollTarget, {
+              onError: (error) =>
+                toast.error(error instanceof Error ? error.message : t("roleplay.commands.inspire.rerollFailed")),
+            })
+          }
+          className="mt-2 inline-flex min-h-9 items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium ring-1 ring-[var(--primary)]/30 transition-colors enabled:bg-[var(--primary)]/10 enabled:hover:bg-[var(--primary)]/20 disabled:opacity-50"
+        >
+          <Sparkles size="0.8125rem" className={cn("text-[var(--primary)]", reroll.isPending && "animate-pulse")} />
+          {reroll.isPending
+            ? t("roleplay.commands.inspire.rerolling")
+            : t("roleplay.commands.inspire.reroll", { count: inspiration, max: MAX_INSPIRATION_CAP })}
+        </button>
+      )}
     </div>
   ) : null;
 }

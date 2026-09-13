@@ -2198,6 +2198,8 @@ export function isResolvableSkillCheckRequest(request: SkillCheckRequest, defini
 }
 
 export interface SkillCheckTagResolutionOptions {
+  /** custom-mods: false leaves every check tag unrolled (a Roleplay ruleset chat without checks). */
+  rollChecks?: false;
   /** Loaded at most once, and only when at least one tag actually needs rolling. */
   loadContext: () => Promise<SkillCheckModifierContext>;
   rollD20?: () => number;
@@ -2398,7 +2400,7 @@ export async function resolveSkillCheckTagsInContent(
   content: string,
   options: SkillCheckTagResolutionOptions,
 ): Promise<SkillCheckTagResolution> {
-  if (!content || !/\[skill_check\b/i.test(content)) {
+  if (!content || options.rollChecks === false || !/\[skill_check\b/i.test(content)) {
     return { content, resolved: 0, trusted: 0, left: 0, sparse: 0 };
   }
 

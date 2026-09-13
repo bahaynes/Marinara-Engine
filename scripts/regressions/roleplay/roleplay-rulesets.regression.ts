@@ -7,6 +7,7 @@
  *     it happened. A sparse check the Engine never settled simply goes.
  *   - The narrator of a ruleset chat is taught the ruleset's checks and sheet commands, with the
  *     sheets, and the rest command when the player asks for a rest by name.
+ *   - A chat with skill checks turned off is taught no check tag, and keeps its sheet commands.
  *   - Roleplay's [roll] stays for plain dice in a ruleset chat, never for a character's attempt.
  */
 import assert from "node:assert/strict";
@@ -27,7 +28,7 @@ process.env.DATA_DIR = dataDir;
 
 try {
   const [
-    { buildSkillCheckRulesetContext, resolveSkillCheckWithContext },
+    { buildSkillCheckRulesetContext, resolveSkillCheckWithContext, resolveSkillCheckTagsInContent },
     { buildRulesetRoleplayReminder },
     { buildRoleplayCommandsReminder },
   ] = await Promise.all([
@@ -93,6 +94,20 @@ try {
     assert.doesNotMatch(narrator, /THE PLAYER ASKS TO REST/, "no rest is asked for unprompted");
     const resting = buildRulesetRoleplayReminder({ ruleset: ember, sheetBlocks, playerAsksRest: "Long rest" });
     assert.match(resting, /op="rest" rest="Long rest"/, "a rest the player names gets its command");
+    // custom-mods: a chat can keep the ruleset's sheets without its skill checks.
+    const unchecked = buildRulesetRoleplayReminder({ ruleset: ember, sheetBlocks, checks: false });
+    assert.doesNotMatch(unchecked, /\[skill_check: /, "a chat without checks is never taught the check tag");
+    assert.match(unchecked, /write no check tags/, "and decides uncertain outcomes itself");
+    assert.match(unchecked, /\[sheet: who="Name" op="spend"/, "while its sheet commands stay");
+    const asked = `She tries the lock. [skill_check: skill="Lockpicking" dc="12" who="Blake"]`;
+    const unrolled = await resolveSkillCheckTagsInContent(asked, {
+      rollChecks: false,
+      loadContext: async () => {
+        throw new Error("a chat without checks never loads a check context");
+      },
+    });
+    assert.equal(unrolled.content, asked, "and a check tag it writes anyway is left unrolled");
+    assert.equal(unrolled.resolved, 0);
   }
 
   // ── Roleplay's own [roll] ──

@@ -29,6 +29,7 @@ import { parseChatMetadata } from "../../lib/chat-display";
 import { showConfirmDialog } from "../../lib/app-dialogs";
 import { useRoleplaySheetStore } from "../../stores/roleplay-sheet.store";
 import { Select } from "../ui/Select";
+import { SettingsSwitch } from "../panels/settings/SettingControls";
 
 // The builder's form loads when it opens, so Chat Settings and the tracker panel do not carry it.
 const RulesetBuilderModal = lazy(() =>
@@ -204,6 +205,17 @@ export function RoleplayRulesetSettings({ chatId, metadata }: { chatId: string; 
       )}
       {pinnedId && (
         <>
+          {/* custom-mods: a ruleset chat can keep its sheets, attacks and bags without skill checks. */}
+          <SettingsSwitch
+            label={localizeUi("chat.settings.ruleset.checks")}
+            description={localizeUi("chat.settings.ruleset.checksHelp")}
+            checked={metadata.roleplayRulesetChecks !== false}
+            disabled={updateChatMetadata.isPending}
+            onChange={(value) => updateChatMetadata.mutate({ id: chatId, roleplayRulesetChecks: value })}
+            labelPosition="start"
+            className="justify-between"
+            labelClassName="text-xs font-medium"
+          />
           {members.length === 0 ? (
             <p className="text-[0.6875rem] text-[var(--muted-foreground)]">
               {localizeUi("chat.settings.ruleset.noMembers")}

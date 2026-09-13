@@ -16,6 +16,7 @@ import {
   type RoleplayCommandActivity,
   type RoleplayWhisperRecipient,
   type WrapFormat,
+  type GameSkillDefinition,
 } from "@marinara-engine/shared";
 import { parseQuotedParam } from "../conversation/character-commands.js";
 import { wrapContent } from "../prompt/format-engine.js";
@@ -112,15 +113,37 @@ function readCommand(type: string, body: string): RoleplayCommand | null {
       return mood ? { type, mood } : null;
     }
     case "roll": {
-      const notation = field("notation", 80) || field("dice", 80);
-      const character = field("character", 200);
-      const attribute = field("attribute", 100);
+      let notation = field("notation", 80) || field("dice", 80);
+      if (!notation) {
+        const unquotedMatch = body.match(/(?:^|\s|,)(?:notation|dice)\s*=\s*([^\s,\]]+)/i);
+        if (unquotedMatch) {
+          notation = unquotedMatch[1]!;
+        } else {
+          const bareMatch = body.match(/^\s*(?:(["'])([^\s"']+)\1|([0-9]*d[0-9]+(?:[+-][0-9]+)?))/i);
+          if (bareMatch) {
+            notation = bareMatch[2] || bareMatch[3] || "";
+          }
+        }
+      }
+      const character =
+        field("character", 200) ||
+        body.match(/(?:^|\s|,)character\s*=\s*([^\s,\]]+)/i)?.[1]?.replace(/^["']|["']$/g, "");
+      const attribute =
+        field("attribute", 100) ||
+        body.match(/(?:^|\s|,)attribute\s*=\s*([^\s,\]]+)/i)?.[1]?.replace(/^["']|["']$/g, "");
+      const skill =
+        field("skill", 100) || body.match(/(?:^|\s|,)skill\s*=\s*([^\s,\]]+)/i)?.[1]?.replace(/^["']|["']$/g, "");
       const numbers: { modifier?: number; dc?: number } = {};
       for (const key of ["modifier", "dc"] as const) {
-        const raw = parseQuotedParam(body, key, true);
+        let raw = parseQuotedParam(body, key, true);
+        if (raw === undefined) {
+          const match = body.match(new RegExp(`(?:^|\\s|,)${key}\\s*=\\s*([^\\s,\\]]+)`, "i"));
+          if (match) raw = match[1];
+        }
         if (raw === undefined) continue;
-        if (!/^[+-]?\d+$/u.test(raw.trim()) || !Number.isSafeInteger(Number(raw))) return null;
-        numbers[key] = Number(raw);
+        const cleaned = key === "dc" ? raw.trim().replace(/^dc\s*/i, "") : raw.trim();
+        if (!/^[+-]?\d+$/u.test(cleaned) || !Number.isSafeInteger(Number(cleaned))) return null;
+        numbers[key] = Number(cleaned);
       }
       return notation
         ? {
@@ -130,10 +153,13 @@ function readCommand(type: string, body: string): RoleplayCommand | null {
             ...(character ? { character } : {}),
             ...(attribute ? { attribute } : {}),
             ...numbers,
+            ...(skill ? { skill } : {}),
           }
         : null;
     }
     case "combat":
+      return { type };
+    case "inspire":
       return { type };
     case "interrupt": {
       const part = field("part", 8_000);
@@ -814,6 +840,7 @@ export function buildRoleplayCommandsReminder(args: {
   interruptAvailable?: boolean;
   /** Set when a clip may be made now: a video connection exists and the Video Run Interval has passed. */
   video?: { instructions: string } | null;
+  activeSkills?: readonly GameSkillDefinition[];
 }): string {
   const lines: string[] = [];
   const enabled = (key: RoleplayCommandKey) => isRoleplayCommandAllowed(args.metadata, key, args.characterId);
@@ -858,13 +885,22 @@ export function buildRoleplayCommandsReminder(args: {
     lines.push(
       '- [whisper: character="name" text="text hidden from anyone but the specified character"] Hides a part of the message and makes it available only to a selected character. No one else will be able to access it, except for the appointed narrator. This can be used to whisper secrets, show visions, etc. Name exactly one chat character or the user\'s persona. Put the command where the secret belongs in the message, and do not repeat its text in public narration. The text may span several lines and quote dialogue as is, for example text=""I love you."".',
     );
-  if (enabled("roll"))
+  if (enabled("roll")) {
+    const skillsList =
+      args.activeSkills && args.activeSkills.length > 0
+        ? ` Available skills for checks: ${args.activeSkills.map((s) => s.name).join(", ")}.`
+        : "";
     lines.push(
       // A chat played by a ruleset rolls its checks off the character sheets (the ruleset block below),
       // so [roll] is left for dice those rules do not cover, and never stands in for a check.
       args.metadata.gameRuleset != null
         ? '- [roll: notation="2d6" reason="what the dice decide"] requests plain dice the ruleset does not cover (a random table, a number of hours). An attempt by a character is a check from the RULESET block, never a roll. Stop after the command and wait for the result before narrating the outcome. Never invent results or reroll.'
-        : '- [roll: character="participant name" notation="1d20" attribute="Strength" modifier="+2" dc="15" reason="action being attempted"] requests a real roll; use roll_dice with the same fields when available. You may target any chat participant, including the user\'s persona by name. Attribute is optional; the engine adds the assigned attribute modifier, so do not add it yourself. Optional modifier adds a situational bonus/penalty once; optional dc sets the total needed to succeed. Keep DCs and modifiers in command/tool fields, not narration. Stop after the command and wait for the result before narrating the outcome. Never invent results or reroll an action.',
+        : `- [roll: character="participant name" notation="1d20" attribute="Strength" skill="Skill Name" modifier="+2" dc="15" reason="action being attempted"] requests a real roll; use roll_dice with the same fields when available. You may target any chat participant, including the user's persona by name. Attribute and skill are both optional and only one is needed; the engine automatically adds the assigned ability/skill modifier from character stats, so do not add it yourself. Optional modifier adds a situational bonus/penalty once; optional dc sets the total needed to succeed. Keep DCs and modifiers in command/tool fields, not narration. Stop after the command and wait for the result before narrating the outcome. Never invent results or reroll an action.${skillsList}`,
+    );
+  }
+  if (enabled("inspire"))
+    lines.push(
+      "- [inspire] awards the user's persona 1 Inspiration (they can hold up to 4). Award it for clever problem-solving, a bold in-character risk, or a heroic beat, not routinely. The user can spend it to reroll a failed roll.",
     );
   if (enabled("combat") && args.availableAgentIds.has("combat"))
     lines.push("- [combat] asks the Combat agent to start an encounter when the scene turns to combat.");

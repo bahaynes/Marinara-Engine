@@ -107,3 +107,11 @@ Verify that TypeScript compilation, linting, and tests pass cleanly.
 - **Agent Skill**: [`.claude/skills/custom-mods/SKILL.md`](.claude/skills/custom-mods/SKILL.md)
 - **Repo Agent Rules**: [`CLAUDE.md`](CLAUDE.md) (fork rules), [`AGENTS.md`](AGENTS.md) (upstream guide, read on demand)
 - **Upstream Contribution Guide**: [`CONTRIBUTING.md`](CONTRIBUTING.md) (for upstream PR conventions when contributing back to `Pasta-Devs/Marinara-Engine`)
+
+## RP skill checks from rulesets
+
+RP chats pin a ruleset in Chat Settings > Skill Checks (the same `gameRuleset` pin a game uses). `[roll: ...]` skill and ability checks then take their modifier from each character's or persona's ruleset sheet; with no pin, or no sheet, they roll plain dice.
+
+- **D&D**: install the 5e SRD 5.1 ruleset package (needs the staging preview catalog, `BUILD_BRANCH=staging`).
+- **Medical**: `deploy/rulesets/medical.ruleset.json` is a fork-local ruleset with the Medical Drama skills. Import it once with `POST /api/game-rulesets/import` (body `{"definition": <file contents>}`); it files under `local/medical`.
+- Give each character a sheet for the ruleset in the character editor's ruleset sheets section.

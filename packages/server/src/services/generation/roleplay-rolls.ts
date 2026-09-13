@@ -21,13 +21,23 @@ export function prepareRoleplayRoll(
   if (args.character !== undefined && typeof args.character !== "string")
     throw new Error("The roll character must be a participant name.");
   const requested = typeof args.character === "string" ? args.character.trim() : "";
-  const matches = requested
+  let matches = requested
     ? characters.filter(
         (character) =>
           character.id === requested ||
           normalizeCharacterLookupName(character.name) === normalizeCharacterLookupName(requested),
       )
     : characters.filter((character) => character.id === fallbackCharacterId);
+  if (requested && matches.length === 0) {
+    // Fork: an unambiguous prefix or name-token match ("Hera" for "Hera-Zaire") resolves the participant.
+    const normReq = normalizeCharacterLookupName(requested);
+    const candidates = characters.filter((character) => {
+      const normChar = normalizeCharacterLookupName(character.name);
+      if (normChar.startsWith(normReq) || normReq.startsWith(normChar)) return true;
+      return normChar.split(/[\s\-_]+/).includes(normReq);
+    });
+    if (candidates.length === 1) matches = candidates;
+  }
   if (requested && matches.length !== 1) throw new Error(`The roll must name one chat participant: ${requested}`);
   const character = matches[0];
   const attribute = typeof args.attribute === "string" ? args.attribute.trim() : "";

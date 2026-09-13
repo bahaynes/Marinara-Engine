@@ -399,6 +399,7 @@ import {
   prepareRoleplayRoll,
   withRoleplayRollSchema,
 } from "../services/generation/roleplay-rolls.js";
+import { applyInspirationAward } from "../services/game/inspiration.service.js";
 import {
   appendRoleplayMessageNotes,
   appendRoleplayPromptTail,
@@ -1010,7 +1011,13 @@ import {
   withActiveGameMapMeta,
 } from "../services/game/map-position.service.js";
 import { applyAllSegmentEdits } from "../services/game/segment-edits.js";
-import type { CharacterData, GameMap, GameNpc, Lorebook, LorebookEntry } from "@marinara-engine/shared";
+import {
+  type CharacterData,
+  type GameMap,
+  type GameNpc,
+  type Lorebook,
+  type LorebookEntry,
+} from "@marinara-engine/shared";
 import {
   buildConversationProfileBlocks,
   readCharacterConvoFields,
@@ -5262,6 +5269,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
               {
                 id: identity.id,
                 name: identity.name,
+                description: identity.description,
                 rpgStats: normalizeCharacterRpgStats(parseExtra(identity.personaStats).rpgStats),
               },
             ]
@@ -5460,6 +5468,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                 sheetBlocks,
                 clocks,
                 playerAsksRest: rulesetRestAskedFor(definition, String(latestUserText).trimStart()),
+                checks: chatMeta.roleplayRulesetChecks !== false,
               });
             } catch (err) {
               logger.warn(err, "[generate/roleplay] Could not build the ruleset reminder for chat %s", input.chatId);
@@ -6047,6 +6056,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
             gameSpecialInstructions: gmCtx.gameSpecialInstructions,
             canGenerateBackgrounds: gmCtx.canGenerateBackgrounds,
             artStylePrompt: gmCtx.artStylePrompt,
+            combatStyle: gmCtx.combatStyle,
             addressMode,
             playerDiceRollSubmitted,
             // One-request dice (#6215). Off, the three fields below are inert and
@@ -9548,6 +9558,17 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
             resolvedToolNames: chatResolvedToolNames,
           });
           const roleplayActivity: RoleplayCommandActivity[] = [];
+          const announceInspirationAward = async (amount: number) => {
+            try {
+              const next = await applyInspirationAward(chats, input.chatId, amount);
+              if (next === null) return;
+              chatMeta.gameInspiration = next;
+              sendSseEvent(reply, { type: "game_inspiration_update", data: { gameInspiration: next, delta: amount } });
+              logger.info("[generate/inspiration] chatId=%s awarded=%d newTotal=%d", input.chatId, amount, next);
+            } catch (err) {
+              logger.warn(err, "[generate/inspiration] Failed to apply inspiration award");
+            }
+          };
           const roleplayInlinePrefixes = new Map<RoleplayCommandActivity, string>();
           // The reply text before each command, so a reply split at scene breaks keeps it with its part.
           const roleplayActivityPlaces = new Map<RoleplayCommandActivity, string>();
@@ -9611,6 +9632,14 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                   characterId: roleplayCallerId,
                   interruptAvailable: Boolean(roleplayInterruptionTarget),
                   video: roleplayVideoOffer,
+                  activeSkills: getActiveGameSkills({
+                    enabledSystemIds: Array.isArray(chatMeta.gameSkillSystems)
+                      ? (chatMeta.gameSkillSystems as string[])
+                      : null,
+                    disabledSkillIds: Array.isArray(chatMeta.gameDisabledSkills)
+                      ? (chatMeta.gameDisabledSkills as string[])
+                      : null,
+                  }),
                 }),
                 roleplayRulesetReminder,
               ]
@@ -10222,6 +10251,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
           let roleplayHadCommands = false;
           let replyHtmlArtifacts = 0;
           const currentRoleplayMedia: RoleplayCommand[] = [];
+          let roleplayInspirationAwards = 0;
           if (chatMode === "roleplay" && !input.impersonate) {
             const parsed = parseRoleplayCommands(fullResponse);
             roleplayHadCommands = parsed.content !== fullResponse;
@@ -10296,6 +10326,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
               }
               roleplayActivity.push(activity);
               roleplayActivityPlaces.set(activity, parsed.content.slice(0, parsed.positions.get(activity)));
+              if (command.type === "inspire") roleplayInspirationAwards++;
               if (
                 command.type === "illustrate" ||
                 command.type === "video" ||
@@ -10306,6 +10337,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
               )
                 currentRoleplayMedia.push(command);
             }
+            if (roleplayInspirationAwards > 0) await announceInspirationAward(roleplayInspirationAwards);
           }
           let parsedCommands: CharacterCommand[] = [];
           // Parallel to parsedCommands: per-command character attribution for merged
@@ -10582,6 +10614,9 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
             // than by a marker in the text that would change how an older turn reads.
             const dicePoolSession = await ensureGameDicePoolSession();
             const rolled = await resolveSkillCheckTagsInContent(fullResponse, {
+              // custom-mods: a Roleplay ruleset chat can play without skill checks; a stray check tag is
+              // left unrolled, and the reply's reader drops an unsettled check from the prose.
+              ...(roleplayRulesetTurn && chatMeta.roleplayRulesetChecks === false ? { rollChecks: false } : {}),
               loadContext: async () =>
                 loadSkillCheckModifierContext(
                   app.db,

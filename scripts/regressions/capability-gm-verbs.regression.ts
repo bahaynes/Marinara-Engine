@@ -845,7 +845,7 @@ assert.deepEqual(
 // activeGameMapId through the queued patchMetadata.
 assert.equal(
   unreadableWriteCalls,
-  22,
+  23,
   `chat-metadata writes this sweep cannot read statically changed: expected 22, found ${unreadableWriteCalls}. ` +
     "This count is a boundary marker, not a budget, so do not simply edit the number to match. Read the " +
     "call this added by hand — the sites are listed below — and decide what it writes: if it commits a key " +

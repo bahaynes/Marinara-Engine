@@ -755,6 +755,8 @@ export interface ChatMetadata {
   gameIntroPresented?: boolean;
   /** Timestamp for when the current game session was created/started */
   gameCurrentSessionStartedAt?: string;
+  /** Current Inspiration points available for rerolling failed checks (0-4). Defaults to 1 when enabled. */
+  gameInspiration?: number;
   /** Current game state (exploration, dialogue, combat, travel_rest) */
   gameActiveState?: import("./game.js").GameActiveState;
   /** Whether the game should maintain visible custom HUD widgets. */
@@ -818,6 +820,8 @@ export interface ChatMetadata {
   gameLorebookSearch?: boolean;
   /** Rewrite Game narration after new text-command dice rolls; absent means enabled. */
   gameDiceOutcomeNarration?: boolean;
+  /** custom-mods: a Roleplay chat pinned to a ruleset asks for skill checks; absent means on. */
+  roleplayRulesetChecks?: boolean;
   /**
    * Finish a rolled Game turn in one provider request: the GM commits its prose blind,
    * the engine rolls afterwards and fills the result in, and the narration rewrite never

@@ -77,6 +77,13 @@ export function AnimatedDiceRoll({
   modifier,
   total,
   dc,
+  character,
+  skill,
+  attribute,
+  attributeModifier,
+  proficiency,
+  situationalModifier,
+  reason,
   accentColor,
   tone,
   mode = "chat",
@@ -193,6 +200,22 @@ export function AnimatedDiceRoll({
       </div>
     ) : null;
 
+  const hasFormulaBreakdown =
+    sumsToTotal && (attributeModifier !== undefined || proficiency !== undefined || situationalModifier !== undefined);
+  const breakdownRemainder = useMemo(() => {
+    if (!hasFormulaBreakdown) return 0;
+    const accounted = (attributeModifier ?? 0) + (proficiency ?? 0) + (situationalModifier ?? 0);
+    return modifier - accounted;
+  }, [hasFormulaBreakdown, modifier, attributeModifier, proficiency, situationalModifier]);
+  const reasonDescription = useMemo(() => {
+    if (!reason) return "";
+    const parts = reason.split(" · ");
+    if (parts.length >= 3) return parts.slice(2).join(" · ").trim();
+    if (parts.length === 2 && !parts[1]?.includes("(")) return parts[1]?.trim() ?? "";
+    if (parts.length === 1 && !parts[0]?.includes("(") && !parts[0]?.includes(notation)) return parts[0]?.trim() ?? "";
+    return "";
+  }, [reason, notation]);
+
   return (
     <div
       className={cn(
@@ -212,10 +235,22 @@ export function AnimatedDiceRoll({
         <span className="dice-roll-header-mark" aria-hidden="true">
           ✦
         </span>
-        <span>
-          {/* Who rolled, or why, when the roll said: a party's rolls otherwise all look alike. */}
-          {label ? localizeUi("ui.dice.rolledBy", { name: label }) : ""}
-          {notation}
+        <span className="min-w-0 truncate">
+          {label && !character ? localizeUi("ui.dice.rolledBy", { name: label }) : ""}
+          {skill ? (
+            <>
+              {character && <span className="opacity-80 font-normal">{character} · </span>}
+              <strong className="font-semibold text-[var(--foreground)]">{skill}</strong>
+              {attribute && <span className="opacity-75 font-normal"> ({attribute.toUpperCase()})</span>}
+              {" · "}
+              <span className="opacity-90">{notation}</span>
+            </>
+          ) : (
+            <>
+              {character && <span className="opacity-80 font-normal">{character} · </span>}
+              {notation}
+            </>
+          )}
           {dc !== undefined && (
             <>
               {" "}
@@ -224,6 +259,15 @@ export function AnimatedDiceRoll({
           )}
         </span>
       </div>
+
+      {reasonDescription && (
+        <div
+          className="px-2 py-0.5 text-xs italic text-[var(--muted-foreground)] line-clamp-2 select-text"
+          title={reasonDescription}
+        >
+          {reasonDescription}
+        </div>
+      )}
 
       {!asText && (
         <div
@@ -312,7 +356,45 @@ export function AnimatedDiceRoll({
                       </Fragment>
                     ))
                   : counted.map(worthOf).join(" + ")}
-                {modifierText && ` ${modifierText}`}
+                {hasFormulaBreakdown ? (
+                  <>
+                    {attributeModifier !== undefined && attributeModifier !== 0 && (
+                      <>
+                        {" "}
+                        {attributeModifier > 0
+                          ? localizeUi("ui.dice.breakdown.plus", { value: attributeModifier })
+                          : localizeUi("ui.dice.breakdown.minus", { value: Math.abs(attributeModifier) })}{" "}
+                        ({attribute ? attribute.toUpperCase() : localizeUi("ui.dice.breakdown.attribute")})
+                      </>
+                    )}
+                    {proficiency !== undefined && proficiency !== 0 && (
+                      <>
+                        {" "}
+                        {localizeUi("ui.dice.breakdown.plus", { value: proficiency })} (
+                        {localizeUi("ui.dice.breakdown.proficiency")})
+                      </>
+                    )}
+                    {situationalModifier !== undefined && situationalModifier !== 0 && (
+                      <>
+                        {" "}
+                        {situationalModifier > 0
+                          ? localizeUi("ui.dice.breakdown.plus", { value: situationalModifier })
+                          : localizeUi("ui.dice.breakdown.minus", { value: Math.abs(situationalModifier) })}{" "}
+                        ({localizeUi("ui.dice.breakdown.bonus")})
+                      </>
+                    )}
+                    {breakdownRemainder !== 0 && (
+                      <>
+                        {" "}
+                        {breakdownRemainder > 0
+                          ? localizeUi("ui.dice.breakdown.plus", { value: breakdownRemainder })
+                          : localizeUi("ui.dice.breakdown.minus", { value: Math.abs(breakdownRemainder) })}
+                      </>
+                    )}
+                  </>
+                ) : (
+                  modifierText && ` ${modifierText}`
+                )}
               </>
             ) : (
               <>

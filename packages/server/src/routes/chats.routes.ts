@@ -2043,7 +2043,10 @@ export async function chatsRoutes(app: FastifyInstance) {
         if (!freshChat) return notFound(reply, "Chat not found");
         const next = { ...parseChatMetadata(freshChat.metadata), ...incoming };
         const resolved = resolveGameRuleset(next, await loadRulesetRegistry(app.db));
+        // Only a game plays a combat style; a roleplay chat pins a ruleset for its skill checks and
+        // fights in the classic encounter modal, so a style-restricted ruleset (5e: tactical) must pin.
         if (
+          freshChat.mode === "game" &&
           resolved.status === "ok" &&
           !rulesetAllowsCombatStyle(resolved.definition, next.gameCombatStyle as string | null | undefined)
         ) {
