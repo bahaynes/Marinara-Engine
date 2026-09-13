@@ -365,6 +365,11 @@ function buildCustomToolHiddenContext(args: {
     characterIds,
     characterNames,
     characters,
+    characterRpgStats: Object.fromEntries([
+      ...args.agentContext.characters.filter((c) => c.rpgStats).map((c) => [c.name, c.rpgStats]),
+      ...(args.agentContext.persona?.rpgStats ? [[personaName ?? "Player", args.agentContext.persona.rpgStats]] : []),
+    ]),
+    personaRpgStats: args.agentContext.persona?.rpgStats ?? null,
     variables: stringRecord(args.chatMetadata.agentVariables),
     macros: {
       chatId: args.chatId,
