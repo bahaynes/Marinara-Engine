@@ -36,6 +36,14 @@ References: [OpenAI agent instructions](https://learn.chatgpt.com/docs/agent-con
 - Follow `.github/agents/chai-workflow.md` as the repo's additive AI-agent workflow overlay for proof discipline, bugfix lanes, feature sizing, issue filing, PR gates, and risky-work claim boundaries.
 - The overlay does not replace this file, `CONTRIBUTING.md`, package instructions, or maintainer requests. Repo rules and the user's latest request still win.
 
+## Custom-Mods Fork Guidelines (Local Fork & Rebase Discipline)
+
+- **Fork Context**: This repository is the `custom-mods` fork (`bahaynes/Marinara-Engine`), maintained locally for our own use on top of upstream (`Pasta-Devs/Marinara-Engine`). See `CUSTOM_MODS.md` and the `custom-mods` skill (`.agents/skills/custom-mods/SKILL.md`) for full guidance.
+- **Minor & Easily Rebased**: All changes must be minor, clean, and easily rebased onto `upstream/staging`. Keep diffs minimal, avoid unnecessary file churn or broad formatting/refactors across upstream code, and prefer modular additive files.
+- **Drop Commits Fixed Upstream**: Commits on this fork are intentionally ephemeral. When upstream resolves a bug or implements equivalent functionality, we drop our local commit during rebase rather than carrying divergent code.
+- **Separate Bug Fixes from Custom Features**: Never bundle temporary upstream bug fixes with custom mod features. Keep them in separate atomic commits so bug fixes can be cleanly dropped when upstream releases a fix.
+- **Protect Working Tree**: Do not discard unstaged or uncommitted working-tree edits (such as diagnostic logging or user WIP); keep edits strictly non-destructive.
+
 ## Ponytail Implementation Discipline
 
 - Apply [Ponytail](https://github.com/DietrichGebert/ponytail) as an additive minimalism overlay after understanding the task and tracing the affected flow. It never overrides repository rules, validation requirements, or the maintainer's latest request.
@@ -55,6 +63,25 @@ References: [OpenAI agent instructions](https://learn.chatgpt.com/docs/agent-con
 ## Temporary Tests
 
 - Do not keep `.test.ts` files in the repo. If an agent creates one for local proof, remove it after the test is done.
+
+## custom-mods Branch Workflow
+
+This fork's own trunk is `custom-mods`, separate from the upstream `staging`/`main`
+workflow below. Commit and push straight to `custom-mods`; PRs are optional (use
+one only when a change wants a review record). The gate is `.githooks/pre-push`,
+which runs `pnpm check` plus the full regression suite (`pnpm regression`) on
+every push, PR or not.
+
+- The pre-commit hook stays fast (staged-file-scoped lint/format only,
+  `scripts/pre-commit-check.mjs`).
+- Push once per coherent change, so a pre-push failure points at that change's
+  own commits rather than a pile of unrelated ones. Topic branches or worktrees
+  are fine for isolating work; merge them locally and push `custom-mods`.
+- Do not add `CHANGELOG.md` entries for `custom-mods` work. This overrides the
+  changelog rule in the upstream sections of this file, `CONTRIBUTING.md`, and
+  `.github/agents/chai-workflow.md`: fork-local entries conflict on every rebase
+  onto upstream and are never released from here. Describe the change in the
+  commit message instead.
 
 ## Repo-Specific Cautions
 
