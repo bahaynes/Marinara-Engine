@@ -36,6 +36,14 @@ References: [OpenAI agent instructions](https://learn.chatgpt.com/docs/agent-con
 - Follow `.github/agents/chai-workflow.md` as the repo's additive AI-agent workflow overlay for proof discipline, bugfix lanes, feature sizing, issue filing, PR gates, and risky-work claim boundaries.
 - The overlay does not replace this file, `CONTRIBUTING.md`, package instructions, or maintainer requests. Repo rules and the user's latest request still win.
 
+## Custom-Mods Fork Guidelines (Local Fork & Rebase Discipline)
+
+- **Fork Context**: This repository is the `custom-mods` fork (`bahaynes/Marinara-Engine`), maintained locally for our own use on top of upstream (`Pasta-Devs/Marinara-Engine`). See `CUSTOM_MODS.md` and the `custom-mods` skill (`.agents/skills/custom-mods/SKILL.md`) for full guidance.
+- **Minor & Easily Rebased**: All changes must be minor, clean, and easily rebased onto `upstream/staging`. Keep diffs minimal, avoid unnecessary file churn or broad formatting/refactors across upstream code, and prefer modular additive files.
+- **Drop Commits Fixed Upstream**: Commits on this fork are intentionally ephemeral. When upstream resolves a bug or implements equivalent functionality, we drop our local commit during rebase rather than carrying divergent code.
+- **Separate Bug Fixes from Custom Features**: Never bundle temporary upstream bug fixes with custom mod features. Keep them in separate atomic commits so bug fixes can be cleanly dropped when upstream releases a fix.
+- **Protect Working Tree**: Do not discard unstaged or uncommitted working-tree edits (such as diagnostic logging or user WIP); keep edits strictly non-destructive.
+
 ## Ponytail Implementation Discipline
 
 - Apply [Ponytail](https://github.com/DietrichGebert/ponytail) as an additive minimalism overlay after understanding the task and tracing the affected flow. It never overrides repository rules, validation requirements, or the maintainer's latest request.
