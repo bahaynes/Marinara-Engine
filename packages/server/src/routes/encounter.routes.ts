@@ -1358,8 +1358,10 @@ export async function encounterRoutes(app: FastifyInstance) {
       // it resolves gets its brief below.
       const resolvedRuleset =
         chatMeta?.gameRuleset != null ? resolveGameRuleset(chatMeta, await loadRulesetRegistry()) : null;
+      // A roleplay chat's encounter modal draws only the classic battle, so a ruleset's style list
+      // (5e: tactical) applies to games alone; the roleplay fight still gets the ruleset brief below.
       const combatStyle = rulesetCombatStyle(
-        resolvedRuleset?.status === "ok" ? resolvedRuleset.definition : null,
+        resolvedRuleset?.status === "ok" && chat.mode === "game" ? resolvedRuleset.definition : null,
         (chatMeta?.gameCombatStyle as string | undefined) ??
           ((chatMeta?.gameSetupConfig as Record<string, unknown> | undefined)?.combatStyle as string | undefined),
       );

@@ -23,6 +23,7 @@ import {
   GENTLE_GM_TURN_RULES,
   type GameStoryStyle,
   type GameViolenceLevel,
+  matchRulesetCheckTarget,
   rulesetDefenseLabel,
   rulesetItemStatsRead,
   rulesetLayeredCurrencies,
@@ -791,7 +792,8 @@ export function buildGmSystemPrompt(ctx: GmPromptContext): string {
     );
   } else if (ctx.combatStyle === "triage") {
     gameBlockLines.push(
-      `- Combat style: ATLS trauma-triage mini-game (in the spirit of a medical drama, not fantasy combat). "Combat" here means an ER patient case: a card/AP-based interface handles vitals, interventions, and diagnosis — narrate the aftermath from the result and do not resolve interventions or diagnoses yourself in prose. Only transition into a triage case when the scene has actually produced a trauma patient (an injury happens on-screen, an incoming case is announced, a patient already being discussed crashes, etc). If a patient's condition has already been substantially worked out through prose roleplay, don't force a fresh triage case on top of it as if it were a new incoming patient — either let it resolve narratively, or treat any triage case you do trigger as the direct continuation of that same patient, never a new unrelated one.`,
+      `- Combat style: ATLS trauma-triage mini-game (in the spirit of a medical drama, not fantasy combat). "Combat" here means an acute, life-or-death stabilization moment ONLY — a card/AP-based interface handles the immediate crisis (vitals crashing right now, an intervention needed this minute); narrate the aftermath from the result and do not resolve interventions or diagnoses yourself in prose. This is deliberately narrow: most patient care (rounding between rooms, waiting on labs/imaging, working a case that isn't currently crashing) should stay in prose exactly like a medical drama's slower scenes — only trigger the mini-game for the "we need to act right now or they die" beat, never as a way to play out routine care. Only transition into a triage case when the scene has actually produced that acute moment (an injury happens on-screen, a patient already being discussed crashes right now, an incoming trauma arrives unstable). If a patient's condition has already been substantially worked out through prose roleplay, don't force a fresh triage case on top of it as if it were a new incoming patient — either let it resolve narratively, or treat any triage case you do trigger as the direct continuation of that same patient, never a new unrelated one.`,
+      `- When you emit [state: combat] for this combat style, you MUST name the patient directly in the tag: [state: combat patient="Exact Patient Name"]. This name is trusted as-is by the mini-game, so it must be the patient the player was actually treating (orders placed, condition being discussed) — never a more recently introduced or more dramatic patient who happens to show up in the same turn. If multiple patients are in play, name the one the player was working, not the newest arrival.`,
     );
   }
   gameBlockLines.push(`</game>`);
@@ -1061,6 +1063,18 @@ function describeSheetValue(
     return `the ${column} of the sheet's ${list?.label ?? ref.listSum.list}${where} added up`;
   }
   return "a number on the sheet";
+}
+
+/** The one-request branch example in this ruleset's own words: its sneaking skill (or its first
+ *  skill) and the middle step of its ladder by name. A built-in "Stealth" at dc="15" is copied
+ *  verbatim, so a ruleset game would otherwise be taught another system's skill and number. */
+function rulesetBranchExampleCheck(ruleset: import("@marinara-engine/shared").RulesetDefinition): string {
+  const target = matchRulesetCheckTarget(ruleset, "Stealth");
+  const skill =
+    target?.type === "skill" ? target.label : (ruleset.sheet.skills[0]?.label ?? ruleset.sheet.abilities[0]?.label);
+  const ladder = ruleset.resolution.difficultyLadder;
+  const step = ladder[Math.floor((ladder.length - 1) / 2)];
+  return `skill="${skill ?? "Skill Name"}"${step ? ` difficulty="${step.label}"` : ` dc="N"`}`;
 }
 
 /** The ruleset's own check line, in place of the built-in one. Everything in it is the ruleset's
@@ -2022,6 +2036,7 @@ export function buildGmFormatReminder(
     | "contentBoundaries"
     | "enableQuickTimeEvents"
     | "gameSpecialInstructions"
+    | "combatStyle"
   > & {
     /** buildGmSceneState(): the scene's changing state, placed between the history and the instructions. */
     sceneState?: string;
@@ -2553,7 +2568,7 @@ export function buildGmFormatReminder(
             `- [map: kind="cave|dungeon|station" name="Name"] - when the party goes into a cave, a dungeon, a crypt, a sewer, a ruin or a ship or station deck it will explore room by room. The Engine makes a map of it and shows it; the party starts at its way in. Never for a building in town. When they come back out, write [map: leave]. A place listed below as closed opens to the party only when the story reaches it: then write [map: reveal name="Name"].${ctx.dungeonMap?.startsWith("MAP:") ? " The MAP block below is the one they are on now: describe only what it holds." : ""}`,
           ]
         : []),
-      `- [state: exploration|dialogue|combat|travel_rest] - only on actual mode transitions. Before emitting [state: combat], check the scene: if the party is mid-conversation, processing grief or emotional fallout, or otherwise not at a natural action beat, let that beat land first — don't interrupt an emotional or dialogue-driven moment to force a fight or trauma case unless the scene itself is producing the emergency right now (an attack lands, a patient crashes, etc). If you're planning to use [state: combat], this one ALWAYS has to be at the end of the turn, as it initiates a new combat generation and UI.`,
+      `- [state: exploration|dialogue|combat|travel_rest]${ctx.combatStyle === "triage" ? ` (for this game's triage combat style, write [state: combat patient="Exact Patient Name"] instead — see the patient-naming rule above)` : ""} - only on actual mode transitions. Before emitting [state: combat], check the scene: if the party is mid-conversation, processing grief or emotional fallout, or otherwise not at a natural action beat, let that beat land first — don't interrupt an emotional or dialogue-driven moment to force a fight or trauma case unless the scene itself is producing the emergency right now (an attack lands, a patient crashes, etc). If you're planning to use [state: combat], this one ALWAYS has to be at the end of the turn, as it initiates a new combat generation and UI.`,
       `- [reputation: npc="Name" action="helped"] - when an NPC's tracked stance changes because of what happened. When two tracked people share a name, add the one you mean: id="..." as listed.`,
       `- [party_change: character="Exact Character Name" change="add|remove"] - only when someone truly joins or leaves the party. Use remove when a party member dies, permanently departs, or is no longer traveling with the player.`,
       ...(ctx.mrpg
@@ -2599,7 +2614,7 @@ export function buildGmFormatReminder(
       `- When an outcome turns on chance, you have three ways to write it. Pick by what the outcome is, not by preference.`,
       ``,
       `- IF THE OUTCOME SPLITS TWO WAYS, WRITE A BRANCH BLOCK. Write the check without numbers, then write both halves. The engine rolls, keeps the half the roll selects, and deletes the other before anyone reads the turn. Neither half may contain a command, but for an [inventory] add of what a success makes or gathers, written in its success half.`,
-      `  [skill_check: skill="Stealth" dc="15" branch="crates"]`,
+      `  [skill_check: ${ctx.ruleset ? rulesetBranchExampleCheck(ctx.ruleset) : `skill="Stealth" dc="15"`} branch="crates"]`,
       `  [branch: crates]`,
       `  [on success] The guard's gaze slides over the crates and away. You are past him.`,
       `  [on failure] A boot scuffs stone. He turns, and his hand is already moving.`,
@@ -2687,6 +2702,17 @@ export function buildGmFormatReminder(
           : ["None."]),
       );
   }
+
+  // Fork: d20 coaching (natural 1s, trained professionals); a ruleset brings its own GM text.
+  if (S && !ctx.ruleset)
+    lines.push(
+      ``,
+      `CONSEQUENCES & FAILING FORWARD:`,
+      `- Fail Forward: A failed check must NEVER result in a dead end, inaction, or retroactive nullification (e.g. do not claim an action was impossible before it started). Failure must change the scene, escalate stakes, introduce an unexpected complication, or force a tough cost/tradeoff while keeping the action moving.`,
+      `- Respect Competence: Characters are trained professionals. Frame failures around difficult circumstances, formidable opposition, bad luck, or hidden variables—NEVER around sudden amateur clumsiness or panic.`,
+      `- Critical Failures (Natural 1): Deliver a dramatic complication or severe escalation that demands immediate attention. It must never strip player agency, erase character capabilities, or present an impassable wall; always leave active choices for the player to respond.`,
+      `- Turn Containment: Once a consequence is narrated, return to a neutral baseline for subsequent actions. Do not let past failed checks or low gauge widgets (like Composure) artificially bias future unrelated attempts.`,
+    );
 
   // The installed experience's own verbs, last in the block so the built-ins keep their order. Each
   // line already arrives fully rendered from the verb runtime; nothing here inspects or reformats it.

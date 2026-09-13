@@ -13,9 +13,11 @@ import { rollWithPersonalExtensionDiceFormats } from "./personal-extension-dice-
 export { isMessageHidden } from "./message-visibility";
 import {
   SUPPORTED_MACROS,
+  DEFAULT_STARTING_INSPIRATION,
+  MAX_INSPIRATION_CAP,
+  getAgentPromptTemplateOptions,
   buildGuidedGenerationInstructionMessage,
   buildNarratorInstructionMessage,
-  getAgentPromptTemplateOptions,
   isWithinDiceLimits,
   mergeBuiltInAgentSettings,
   normalizeTextForMatch,
@@ -767,6 +769,31 @@ const COMMANDS: SlashCommand[] = [
         },
       });
       return { handled: true };
+    },
+  },
+  {
+    name: "inspire",
+    aliases: ["award-inspiration"],
+    description: "Award 1 Inspiration point to the player (max 4)",
+    usage: "/inspire",
+    local: true,
+    async execute(_args, ctx) {
+      try {
+        const chat = await api.get<{ metadata?: string | Record<string, unknown> }>(`/chats/${ctx.chatId}`);
+        const meta = chat.metadata
+          ? typeof chat.metadata === "string"
+            ? JSON.parse(chat.metadata)
+            : chat.metadata
+          : {};
+        const current = typeof meta.gameInspiration === "number" ? meta.gameInspiration : DEFAULT_STARTING_INSPIRATION;
+        const updated = Math.min(MAX_INSPIRATION_CAP, current + 1);
+        await api.patch(`/chats/${ctx.chatId}/metadata`, { gameInspiration: updated });
+        ctx.invalidate();
+        toast.success(`✨ Inspiration awarded! (${updated}/${MAX_INSPIRATION_CAP})`);
+        return { handled: true, feedback: `Inspiration awarded! Current: ${updated}/${MAX_INSPIRATION_CAP}` };
+      } catch (err: any) {
+        return { handled: true, feedback: `Failed to award inspiration: ${err.message}` };
+      }
     },
   },
   {

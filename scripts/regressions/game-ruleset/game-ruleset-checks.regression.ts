@@ -143,6 +143,21 @@ try {
     assert.equal(target("Strength check"), "ability:str");
     assert.equal(target("Basket weaving"), null, "an unknown name is never mapped to a guessed ability");
     assert.equal(target("Luck save"), null);
+
+    // Aliases: after every real name, before abilities.
+    const aliased = structuredClone(fiveE);
+    const skill = (id: string) => aliased.sheet.skills.find((entry) => entry.id === id)!;
+    skill("insight").aliases = ["Sense Motive"];
+    skill("survival").aliases = ["Strength", "Stealth", "Wilderness Lore"];
+    const viaAlias = (name: string) => {
+      const match = matchRulesetCheckTarget(aliased, name);
+      return match ? `${match.type}:${match.id}` : null;
+    };
+    assert.equal(viaAlias("Sense Motive"), "skill:insight");
+    assert.equal(viaAlias("wilderness_lore check"), "skill:survival");
+    assert.equal(viaAlias("Stealth"), "skill:stealth", "a real skill name beats another skill's alias");
+    assert.equal(viaAlias("Strength"), "skill:survival", "an alias claims an ability's name");
+    assert.equal(viaAlias("Basket weaving"), null);
   }
 
   // ── The dice ──
@@ -567,7 +582,9 @@ try {
             !line.startsWith("  Something made to last only so long"),
         )
         .join("\n");
-    assert.equal(strip(reminder), strip(legacyReminder));
+    // Fork: the failing-forward coaching stays out of ruleset games.
+    const forkCoaching = /\n\nCONSEQUENCES & FAILING FORWARD:(?:\n- [^\n]*){4}/g;
+    assert.equal(strip(reminder), strip(legacyReminder.replace(forkCoaching, "")));
 
     // The tool is still there for damage and the like, but it is never how a check is recorded.
     assert.match(reminder, /Do not use roll_dice for an ability check, skill check or saving throw/);
@@ -578,6 +595,20 @@ try {
     const oneRequest = buildGmFormatReminder({ ...base, ruleset: fiveE, oneRequestDice: true });
     assert.doesNotMatch(oneRequest, /dc="1-20"/);
     assert.match(buildGmFormatReminder({ ...base, oneRequestDice: true }), /dc="1-20"/);
+    // The branch example is the ruleset's own skill and a named ladder step, never the built-in DC 15.
+    assert.match(oneRequest, /\[skill_check: skill="Stealth" difficulty="Medium" branch="crates"\]/);
+    assert.match(
+      buildGmFormatReminder({ ...base, oneRequestDice: true }),
+      /\[skill_check: skill="Stealth" dc="15" branch="crates"\]/,
+    );
+    const sneaky = structuredClone(fiveE);
+    sneaky.sheet.skills = sneaky.sheet.skills.filter((entry) => entry.id !== "stealth");
+    sneaky.sheet.skills.push({ id: "sneak", label: "Sneak", ability: "dex", aliases: ["Stealth"] });
+    assert.match(
+      buildGmFormatReminder({ ...base, ruleset: sneaky, oneRequestDice: true }),
+      /\[skill_check: skill="Sneak" difficulty="Medium" branch="crates"\]/,
+      "a ruleset's own name for sneaking, found through its alias",
+    );
 
     const submitted = buildGmFormatReminder({ ...base, ruleset: fiveE, playerDiceRollSubmitted: true });
     assert.match(submitted, /rolls="the player's d20 result"/);

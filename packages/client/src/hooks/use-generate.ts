@@ -4,7 +4,12 @@
 import { useCallback, useRef } from "react";
 import { audioManager } from "../lib/game-audio";
 import { normalizeEchoChamberMessages } from "../lib/echo-chamber-queue";
-import { characterDataSchema, normalizeAvatarCrop, type AvatarCrop } from "@marinara-engine/shared";
+import {
+  MAX_INSPIRATION_CAP,
+  characterDataSchema,
+  normalizeAvatarCrop,
+  type AvatarCrop,
+} from "@marinara-engine/shared";
 import { useQueryClient, type InfiniteData, type QueryClient } from "@tanstack/react-query";
 import { toast, type ExternalToast } from "sonner";
 import { api, ApiError, isPassiveStreamDisconnect, requestTimeoutSignal } from "../lib/api-client";
@@ -1219,6 +1224,35 @@ function applyGameMapUpdate(qc: QueryClient, chatId: string, map: GameMap) {
       metadata: metadata as Chat["metadata"],
     });
     useGameModeStore.getState().upsertMap(map, true);
+  }
+}
+
+function applyGameInspirationUpdate(qc: QueryClient, chatId: string, gameInspiration: number, delta?: number) {
+  // Game Mode shows the count in its HUD; Roleplay has no HUD, so announce awards instead.
+  if (delta && delta > 0 && useChatStore.getState().activeChat?.mode === "roleplay") {
+    toast.success(
+      translate("roleplay.commands.inspire.awarded", { delta, count: gameInspiration, max: MAX_INSPIRATION_CAP }),
+    );
+  }
+  qc.setQueryData<Chat | undefined>(chatKeys.detail(chatId), (current) => {
+    if (!current) return current;
+    const metadata = { ...parseChatMetadata(current.metadata as Chat["metadata"] | string), gameInspiration };
+    return {
+      ...current,
+      metadata: metadata as Chat["metadata"],
+    };
+  });
+
+  const chatStore = useChatStore.getState();
+  if (chatStore.activeChat?.id === chatId) {
+    const metadata = {
+      ...parseChatMetadata(chatStore.activeChat.metadata as Chat["metadata"] | string),
+      gameInspiration,
+    };
+    chatStore.setActiveChat({
+      ...chatStore.activeChat,
+      metadata: metadata as Chat["metadata"],
+    });
   }
 }
 
@@ -2629,6 +2663,14 @@ export function useGenerate() {
             case "game_map_update": {
               const map = event.data as GameMap | null;
               if (map) applyGameMapUpdate(qc, params.chatId, map);
+              break;
+            }
+
+            case "game_inspiration_update": {
+              const inspirationData = event.data as { gameInspiration?: number; delta?: number } | null;
+              if (typeof inspirationData?.gameInspiration === "number") {
+                applyGameInspirationUpdate(qc, params.chatId, inspirationData.gameInspiration, inspirationData.delta);
+              }
               break;
             }
 
@@ -4285,6 +4327,14 @@ export function useGenerate() {
             case "game_map_update": {
               const map = event.data as GameMap | null;
               if (map) applyGameMapUpdate(qc, chatId, map);
+              break;
+            }
+
+            case "game_inspiration_update": {
+              const inspirationData = event.data as { gameInspiration?: number; delta?: number } | null;
+              if (typeof inspirationData?.gameInspiration === "number") {
+                applyGameInspirationUpdate(qc, chatId, inspirationData.gameInspiration, inspirationData.delta);
+              }
               break;
             }
             case "agent_write_proposal": {
