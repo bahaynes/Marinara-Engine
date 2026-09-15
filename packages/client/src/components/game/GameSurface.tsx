@@ -41,6 +41,7 @@ import {
   useStartGame,
   useRollDice,
   useSkillCheck,
+  useInspirationReroll,
   useMoveOnMap,
   useConcludeSession,
   useRegenerateSessionConclusion,
@@ -191,6 +192,8 @@ import {
   type RulesetCatalogPayload,
   type RulesetLiveState,
   type RulesetSheetEnvelope,
+  DEFAULT_STARTING_INSPIRATION,
+  MAX_INSPIRATION_CAP,
 } from "@marinara-engine/shared";
 import { GameNarration } from "./GameNarration";
 import { formatNarration } from "./game-narration-format";
@@ -2484,6 +2487,10 @@ function GameSurfaceComponent({
     () => getChatCharacterIds(chat.characterIds).filter((id) => id !== PROFESSOR_MARI_ID),
     [chat.characterIds],
   );
+  const gameSetupConfig = chatMeta.gameSetupConfig as GameSetupConfig | undefined;
+  const inspirationEnabled = gameSetupConfig?.enableInspiration !== false;
+  const inspirationCount =
+    typeof chatMeta.gameInspiration === "number" ? chatMeta.gameInspiration : DEFAULT_STARTING_INSPIRATION;
   const gameCharacterIds = useMemo(() => {
     const config = chatMeta.gameSetupConfig as Record<string, unknown> | undefined;
     const ids = new Set([...chatCharacterIds, ...getActivePartyIds(chatMeta)]);
@@ -3048,9 +3055,12 @@ function GameSurfaceComponent({
   const [queuedEncounter, setQueuedEncounter] = useState<{ encounter: CombatEncounterTag; messageId: string } | null>(
     null,
   );
-  const [queuedCombatGeneration, setQueuedCombatGeneration] = useState<{ messageId: string; notify: boolean } | null>(
-    null,
-  );
+  const [queuedCombatGeneration, setQueuedCombatGeneration] = useState<{
+    messageId: string;
+    notify: boolean;
+    /** GM-named subject from `[state: combat patient="Name"]` — triage-only, forwarded as an authoritative hint. */
+    subject?: string | null;
+  } | null>(null);
   const [preparedCombatState, setPreparedCombatState] = useState<PreparedCombatState | null>(null);
   const [combatGenerationPending, setCombatGenerationPending] = useState(false);
   const [combatGenerationError, setCombatGenerationError] = useState<string | null>(null);
@@ -4583,7 +4593,11 @@ function GameSurfaceComponent({
         if (tags.combatEncounter && !hasCombatResultAfterMessage(latestAssistantMsg.id)) {
           setQueuedEncounter({ encounter: tags.combatEncounter, messageId: latestAssistantMsg.id });
         } else if (tags.stateChange === "combat" && !hasCombatResultAfterMessage(latestAssistantMsg.id)) {
-          setQueuedCombatGeneration({ messageId: latestAssistantMsg.id, notify: true });
+          setQueuedCombatGeneration({
+            messageId: latestAssistantMsg.id,
+            notify: true,
+            subject: tags.stateChangeSubject,
+          });
         }
       }
       lastProcessedMsgRef.current = latestAssistantTurnKey;
@@ -5096,6 +5110,14 @@ function GameSurfaceComponent({
       .catch(() => {});
 
     const tags = parseGmTags(msg.content);
+    if (tags.inspirationAwards > 0 && inspirationEnabled) {
+      toast.success(
+        localizeUi("ui.game.inspiration.awardedToast", {
+          count: tags.inspirationAwards,
+          defaultValue: `✨ +${tags.inspirationAwards} Inspiration awarded!`,
+        }),
+      );
+    }
     const directAddressMode = latestAssistantDirectAddressMode;
     const suppressInteractiveCommands = interruptedInteractiveCommandKeysRef.current.has(
       interactiveCommandKey(activeChatId, msg.id),
@@ -5125,7 +5147,7 @@ function GameSurfaceComponent({
       if (tags.combatEncounter) {
         setQueuedEncounter({ encounter: tags.combatEncounter, messageId: msg.id });
       } else if (tags.stateChange === "combat") {
-        setQueuedCombatGeneration({ messageId: msg.id, notify: true });
+        setQueuedCombatGeneration({ messageId: msg.id, notify: true, subject: tags.stateChangeSubject });
       }
     }
 
@@ -7086,6 +7108,7 @@ function GameSurfaceComponent({
   const startGame = useStartGame();
   const rollDice = useRollDice();
   const skillCheck = useSkillCheck();
+  const inspirationReroll = useInspirationReroll();
   const moveOnMap = useMoveOnMap();
   const concludeSession = useConcludeSession();
   const regenerateSessionConclusion = useRegenerateSessionConclusion();
@@ -8787,11 +8810,13 @@ function GameSurfaceComponent({
   ]);
 
   const generateCombatStateForMessage = useCallback(
-    (messageId: string, notify: boolean) => {
+    (messageId: string, notify: boolean, subject?: string | null) => {
       // Triage runs its own self-contained init/engine (packages/client/src/components/game/triage) —
-      // delegate entirely instead of touching the classic party/enemies pipeline below.
+      // delegate entirely instead of touching the classic party/enemies pipeline below. `subject`, when
+      // the GM named one in the triggering [state: combat patient="Name"] tag, is forwarded as an
+      // authoritative hint so triage-init can continue that exact patient instead of re-guessing.
       if (effectiveCombatStyle === "triage") {
-        triageIntegration.start(messageId);
+        triageIntegration.start(messageId, subject ?? undefined);
         return;
       }
       // Both guards: the state flag drives rendering, but it is stale within a
@@ -9024,7 +9049,11 @@ function GameSurfaceComponent({
     if (preparedCombatState?.messageId === queuedCombatGeneration.messageId) return;
     if (isStreaming || scenePreparing || assetGenerationBlocksScene) return;
 
-    generateCombatStateForMessage(queuedCombatGeneration.messageId, queuedCombatGeneration.notify);
+    generateCombatStateForMessage(
+      queuedCombatGeneration.messageId,
+      queuedCombatGeneration.notify,
+      queuedCombatGeneration.subject,
+    );
   }, [
     activeChatId,
     combatGenerationPending,
@@ -10265,6 +10294,30 @@ function GameSurfaceComponent({
   const handleDismissDice = useCallback(() => {
     dismissDiceRollResult();
   }, [dismissDiceRollResult]);
+
+  const handleInspirationReroll = useCallback(
+    async (check: import("@marinara-engine/shared").SkillCheckResult) => {
+      const targetMessageId = latestAssistantMsg?.id;
+      if (!targetMessageId) return;
+      try {
+        const res = await inspirationReroll.mutateAsync({
+          chatId: activeChatId,
+          messageId: targetMessageId,
+          skill: check.skill,
+          dc: check.dc,
+        });
+        if (res.result) {
+          setPendingSkillChecks((pending) => [res.result, ...pending.slice(1)]);
+        }
+      } catch (err: any) {
+        console.error("[game/inspiration-reroll] Failed to reroll check:", err);
+        toast.error(
+          err?.message || localizeUi("ui.game.inspiration.rerollFailed", "Failed to reroll with Inspiration."),
+        );
+      }
+    },
+    [activeChatId, latestAssistantMsg?.id, inspirationReroll, localizeUi],
+  );
 
   const handleChoiceSelect = useCallback(
     (choice: string) => {
@@ -12888,6 +12941,22 @@ function GameSurfaceComponent({
                       />
                     </div>
                   )}
+
+                  {/* Inspiration counter pill */}
+                  {!replayActive && inspirationEnabled && (
+                    <div
+                      className="flex items-center gap-1.5 rounded-lg border border-[var(--marinara-chat-chrome-button-border)] bg-[var(--marinara-chat-chrome-button-bg)] px-2.5 py-1 text-xs font-semibold text-amber-200 shadow-lg shadow-black/25 backdrop-blur-md"
+                      title={localizeUi(
+                        "ui.game.inspiration.tooltip",
+                        "Inspiration: spend 1 to reroll a failed skill check (max 4)",
+                      )}
+                    >
+                      <span className="text-amber-400">✨</span>
+                      <span>
+                        {inspirationCount} / {MAX_INSPIRATION_CAP}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Dynamic weather effects from tracked game state */}
@@ -13089,6 +13158,10 @@ function GameSurfaceComponent({
                       <GameSkillCheckResult
                         result={pendingSkillChecks[0]}
                         onDismiss={() => setPendingSkillChecks((pending) => pending.slice(1))}
+                        canReroll={inspirationEnabled && inspirationCount > 0 && !pendingSkillChecks[0].success}
+                        inspirationCount={inspirationCount}
+                        onReroll={() => handleInspirationReroll(pendingSkillChecks[0]!)}
+                        isRerolling={inspirationReroll.isPending}
                       />
                     ) : undefined;
 

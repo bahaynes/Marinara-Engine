@@ -147,70 +147,40 @@ export const DND_5E_SKILL_SYSTEM: GameSkillSystem = {
 export const MEDICAL_SKILL_SYSTEM: GameSkillSystem = {
   id: "medical",
   name: "Medical Drama",
-  description: "Clinical, surgical, triage, psychiatric, and hospital administration competencies.",
+  description: "Core clinical, surgical, triage, and hospital interpersonal competencies.",
   skills: [
     // INT
     {
       id: "diagnostics",
       name: "Diagnostics",
       ability: "int",
-      description: "Differential diagnosis, lab interpretation, uncovering hidden pathologies.",
+      description: "Differential diagnosis, lab & imaging interpretation, pharmacology, uncovering hidden pathologies.",
     },
     {
-      id: "pharmacology",
-      name: "Pharmacology",
+      id: "investigation",
+      name: "Investigation",
       ability: "int",
-      description: "Drug interactions, dosages, toxicity, compounding, off-label therapies.",
-    },
-    {
-      id: "pathology",
-      name: "Pathology",
-      ability: "int",
-      description: "Tissue analysis, autopsy findings, biopsy interpretation, disease progression.",
-    },
-    {
-      id: "biomedical_tech",
-      name: "Biomedical Tech",
-      ability: "int",
-      description: "Operating telemetry, ECMO, ventilators, imaging, resolving device alarms.",
-    },
-    {
-      id: "medical_research",
-      name: "Medical Research",
-      ability: "int",
-      description: "Sifting clinical literature, clinical trials, and epidemiological data.",
-    },
-    {
-      id: "pattern_recognition",
-      name: "Pattern Recognition",
-      ability: "int",
-      description: "Spotting anomalies in vital trends, correlating disparate symptoms.",
+      description: "Forensic chart review, finding anomalies, incident analysis, uncovering medical foul play.",
     },
 
     // WIS
     {
-      id: "pediatrics",
-      name: "Pediatrics",
-      ability: "wis",
-      description: "Pediatric physiology, pediatric dosages, soothing frightened children.",
-    },
-    {
       id: "triage",
       name: "Triage",
       ability: "wis",
-      description: "Rapid assessment under mass-casualty or ER surge, prioritizing patient care.",
+      description: "Rapid patient prioritization under surge, spotting subtle crashes, clinical intuition.",
     },
     {
-      id: "psychiatry",
-      name: "Psychiatry",
+      id: "perception",
+      name: "Perception",
       ability: "wis",
-      description: "De-escalating psychiatric crises, evaluating suicide/homicide risk, managing psychosis.",
+      description: "Noticing physical anomalies, auscultation, monitoring vital alarms, environmental cues.",
     },
     {
-      id: "clinical_intuition",
-      name: "Clinical Intuition",
+      id: "insight",
+      name: "Insight",
       ability: "wis",
-      description: "Gut feeling on impending crash, noticing micro-deteriorations early.",
+      description: "Reading patient and colleague emotional state, detecting deception, drug-seeking, or motives.",
     },
 
     // CHA
@@ -221,88 +191,58 @@ export const MEDICAL_SKILL_SYSTEM: GameSkillSystem = {
       description: "Doctor-patient rapport, breaking bad news with empathy, calming terrified families.",
     },
     {
-      id: "code_leadership",
-      name: "Code Leadership",
-      ability: "cha",
-      description: "Directing a resuscitation team during a code blue, delegating calmly under pressure.",
-    },
-    {
       id: "hospital_politics",
       name: "Hospital Politics",
       ability: "cha",
-      description: "Navigating bureaucracy, hospital hierarchy, board meetings, and administration.",
+      description: "Navigating administration, hospital hierarchy, board meetings, and regulatory oversight.",
     },
     {
-      id: "de_escalation",
-      name: "De-escalation",
+      id: "persuasion",
+      name: "Persuasion",
       ability: "cha",
-      description: "Defusing combative patients, hostile visitors, or staff disputes.",
+      description: "Negotiating with stubborn colleagues, gaining patient compliance, resource diplomacy.",
+    },
+    {
+      id: "intimidation",
+      name: "Intimidation",
+      ability: "cha",
+      description: "Command presence during a code blue, shutting down combative visitors, asserting authority.",
+    },
+    {
+      id: "deception",
+      name: "Deception",
+      ability: "cha",
+      description: "Guarding distressing truths, maintaining professional composure, covert interventions.",
     },
 
     // DEX
     {
-      id: "surgical_technique",
-      name: "Surgical Technique",
+      id: "surgery",
+      name: "Surgery",
       ability: "dex",
-      description: "Operative skill, delicate incisions, vascular clamping, surgical speed.",
+      description: "Operative skill, delicate incisions, vascular clamping, suturing, instrument dexterity.",
     },
     {
       id: "procedures",
       name: "Procedures",
       ability: "dex",
-      description: "Central lines, intubation, chest tubes, lumbar punctures under acute stress.",
-    },
-    {
-      id: "suturing",
-      name: "Suturing",
-      ability: "dex",
-      description: "Fast, cosmetically clean wound closure, layered dermal closure, tension care.",
-    },
-    {
-      id: "reflexes",
-      name: "Reflexes",
-      ability: "dex",
-      description: "Catching dropped instruments, needle-stick avoidance, dodging patient swings.",
-    },
-
-    // CON
-    {
-      id: "marathon_endurance",
-      name: "Marathon Endurance",
-      ability: "con",
-      description: "Complex surgery during 24-hour shifts, physical stamina without sleep.",
-    },
-    {
-      id: "shift_resilience",
-      name: "Shift Resilience",
-      ability: "con",
-      description: "Resisting fatigue-induced diagnostic errors, managing sensory overload.",
-    },
-    {
-      id: "biohazard_exposure",
-      name: "Biohazard Exposure",
-      ability: "con",
-      description: "Maintaining protocol under infectious spray, caustic odors, and gore.",
+      description: "Emergency bedside skills: intubation, chest tubes, central lines, cricothyroidotomy.",
     },
 
     // STR
     {
-      id: "cpr_compressions",
-      name: "CPR Compressions",
+      id: "athletics",
+      name: "Athletics",
       ability: "str",
-      description: "High-quality manual chest compressions, physical resuscitation stamina.",
+      description: "Physical stamina for CPR compressions, manual traction, moving patients, patient restraint.",
     },
+
+    // CON
     {
-      id: "orthopedic_reduction",
-      name: "Orthopedic Reduction",
-      ability: "str",
-      description: "Setting displaced fractures, joint relocations, traction against muscle spasm.",
-    },
-    {
-      id: "patient_restraint",
-      name: "Patient Restraint",
-      ability: "str",
-      description: "Safely restraining violent or seizing patients without causing injury.",
+      id: "endurance",
+      name: "Endurance",
+      ability: "con",
+      description: "Surviving marathon 24h shifts, resisting fatigue-induced errors, coping with sensory overload.",
     },
   ],
 };
@@ -319,7 +259,7 @@ export function resolveDefaultGameSkillSystemIds(context?: {
     /medical|hospital|clinic|doctor|nurse|er\b|emergency/i.test(context?.genre ?? "") ||
     /medical|hospital|clinic|doctor|nurse|er\b|emergency/i.test(context?.setting ?? "");
 
-  return isMedical ? ["medical", "dnd5e"] : ["dnd5e"];
+  return isMedical ? ["medical"] : ["dnd5e"];
 }
 
 export function getActiveGameSkills(options?: {
@@ -361,4 +301,32 @@ export function getActiveGameSkills(options?: {
 export function formatSkillsForGmPrompt(skills: readonly GameSkillDefinition[]): string {
   if (!skills || skills.length === 0) return "";
   return skills.map((s) => `- ${s.name} (${s.ability.toUpperCase()}): ${s.description}`).join("\n");
+}
+
+/** Default starting Inspiration points for a player in Game Mode. */
+export const DEFAULT_STARTING_INSPIRATION = 1;
+
+/** Maximum Inspiration points a player can hold at once. */
+export const MAX_INSPIRATION_CAP = 4;
+
+/** Matches [inspiration: +1], [inspiration: 1], [inspiration: +2], etc. */
+export const INSPIRATION_TAG_REGEX = /\[inspiration:\s*\+?(\d+)[^\]]*\]/gi;
+
+export function parseInspirationAwards(content: string): number {
+  if (!content) return 0;
+  const regex = new RegExp(INSPIRATION_TAG_REGEX.source, "gi");
+  let total = 0;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(content)) !== null) {
+    const amount = parseInt(match[1] ?? "0", 10);
+    if (!Number.isNaN(amount) && amount > 0) {
+      total += amount;
+    }
+  }
+  return total;
+}
+
+export function stripInspirationTags(content: string): string {
+  if (!content) return "";
+  return content.replace(new RegExp(INSPIRATION_TAG_REGEX.source, "gi"), "").trim();
 }

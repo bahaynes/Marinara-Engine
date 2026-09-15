@@ -610,7 +610,10 @@ import {
 } from "../services/game/map-position.service.js";
 import { applyAllSegmentEdits } from "../services/game/segment-edits.js";
 import {
+  DEFAULT_STARTING_INSPIRATION,
+  MAX_INSPIRATION_CAP,
   getActiveGameSkills,
+  parseInspirationAwards,
   type CharacterData,
   type GameMap,
   type GameNpc,
@@ -4166,9 +4169,12 @@ export async function generateRoutes(app: FastifyInstance) {
               language: gmCtx.language,
               rating: gmCtx.rating,
               enableQuickTimeEvents: gmCtx.enableQuickTimeEvents,
+              enableInspiration: gmCtx.enableInspiration,
+              inspirationCount: gmCtx.inspirationCount,
               gameSpecialInstructions: gmCtx.gameSpecialInstructions,
               canGenerateBackgrounds: gmCtx.canGenerateBackgrounds,
               artStylePrompt: gmCtx.artStylePrompt,
+              combatStyle: gmCtx.combatStyle,
               addressMode,
               playerDiceRollSubmitted,
               // One-request dice (#6215). Off, the three fields below are inert and
@@ -6946,6 +6952,11 @@ export async function generateRoutes(app: FastifyInstance) {
                                   description:
                                     "Optional assigned RPG attribute, such as Strength or STR. The engine adds its modifier; do not include that bonus in notation.",
                                 },
+                                skill: {
+                                  type: "string",
+                                  description:
+                                    "Optional skill being tested (e.g. Hospital Politics, Diagnostics, Investigation). The engine automatically derives the ability modifier from character stats.",
+                                },
                               },
                               required: [...((tool.function.parameters.required as string[]) ?? []), "character"],
                             },
@@ -6980,6 +6991,17 @@ export async function generateRoutes(app: FastifyInstance) {
                 characterNames: charInfo.map((character) => character.name),
                 characterId: roleplayCallerId,
                 interruptAvailable: Boolean(roleplayInterruptionTarget),
+                activeSkills: getActiveGameSkills({
+                  enabledSystemIds: Array.isArray(chatMeta.gameSkillSystems)
+                    ? (chatMeta.gameSkillSystems as string[])
+                    : null,
+                  disabledSkillIds: Array.isArray(chatMeta.gameDisabledSkills)
+                    ? (chatMeta.gameDisabledSkills as string[])
+                    : null,
+                  combatStyle: (chatMeta.combatStyle as string | null) ?? null,
+                  genre: (chatMeta.genre as string | null) ?? null,
+                  setting: (chatMeta.setting as string | null) ?? null,
+                }),
               }),
               wrapFormat,
             );
@@ -7401,6 +7423,7 @@ export async function generateRoutes(app: FastifyInstance) {
                           attribute: requestedRoll.command.attribute,
                           modifier: requestedRoll.command.modifier,
                           dc: requestedRoll.command.dc,
+                          ...(requestedRoll.command.skill ? { skill: requestedRoll.command.skill } : {}),
                         }),
                       },
                     },
@@ -7487,6 +7510,7 @@ export async function generateRoutes(app: FastifyInstance) {
                         ...(typeof args?.attribute === "string" ? { attribute: args.attribute } : {}),
                         ...(typeof args?.modifier === "number" ? { modifier: args.modifier } : {}),
                         ...(typeof args?.dc === "number" ? { dc: args.dc } : {}),
+                        ...(typeof args?.skill === "string" ? { skill: args.skill } : {}),
                       },
                       raw:
                         textualRoleplayRoll && requestedRoll
@@ -9161,6 +9185,36 @@ export async function generateRoutes(app: FastifyInstance) {
                   logger.warn(err, "[generate/game/map_update] Failed to apply map_update");
                 }
               }
+
+              const awardedInspiration = parseInspirationAwards(fullResponse);
+              if (awardedInspiration > 0) {
+                try {
+                  const freshChat = await chats.getById(input.chatId);
+                  const freshMeta = freshChat ? (parseExtra(freshChat.metadata) as Record<string, unknown>) : chatMeta;
+                  const currentInspiration =
+                    typeof freshMeta.gameInspiration === "number"
+                      ? freshMeta.gameInspiration
+                      : DEFAULT_STARTING_INSPIRATION;
+                  const newInspiration = Math.min(MAX_INSPIRATION_CAP, currentInspiration + awardedInspiration);
+                  if (newInspiration !== currentInspiration) {
+                    const nextMeta = { ...freshMeta, gameInspiration: newInspiration };
+                    await chats.updateMetadata(input.chatId, nextMeta);
+                    chatMeta.gameInspiration = newInspiration;
+                    sendSseEvent(reply, {
+                      type: "game_inspiration_update",
+                      data: { gameInspiration: newInspiration, delta: awardedInspiration },
+                    });
+                    logger.info(
+                      "[generate/game/inspiration] chatId=%s awarded=%d newTotal=%d",
+                      input.chatId,
+                      awardedInspiration,
+                      newInspiration,
+                    );
+                  }
+                } catch (err) {
+                  logger.warn(err, "[generate/game/inspiration] Failed to apply inspiration award");
+                }
+              }
             }
 
             // Evict cachedPrompt from older messages to save storage (keep last 2 assistant msgs).
@@ -10481,6 +10535,32 @@ export async function generateRoutes(app: FastifyInstance) {
                 let newTemperature =
                   coerceGameStateTextValue(gs.temperature) ?? coerceGameStateTextValue(prevSnap?.temperature);
 
+                // Diagnostic only (2026-09-11, tracking down a report of world-state's date getting
+                // "stuck") - gs.<field> ?? prevSnap.<field> above silently reuses the last known value
+                // whenever the agent's own output for a field is null/missing, with nothing elsewhere
+                // distinguishing "the model correctly decided nothing changed" from "the model just
+                // didn't populate this field" (allowed by the capability package's own "string|null"
+                // schema, and plausibly more likely when world-state is batched with another agent
+                // sharing one completion + a split token budget). Logging which fields silently fell
+                // back, and whether this call was batched, to get real frequency data before deciding
+                // whether/how to fix it.
+                const staleWorldStateFields = (
+                  [
+                    ["date", gs.date],
+                    ["time", gs.time],
+                    ["location", gs.location],
+                    ["weather", gs.weather],
+                    ["temperature", gs.temperature],
+                  ] as const
+                )
+                  .filter(([, rawValue]) => coerceGameStateTextValue(rawValue) === null && prevSnap)
+                  .map(([field]) => field);
+                if (staleWorldStateFields.length > 0) {
+                  logger.warn(
+                    `[world-state] chat ${input.chatId}: agent omitted ${staleWorldStateFields.join(", ")} this turn, silently reused previous snapshot value(s)`,
+                  );
+                }
+
                 // The world-state agent produces date/time/location/weather/temperature,
                 // user-defined world fields, and optionally recentEvents. In batch mode the model often cross-
                 // contaminates the world-state result with fields from other agent task
@@ -10526,6 +10606,42 @@ export async function generateRoutes(app: FastifyInstance) {
                 logger.info(
                   `[generate] world-state snapshot: chars=${snapshotChars.length} (prev), personaStats=${snapshotPersonaStats ? "present" : "null"} (prev)`,
                 );
+
+                // Diagnostic (2026-09-11): a changed field is not necessarily a *wrong* field
+                // (the story genuinely moved forward), but there is currently nothing that lets
+                // anyone reviewing logs tell "the date advanced a day" from "the date jumped
+                // backward" without cross-referencing prior turns by hand. Log an explicit
+                // before -> after diff for every field that actually changed this turn, so a
+                // nonsensical jump (e.g. Thursday -> Tuesday) is visible directly in the log
+                // line instead of requiring a manual diff against history. Also note when the
+                // locked/persisted value differs from what the agent itself produced this turn
+                // (raw), to separate "the model chose this" (sampling bias) from "our own
+                // tracker-field-lock logic overrode it" (a code bug) as the source of a value.
+                const worldStateFieldDiff = (
+                  [
+                    ["date", prevSnap?.date ?? null, newDate, coerceGameStateTextValue(gs.date)],
+                    ["time", prevSnap?.time ?? null, newTime, coerceGameStateTextValue(gs.time)],
+                    ["location", prevSnap?.location ?? null, newLocation, coerceGameStateTextValue(gs.location)],
+                    ["weather", prevSnap?.weather ?? null, newWeather, coerceGameStateTextValue(gs.weather)],
+                    [
+                      "temperature",
+                      prevSnap?.temperature ?? null,
+                      newTemperature,
+                      coerceGameStateTextValue(gs.temperature),
+                    ],
+                  ] as const
+                )
+                  .filter(([, before, after]) => prevSnap && before !== after)
+                  .map(([field, before, after, raw]) => {
+                    const lockNote =
+                      raw !== null && raw !== after ? ` (agent said ${JSON.stringify(raw)}, locked/overridden)` : "";
+                    return `${field}: ${JSON.stringify(before)} -> ${JSON.stringify(after)}${lockNote}`;
+                  });
+                if (worldStateFieldDiff.length > 0) {
+                  logger.warn(
+                    `[world-state] chat ${input.chatId}: field(s) changed - ${worldStateFieldDiff.join(", ")}`,
+                  );
+                }
                 await gameStateStore.create(
                   {
                     chatId: input.chatId,

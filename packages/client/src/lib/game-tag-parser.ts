@@ -9,6 +9,7 @@
 // ──────────────────────────────────────────────
 
 import {
+  parseInspirationAwards,
   parseSkillCheckTagBody,
   stripUnknownBracketTags,
   stripBalancedTag,
@@ -17,6 +18,7 @@ import {
   readGmTagAttributes,
   stripGameBranchDelimiters,
   stripSheetCommandTags,
+  stripInspirationTags,
   type DirectionCommand,
   type DirectionEffect,
   type SkillCheckTag,
@@ -101,6 +103,12 @@ export interface ParsedGmTags {
   qte: { actions: string[]; timer: number } | null;
   /** State transition command */
   stateChange: string | null;
+  /**
+   * Optional subject named directly in a `[state: combat patient="Name"]` tag — currently only
+   * emitted for the triage combat style, so the mini-game's own case-generation call can continue
+   * that exact patient instead of re-guessing "who's the patient" from raw chat history.
+   */
+  stateChangeSubject: string | null;
   /** NPC reputation changes */
   reputationActions: Array<{ npcName: string; action: string }>;
   /** Combat encounter with enemy data */
@@ -121,6 +129,8 @@ export interface ParsedGmTags {
   partyChanges: PartyChangeTag[];
   /** Note or book content for reading display */
   readables: ReadableTag[];
+  /** Inspiration awards parsed from narration (e.g. [inspiration: +1]) */
+  inspirationAwards: number;
 }
 
 function parseQteMatch(match: RegExpMatchArray): { actions: string[]; timer: number } | null {
@@ -540,6 +550,7 @@ export function parseGmTags(content: string): ParsedGmTags {
     choices: null,
     qte: null,
     stateChange: null,
+    stateChangeSubject: null,
     reputationActions: [],
     combatEncounter: null,
     directions: [],
@@ -550,6 +561,7 @@ export function parseGmTags(content: string): ParsedGmTags {
     inventoryUpdates: [],
     partyChanges: [],
     readables: [],
+    inspirationAwards: 0,
   };
 
   // [music: tag]
@@ -623,10 +635,13 @@ export function parseGmTags(content: string): ParsedGmTags {
     }
   }
 
-  // [state: exploration|dialogue|combat|travel_rest]
-  const stateMatch = text.match(/\[state:\s*(exploration|dialogue|combat|travel_rest)\]/i);
+  // [state: exploration|dialogue|combat|travel_rest] or [state: combat patient="Name"]
+  const stateMatch = text.match(/\[state:\s*(exploration|dialogue|combat|travel_rest)(?:\s+patient="([^"]*)")?\]/i);
   if (stateMatch) {
-    if (!result.qte) result.stateChange = stateMatch[1]!.trim();
+    if (!result.qte) {
+      result.stateChange = stateMatch[1]!.trim();
+      result.stateChangeSubject = stateMatch[2]?.trim() || null;
+    }
     text = text.replace(stateMatch[0], "");
   }
 
@@ -827,6 +842,10 @@ export function parseGmTags(content: string): ParsedGmTags {
     }
   }
 
+  // [inspiration: ...]
+  result.inspirationAwards = parseInspirationAwards(text);
+  text = stripInspirationTags(text);
+
   // [dice: ...] — informational dice results
   text = text.replace(/\[dice:\s*[^\]]+\]/gi, "");
 
@@ -866,6 +885,7 @@ export function stripGmTags(content: string): string {
     .replace(/\[party_add:\s*[^\]]+\]/gi, "")
     .replace(/\[party-turn\]/gi, "")
     .replace(/\[party-chat\]/gi, "")
+    .replace(/\[inspiration:\s*[^\]]+\]/gi, "")
     .replace(/\[dice:\s*[^\]]+\]/gi, "");
   // The one-request dice branch delimiters. Three of the four are unreachable by
   // everything below: `stripUnknownBracketTags` and the `[\w+:` catch-all both require a
@@ -915,4 +935,58 @@ export function resolveMessageWeatherAction(state: string, content: string): "tr
   const tags = parseGmTags(content);
   if (state === "combat" || tags.stateChange === "combat" || tags.combatEncounter) return null;
   return state === "travel_rest" ? "travel" : state === "exploration" ? "explore" : "turn";
+}
+
+/**
+ * Strip all GM tags EXCEPT [Note:] and [Book:] — these are kept inline
+ * so the narration parser can create readable segments at the correct
+ * story position.
+ */
+export function stripGmTagsKeepReadables(content: string): string {
+  let text = content
+    // Strip the tactical-combat recap block sent after a battle (multiline, no colon).
+    .replace(/\[combat_result\][\s\S]*?\[\/combat_result\]/gi, "")
+    .replace(/\[music:\s*[^\]]+\]/gi, "")
+    .replace(/\[sfx:\s*[^\]]+\]/gi, "")
+    .replace(/\[bg:\s*[^\]]+\]/gi, "")
+    .replace(/\[ambient:\s*[^\]]+\]/gi, "")
+    .replace(/\[qte:\s*[^\]]+\]/gi, "")
+    .replace(/\[state:\s*[^\]]+\]/gi, "")
+    .replace(/\[reputation:\s*[^\]]+\]/gi, "")
+    .replace(/\[combat:\s*[^\]]+\]/gi, "")
+    .replace(/\[direction:\s*[^\]]+\]/gi, "")
+    .replace(/\[widget:\s*[^\]]+\]/gi, "")
+    .replace(/\[dialogue:\s*npc="[^"]*"\]/gi, "")
+    .replace(/\[session_end:\s*[^\]]*\]/gi, "")
+    .replace(/\[skill_check:\s*[^\]]+\]/gi, "")
+    .replace(/\[element_attack:\s*[^\]]+\]/gi, "")
+    .replace(/\[inventory:\s*[^\]]+\]/gi, "")
+    .replace(/\[party_change:\s*[^\]]+\]/gi, "")
+    .replace(/\[party_add:\s*[^\]]+\]/gi, "")
+    .replace(/\[party-turn\]/gi, "")
+    .replace(/\[party-chat\]/gi, "")
+    .replace(/\[inspiration:\s*[^\]]+\]/gi, "")
+    .replace(/\[dice:\s*[^\]]+\]/gi, "");
+  // The one-request dice branch delimiters. Three of the four are unreachable by
+  // everything below: `stripUnknownBracketTags` and the `[\w+:` catch-all both require a
+  // `:` after the name, and `[on success]` has a space before its `]` while `[/branch]`
+  // is not a `[name:` head at all. The prose between them is kept — a block only reaches
+  // this stripper when the engine's chance pass never ran for it, and deleting narration
+  // the player already read would be the worse failure.
+  text = stripGameBranchDelimiters(text);
+  // Quote-aware catch-all for unknown tags, keeping Note/Book inline.
+  // Case-insensitive to match extractBalancedTags (which lowercases the prefix);
+  // otherwise `[note:]` / `[book:]` would slip past extraction and get stripped.
+  text = stripUnknownBracketTags(text, (name) => {
+    const lower = name.toLowerCase();
+    return lower === "note" || lower === "book";
+  });
+  // Balanced bracket stripping for non-readable tags
+  text = stripMapUpdateTag(text);
+  text = stripBalancedTag(text, "[choices:");
+  // Catch-all: strip unknown [tag: ...] except [Note:] and [Book:]
+  text = text.replace(/\[(?!Note:|Book:)\w+:[^\]]*\]/g, "");
+  // NOTE: [Note:] and [Book:] are intentionally kept!
+  text = stripDanglingTagClosers(text);
+  return text.trim();
 }

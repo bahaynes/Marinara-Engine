@@ -261,6 +261,8 @@ export interface GameSetupConfig {
   enableAgents?: boolean;
   /** Let the GM offer timed reaction prompts. Defaults to true. */
   enableQuickTimeEvents?: boolean;
+  /** Allow spending finite Inspiration points to reroll failed checks. Defaults to true. */
+  enableInspiration?: boolean;
   /** Enable automatic sprite generation for characters using image model */
   enableSpriteGeneration?: boolean;
   /** Ask the configured prompt model to rewrite Game Illustrator prompts before image generation. */

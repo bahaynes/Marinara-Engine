@@ -568,6 +568,8 @@ export interface ChatMetadata {
   gameIntroPresented?: boolean;
   /** Timestamp for when the current game session was created/started */
   gameCurrentSessionStartedAt?: string;
+  /** Current Inspiration points available for rerolling failed checks (0-4). Defaults to 1 when enabled. */
+  gameInspiration?: number;
   /** Current game state (exploration, dialogue, combat, travel_rest) */
   gameActiveState?: import("./game.js").GameActiveState;
   /** Whether the game should maintain visible custom HUD widgets. */

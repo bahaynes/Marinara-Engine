@@ -76,6 +76,10 @@ export interface GmPromptContext {
   rating?: "sfw" | "nsfw";
   /** Whether the GM may emit timed reaction prompts. Defaults to true. */
   enableQuickTimeEvents?: boolean;
+  /** Whether Inspiration rerolls are enabled. Defaults to true. */
+  enableInspiration?: boolean;
+  /** Current Inspiration points available to the player (0-4). */
+  inspirationCount?: number;
   /** Whether a separate scene model handles bg, music, sfx, ambient, widgets, expressions */
   hasSceneModel?: boolean;
   /** Whether inline GM scene tags may request generated location backgrounds. */
@@ -548,7 +552,8 @@ export function buildGmSystemPrompt(ctx: GmPromptContext): string {
     );
   } else if (ctx.combatStyle === "triage") {
     gameBlockLines.push(
-      `- Combat style: ATLS trauma-triage mini-game (in the spirit of a medical drama, not fantasy combat). "Combat" here means an ER patient case: a card/AP-based interface handles vitals, interventions, and diagnosis — narrate the aftermath from the result and do not resolve interventions or diagnoses yourself in prose. Only transition into a triage case when the scene has actually produced a trauma patient (an injury happens on-screen, an incoming case is announced, a patient already being discussed crashes, etc). If a patient's condition has already been substantially worked out through prose roleplay, don't force a fresh triage case on top of it as if it were a new incoming patient — either let it resolve narratively, or treat any triage case you do trigger as the direct continuation of that same patient, never a new unrelated one.`,
+      `- Combat style: ATLS trauma-triage mini-game (in the spirit of a medical drama, not fantasy combat). "Combat" here means an acute, life-or-death stabilization moment ONLY — a card/AP-based interface handles the immediate crisis (vitals crashing right now, an intervention needed this minute); narrate the aftermath from the result and do not resolve interventions or diagnoses yourself in prose. This is deliberately narrow: most patient care (rounding between rooms, waiting on labs/imaging, working a case that isn't currently crashing) should stay in prose exactly like a medical drama's slower scenes — only trigger the mini-game for the "we need to act right now or they die" beat, never as a way to play out routine care. Only transition into a triage case when the scene has actually produced that acute moment (an injury happens on-screen, a patient already being discussed crashes right now, an incoming trauma arrives unstable). If a patient's condition has already been substantially worked out through prose roleplay, don't force a fresh triage case on top of it as if it were a new incoming patient — either let it resolve narratively, or treat any triage case you do trigger as the direct continuation of that same patient, never a new unrelated one.`,
+      `- When you emit [state: combat] for this combat style, you MUST name the patient directly in the tag: [state: combat patient="Exact Patient Name"]. This name is trusted as-is by the mini-game, so it must be the patient the player was actually treating (orders placed, condition being discussed) — never a more recently introduced or more dramatic patient who happens to show up in the same turn. If multiple patients are in play, name the one the player was working, not the newest arrival.`,
     );
   }
   gameBlockLines.push(`</game>`);
@@ -892,7 +897,10 @@ export function buildGmFormatReminder(
     | "language"
     | "rating"
     | "enableQuickTimeEvents"
+    | "enableInspiration"
+    | "inspirationCount"
     | "gameSpecialInstructions"
+    | "combatStyle"
   > & {
     /** Special non-scene-advancing address mode inferred from the current player turn prefix. */
     addressMode?: "party" | "gm";
@@ -1126,9 +1134,14 @@ export function buildGmFormatReminder(
           `- [inventory: action="add|remove" item="Item A, Item B" count="3"] - every real item gain or loss, keep names short and use count/quantity for stacked items.`,
         ]),
     `- [Note: contents] or [Book: contents] - when a new readable note or book is acquired and should be tracked in the journal.`,
-    `- [state: exploration|dialogue|combat|travel_rest] - only on actual mode transitions. Before emitting [state: combat], check the scene: if the party is mid-conversation, processing grief or emotional fallout, or otherwise not at a natural action beat, let that beat land first — don't interrupt an emotional or dialogue-driven moment to force a fight or trauma case unless the scene itself is producing the emergency right now (an attack lands, a patient crashes, etc). If you're planning to use [state: combat], this one ALWAYS has to be at the end of the turn, as it initiates a new combat generation and UI.`,
+    `- [state: exploration|dialogue|combat|travel_rest]${ctx.combatStyle === "triage" ? ` (for this game's triage combat style, write [state: combat patient="Exact Patient Name"] instead — see the patient-naming rule above)` : ""} - only on actual mode transitions. Before emitting [state: combat], check the scene: if the party is mid-conversation, processing grief or emotional fallout, or otherwise not at a natural action beat, let that beat land first — don't interrupt an emotional or dialogue-driven moment to force a fight or trauma case unless the scene itself is producing the emergency right now (an attack lands, a patient crashes, etc). If you're planning to use [state: combat], this one ALWAYS has to be at the end of the turn, as it initiates a new combat generation and UI.`,
     `- [reputation: npc="Name" action="helped"] - when an NPC's tracked stance changes because of what happened.`,
     `- [party_change: character="Exact Character Name" change="add|remove"] - only when someone truly joins or leaves the party. Use remove when a party member dies, permanently departs, or is no longer traveling with the player.`,
+    ...(ctx.enableInspiration === false
+      ? []
+      : [
+          `- [inspiration: +1] - award 1 Inspiration point to the player (max 4) when they demonstrate clever problem-solving, take a bold in-character risk, make an exceptional recovery, or land a heroic narrative beat. When the player is below 4 inspiration points, actively look for opportunities to reward genuine creativity and roleplay so they have narrative resources to spend.`,
+        ]),
     `- [session_end: reason="goal achieved|good place to pause"] - only when the current session truly ends.`,
   );
 
@@ -1206,6 +1219,15 @@ export function buildGmFormatReminder(
   }
 
   if (ctx.ruleset) lines.push(...renderRulesetSheetSection(ctx.ruleset, ctx.rulesetSheetBlocks ?? []));
+
+  lines.push(
+    ``,
+    `CONSEQUENCES & FAILING FORWARD:`,
+    `- Fail Forward: A failed check must NEVER result in a dead end, inaction, or retroactive nullification (e.g. do not claim an action was impossible before it started). Failure must change the scene, escalate stakes, introduce an unexpected complication, or force a tough cost/tradeoff while keeping the action moving.`,
+    `- Respect Competence: Characters are trained professionals. Frame failures around difficult circumstances, formidable opposition, bad luck, or hidden variables—NEVER around sudden amateur clumsiness or panic.`,
+    `- Critical Failures (Natural 1): Deliver a dramatic complication or severe escalation that demands immediate attention. It must never strip player agency, erase character capabilities, or present an impassable wall; always leave active choices for the player to respond.`,
+    `- Turn Containment: Once a consequence is narrated, return to a neutral baseline for subsequent actions. Do not let past failed checks or low gauge widgets (like Composure) artificially bias future unrelated attempts.`,
+  );
 
   // The installed experience's own verbs, last in the block so the built-ins keep their order. Each
   // line already arrives fully rendered from the verb runtime; nothing here inspects or reformats it.

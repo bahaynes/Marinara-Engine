@@ -8,6 +8,7 @@ import {
   type RoleplayCommand,
   type RoleplayCommandActivity,
   type WrapFormat,
+  type GameSkillDefinition,
 } from "@marinara-engine/shared";
 import { parseQuotedParam } from "../conversation/character-commands.js";
 import { wrapContent } from "../prompt/format-engine.js";
@@ -92,6 +93,7 @@ function readCommand(type: string, body: string): RoleplayCommand | null {
         if (!/^[+-]?\d+$/u.test(raw.trim()) || !Number.isSafeInteger(Number(raw))) return null;
         numbers[key] = Number(raw);
       }
+      const skill = field("skill", 100);
       return notation
         ? {
             type,
@@ -100,6 +102,7 @@ function readCommand(type: string, body: string): RoleplayCommand | null {
             ...(character ? { character } : {}),
             ...(attribute ? { attribute } : {}),
             ...numbers,
+            ...(skill ? { skill } : {}),
           }
         : null;
     }
@@ -336,6 +339,7 @@ export function buildRoleplayCommandsReminder(args: {
   characterNames: string[];
   characterId?: string | null;
   interruptAvailable?: boolean;
+  activeSkills?: readonly GameSkillDefinition[];
 }): string {
   const lines: string[] = [];
   const enabled = (key: RoleplayCommandKey) => isRoleplayCommandAllowed(args.metadata, key, args.characterId);
@@ -360,10 +364,15 @@ export function buildRoleplayCommandsReminder(args: {
     lines.push(
       '- [memory: id="short-stable-id" content="what to revisit and when"] adds or updates a reminder, available to you and narrator alone. Keep it short; only up to three reminders can exist at the same time; if you create more, the oldest one will be removed. [dismiss_memory: id="id"] removes it when fulfilled or no longer relevant.',
     );
-  if (enabled("roll"))
+  if (enabled("roll")) {
+    const skillsList =
+      args.activeSkills && args.activeSkills.length > 0
+        ? ` Available skills for checks: ${args.activeSkills.map((s) => `${s.name} (${s.ability.toUpperCase()})`).join(", ")}.`
+        : "";
     lines.push(
-      '- [roll: character="participant name" notation="1d20" attribute="Strength" modifier="+2" dc="15" reason="action being attempted"] requests a real roll; use roll_dice with the same fields when available. You may target any chat participant, including the user\'s persona by name. Attribute is optional; the engine adds the assigned attribute modifier, so do not add it yourself. Optional modifier adds a situational bonus/penalty once; optional dc sets the total needed to succeed. Keep DCs and modifiers in command/tool fields, not narration. Stop after the command and wait for the result before narrating the outcome. Never invent results or reroll an action.',
+      `- [roll: character="participant name" notation="1d20" attribute="Strength" skill="Skill Name" modifier="+2" dc="15" reason="action being attempted"] requests a real roll; use roll_dice with the same fields when available. You may target any chat participant, including the user's persona by name. Attribute and skill are both optional and only one is needed; the engine automatically adds the assigned ability/skill modifier from character stats, so do not add it yourself. Optional modifier adds a situational bonus/penalty once; optional dc sets the total needed to succeed. Keep DCs and modifiers in command/tool fields, not narration. Set the stakes first, stop after the command, and wait for the result before narrating the outcome. Never invent results or reroll an action.${skillsList}`,
     );
+  }
   if (enabled("combat") && args.availableAgentIds.has("combat"))
     lines.push("- [combat] asks the Combat agent to start an encounter when the scene turns to combat.");
   if (args.interruptAvailable === true && enabled("interrupt"))
