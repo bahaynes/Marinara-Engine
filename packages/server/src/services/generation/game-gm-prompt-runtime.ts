@@ -1,5 +1,6 @@
 import { currentRoomGeneration, roomHostIdentity } from "../multiplayer/generation-policy.js";
 import {
+  DEFAULT_STARTING_INSPIRATION,
   GAME_GM_BUILT_IN_PROMPT_TEMPLATES,
   gameStoryFromMetadata,
   gameWorldKitFromMetadata,
@@ -420,6 +421,11 @@ export async function injectGameGmPromptRuntime(args: {
     tone: (setupConfig?.tone as string) || "balanced",
     rating: (setupConfig?.rating as "sfw" | "nsfw") || "sfw",
     enableQuickTimeEvents: setupConfig?.enableQuickTimeEvents !== false,
+    enableInspiration: setupConfig?.enableInspiration !== false,
+    inspirationCount:
+      typeof args.chatMetadata.gameInspiration === "number"
+        ? args.chatMetadata.gameInspiration
+        : DEFAULT_STARTING_INSPIRATION,
     campaignPlan: gameBlueprint?.campaignPlan ?? null,
     canGenerateBackgrounds:
       !!args.chatMetadata.enableSpriteGeneration &&
