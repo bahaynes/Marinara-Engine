@@ -47,10 +47,12 @@ function rngFor(state: TriageState): () => number {
   return mulberry32(deriveSubSeed(state.seed, state.actionCounter));
 }
 
-const MAX_ROUNDS = 12;
+// Scoped to the acute stabilization window (see types.ts) — most cases resolve in 1-3 rounds once
+// the correct call lands; this is the outer bound before the crisis is considered lost, not a budget
+// for a full diagnostic workup.
+const MAX_ROUNDS = 6;
 const NATURAL_CRASH_DRIFT = 5;
 const WRONG_TREATMENT_HARM = 20;
-const STABILIZE_CRASH_THRESHOLD = 15;
 
 /** Offset kept well clear of `actionCounter`'s cursor space so hand-seeding never collides with action RNG. */
 const HAND_SEED_OFFSET = 1_000_000;
@@ -129,13 +131,20 @@ function isTreatmentEligible(state: TriageState, action: TriageActionDef): boole
   return !!target && (target.status === "suspected" || target.status === "confirmed");
 }
 
-/** Would running this diagnostic still tell us something new about this case? */
+/**
+ * Would running this diagnostic still tell us something new about this case? A diagnostic that
+ * targets none of THIS case's shown differentials is still offered — real clinicians order routine
+ * tests (an ECG, a fingerstick) without knowing in advance whether they'll be informative, and a
+ * negative/uninformative result is itself real information, not a reason to hide the tool. Only
+ * exclude a diagnostic once every shown differential it could speak to is already resolved.
+ */
 function isDiagnosticUseful(state: TriageState, action: TriageActionDef): boolean {
   if (!action.diagnosesDifferentialIds) return false;
-  return action.diagnosesDifferentialIds.some((id) => {
-    const target = state.differentials.find((d) => d.id === id);
-    return !!target && target.status !== "confirmed" && target.status !== "ruled_out";
-  });
+  const relevantTargets = action.diagnosesDifferentialIds
+    .map((id) => state.differentials.find((d) => d.id === id))
+    .filter((d): d is TriageDifferentialRuntime => !!d);
+  if (relevantTargets.length === 0) return true;
+  return relevantTargets.some((d) => d.status !== "confirmed" && d.status !== "ruled_out");
 }
 
 /**
@@ -204,6 +213,9 @@ export function commitAction(state: TriageState, actionId: string): CommitResult
     }
     if (target.status === "ruled_out") {
       return { state, ok: false, error: "Already ruled out." };
+    }
+    if (target.status === "confirmed") {
+      return { state, ok: false, error: "Already treated — the case should be resolving." };
     }
   }
 
@@ -318,11 +330,15 @@ export function endRound(state: TriageState): TriageState {
       entries.push({ round: state.round, kind: "result", text: `${order.actionName} result: inconclusive.` });
       continue;
     }
+    let orderProducedFinding = false;
     for (const diffId of action.diagnosesDifferentialIds) {
       const shown = differentials.find((d) => d.id === diffId);
       if (!shown || shown.status === "confirmed") continue;
+      orderProducedFinding = true;
       const isCorrect = diffId === state.correctDifferentialId;
-      const status = isCorrect ? (action.confirmsOnResolve ? "confirmed" : "suspected") : "ruled_out";
+      // No diagnostic in this acute-only catalog confirms outright — only the definitive treatment
+      // landing correctly does (see resolveInstantAction); a diagnostic can only get you to "suspected."
+      const status = isCorrect ? "suspected" : "ruled_out";
       differentials = differentials.map((d) =>
         d.id === diffId ? { ...d, status, clue: state.clues[d.id] ?? null } : d,
       );
@@ -332,6 +348,15 @@ export function endRound(state: TriageState): TriageState {
         text: isCorrect
           ? `${order.actionName}: findings point toward ${differentialName(diffId)}.`
           : `${order.actionName}: ${differentialName(diffId)} ruled out.`,
+      });
+    }
+    // Ordered on a hunch that this case doesn't bear out — a real, informative-by-omission result,
+    // not a reason the tool should never have been offered (see isDiagnosticUseful).
+    if (!orderProducedFinding) {
+      entries.push({
+        round: state.round,
+        kind: "result",
+        text: `${order.actionName}: no notable findings for this case.`,
       });
     }
   }
@@ -366,7 +391,10 @@ function checkOutcome(state: TriageState): TriageState {
   if (state.vitals.crash >= 100) {
     return { ...state, outcome: "defeat", debrief: buildDebrief(state, "defeat") };
   }
-  if (state.treatedCorrectly && state.vitals.crash <= STABILIZE_CRASH_THRESHOLD) {
+  // The right definitive treatment ends the acute crisis on its own — this mini-game plays out the
+  // stabilization moment, not the hours of monitoring afterward. Any remaining crash-meter decay is
+  // just the vitals settling; nothing further is required of the player once the correct call lands.
+  if (state.treatedCorrectly) {
     return { ...state, outcome: "victory", debrief: buildDebrief(state, "victory") };
   }
   if (state.round > state.maxRounds) {
@@ -382,15 +410,28 @@ export function buildDebrief(state: TriageState, outcome: TriageOutcome): Triage
   if (outcome === "flee") {
     return { label: "Handed Off", detail: "You handed the case to another team." };
   }
-  if (state.wrongTreatmentCount === 0 && state.round <= 5) {
-    return { label: "Clean Save", detail: "Textbook trauma response — diagnosed and treated with room to spare." };
+  const recommendedWorkup = DIFFERENTIAL_CATALOG.find((d) => d.id === state.correctDifferentialId)?.recommendedWorkup;
+  // Wins land within a round or two of the correct call now (see checkOutcome), so "fast" is judged
+  // against how much of the acute window was actually available, not a fixed round count.
+  const fastWindow = Math.max(2, Math.ceil(state.maxRounds / 3));
+  if (state.wrongTreatmentCount === 0 && state.round <= fastWindow) {
+    return {
+      label: "Clean Save",
+      detail: "Textbook trauma response — diagnosed and treated with room to spare.",
+      recommendedWorkup,
+    };
   }
   if (state.wrongTreatmentCount === 0) {
-    return { label: "Solid Save", detail: `A hard-fought stabilization. ${state.patientName} is going to make it.` };
+    return {
+      label: "Solid Save",
+      detail: `A hard-fought stabilization. ${state.patientName} is going to make it.`,
+      recommendedWorkup,
+    };
   }
   return {
     label: "Close Call",
     detail: "It got tense and you second-guessed yourself, but the patient pulled through.",
+    recommendedWorkup,
   };
 }
 
@@ -438,11 +479,15 @@ export function autoResolveTriage(state: TriageState, rng: () => number = Math.r
 /** Build a CombatSummary-shaped handoff so GameSurface's existing GM-narration recap can consume it unchanged. */
 export function buildTriageSummary(state: TriageState): CombatSummary {
   const stability = clamp(100 - state.vitals.crash, 0, 100);
+  const outcomeNote = state.debrief
+    ? `${state.debrief.label}: ${state.debrief.detail}` +
+      (state.debrief.recommendedWorkup ? ` Recommended follow-up: ${state.debrief.recommendedWorkup}` : "")
+    : undefined;
   return {
     outcome: state.outcome ?? "defeat",
     rounds: state.round,
     subjectName: state.patientName,
-    outcomeNote: state.debrief ? `${state.debrief.label}: ${state.debrief.detail}` : undefined,
+    outcomeNote,
     party: state.partyNames.map((name) => ({
       name,
       hp: stability,
@@ -452,8 +497,10 @@ export function buildTriageSummary(state: TriageState): CombatSummary {
     })),
     enemies: DIFFERENTIAL_CATALOG.filter((d) => state.differentials.some((shown) => shown.id === d.id)).map((d) => ({
       name: d.name,
+      // Victory ends the case on the correct call landing (see checkOutcome), before crash necessarily
+      // reads near 0 — treat "defeated" as fully resolved rather than leaving residual crash as hp.
       defeated: d.id === state.correctDifferentialId && state.treatedCorrectly,
-      hp: d.id === state.correctDifferentialId ? clamp(state.vitals.crash, 0, 100) : 0,
+      hp: d.id === state.correctDifferentialId && state.treatedCorrectly ? 0 : clamp(state.vitals.crash, 0, 100),
       maxHp: 100,
     })),
   };
