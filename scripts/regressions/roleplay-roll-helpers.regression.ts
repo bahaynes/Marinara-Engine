@@ -54,7 +54,7 @@ import {
   const [rolled, untouched] = withRoleplayRollSchema([roll, other], [{ name: "Alice" }, { name: "Bob" }])!;
   assert.equal(untouched, other, "other tools pass through as they are");
   const params = rolled!.function.parameters as { properties: Record<string, any>; required: string[] };
-  assert.deepEqual(Object.keys(params.properties), ["notation", "character", "attribute"]);
+  assert.deepEqual(Object.keys(params.properties), ["notation", "character", "attribute", "skill"]);
   assert.deepEqual(params.properties.character.enum, ["Alice", "Bob"]);
   assert.equal(params.properties.attribute.type, "string");
   assert.deepEqual(params.required, ["notation", "character"]);

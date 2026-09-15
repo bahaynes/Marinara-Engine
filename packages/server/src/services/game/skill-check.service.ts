@@ -119,6 +119,45 @@ const SKILL_ATTRIBUTE_MAP: Record<string, keyof RPGAttributes> = {
   intimidation: "cha",
   performance: "cha",
   persuasion: "cha",
+
+  // Medical / Clinical Skills
+  // INT
+  diagnostics: "int",
+  pharmacology: "int",
+  pathology: "int",
+  biomedical_tech: "int",
+  medical_research: "int",
+  pattern_recognition: "int",
+
+  // WIS
+  pediatrics: "wis",
+  triage: "wis",
+  psychiatry: "wis",
+  clinical_intuition: "wis",
+
+  // CHA
+  bedside_manner: "cha",
+  code_leadership: "cha",
+  hospital_politics: "cha",
+  de_escalation: "cha",
+
+  // DEX
+  surgical_technique: "dex",
+  surgery: "dex",
+  procedures: "dex",
+  suturing: "dex",
+  reflexes: "dex",
+
+  // CON
+  marathon_endurance: "con",
+  shift_resilience: "con",
+  biohazard_exposure: "con",
+
+  // STR
+  cpr: "str",
+  cpr_compressions: "str",
+  orthopedic_reduction: "str",
+  patient_restraint: "str",
 };
 
 /**

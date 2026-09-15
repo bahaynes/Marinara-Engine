@@ -1200,6 +1200,29 @@ function applyGameMapUpdate(qc: QueryClient, chatId: string, map: GameMap) {
   }
 }
 
+function applyGameInspirationUpdate(qc: QueryClient, chatId: string, gameInspiration: number) {
+  qc.setQueryData<Chat | undefined>(chatKeys.detail(chatId), (current) => {
+    if (!current) return current;
+    const metadata = { ...parseChatMetadata(current.metadata as Chat["metadata"] | string), gameInspiration };
+    return {
+      ...current,
+      metadata: metadata as Chat["metadata"],
+    };
+  });
+
+  const chatStore = useChatStore.getState();
+  if (chatStore.activeChat?.id === chatId) {
+    const metadata = {
+      ...parseChatMetadata(chatStore.activeChat.metadata as Chat["metadata"] | string),
+      gameInspiration,
+    };
+    chatStore.setActiveChat({
+      ...chatStore.activeChat,
+      metadata: metadata as Chat["metadata"],
+    });
+  }
+}
+
 function applyGameStatePatchToStore(
   chatId: string,
   patch: Record<string, unknown>,
@@ -2558,6 +2581,14 @@ export function useGenerate() {
             case "game_map_update": {
               const map = event.data as GameMap | null;
               if (map) applyGameMapUpdate(qc, params.chatId, map);
+              break;
+            }
+
+            case "game_inspiration_update": {
+              const inspirationData = event.data as { gameInspiration?: number } | null;
+              if (typeof inspirationData?.gameInspiration === "number") {
+                applyGameInspirationUpdate(qc, params.chatId, inspirationData.gameInspiration);
+              }
               break;
             }
 
@@ -4136,6 +4167,14 @@ export function useGenerate() {
             case "game_map_update": {
               const map = event.data as GameMap | null;
               if (map) applyGameMapUpdate(qc, chatId, map);
+              break;
+            }
+
+            case "game_inspiration_update": {
+              const inspirationData = event.data as { gameInspiration?: number } | null;
+              if (typeof inspirationData?.gameInspiration === "number") {
+                applyGameInspirationUpdate(qc, chatId, inspirationData.gameInspiration);
+              }
               break;
             }
             case "agent_write_proposal": {

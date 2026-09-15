@@ -46,6 +46,7 @@ export type RoleplayCommand =
       attribute?: string;
       modifier?: number;
       dc?: number;
+      skill?: string;
     }
   | { type: "combat" }
   | { type: "dm"; character: string; message: string }
