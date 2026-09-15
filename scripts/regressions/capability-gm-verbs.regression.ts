@@ -824,6 +824,11 @@ assert.deepEqual(
 // multiplayer* turn effects, while chats.storage.ts routes an existing full metadata update
 // through the guarded patch queue. The wrapper introduces no new keys. Both namespaces
 // are reserved; room generation also preserves the coordinator's multiplayer object.
+// Two more landed with Inspiration rerolls and GM map-update handling (#6417-adjacent): game.routes.ts
+// passes `updatedMeta` (`{ ...meta, gameInspiration: newInspiration }`) and generate.routes.ts passes
+// `nextMeta` (`withActiveGameMapMeta(freshMeta, nextMap)`, setting `gameMap`/`gameMaps`/
+// `activeGameMapId`). Both squat nothing — `game` and `active` are already owned prefixes — so the
+// count is bumped rather than widening a walk for two one-off variable payloads.
 // The other half of the boundary — a read off a parameter inside a helper — has no count
 // to pin, which is why sub-source 7 exists rather than a seventh sweep. The docs state both limits.
 assert.equal(

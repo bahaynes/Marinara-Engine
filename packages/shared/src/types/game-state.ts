@@ -141,6 +141,8 @@ export interface PlayerStats {
   inventoryTrackerEquipped?: InventoryTrackerRow[];
   /** Carried non-equipped items maintained by the Inventory Tracker agent. */
   inventoryTrackerInventory?: InventoryTrackerRow[];
+  /** Inspiration points available to reroll failed checks (0-4). */
+  inspiration?: number;
 }
 
 /** Classic D&D-style attributes. */
