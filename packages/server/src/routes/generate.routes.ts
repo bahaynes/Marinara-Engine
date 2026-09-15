@@ -967,7 +967,17 @@ import {
   withActiveGameMapMeta,
 } from "../services/game/map-position.service.js";
 import { applyAllSegmentEdits } from "../services/game/segment-edits.js";
-import type { CharacterData, GameMap, GameNpc, Lorebook, LorebookEntry } from "@marinara-engine/shared";
+import {
+  DEFAULT_STARTING_INSPIRATION,
+  MAX_INSPIRATION_CAP,
+  getActiveGameSkills,
+  parseInspirationAwards,
+  type CharacterData,
+  type GameMap,
+  type GameNpc,
+  type Lorebook,
+  type LorebookEntry,
+} from "@marinara-engine/shared";
 import {
   buildConversationProfileBlocks,
   readCharacterConvoFields,
@@ -5862,9 +5872,12 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
             language: gmCtx.language,
             rating: gmCtx.rating,
             enableQuickTimeEvents: gmCtx.enableQuickTimeEvents,
+            enableInspiration: gmCtx.enableInspiration,
+            inspirationCount: gmCtx.inspirationCount,
             gameSpecialInstructions: gmCtx.gameSpecialInstructions,
             canGenerateBackgrounds: gmCtx.canGenerateBackgrounds,
             artStylePrompt: gmCtx.artStylePrompt,
+            combatStyle: gmCtx.combatStyle,
             addressMode,
             playerDiceRollSubmitted,
             // One-request dice (#6215). Off, the three fields below are inert and
@@ -5925,6 +5938,17 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
             dicePoolMode: gameDicePoolTurn,
             dicePoolBlock,
             rollDiceToolAttached,
+            activeSkills: getActiveGameSkills({
+              enabledSystemIds: Array.isArray(chatMeta.gameSkillSystems)
+                ? (chatMeta.gameSkillSystems as string[])
+                : null,
+              disabledSkillIds: Array.isArray(chatMeta.gameDisabledSkills)
+                ? (chatMeta.gameDisabledSkills as string[])
+                : null,
+              combatStyle: (chatMeta.combatStyle as string | null) ?? null,
+              genre: gmCtx.genre,
+              setting: gmCtx.setting,
+            }),
             // A package that brought its own inventory takes the built-in one out of the prompt.
             // Dungeon, cave and station maps are the Overworld RPG's; Classic Game Mode never opens one.
             overworld: gameStyleFromMetadata(chatMeta) === "overworld",
@@ -9248,6 +9272,17 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                 characterId: roleplayCallerId,
                 interruptAvailable: Boolean(roleplayInterruptionTarget),
                 video: roleplayVideoOffer,
+                activeSkills: getActiveGameSkills({
+                  enabledSystemIds: Array.isArray(chatMeta.gameSkillSystems)
+                    ? (chatMeta.gameSkillSystems as string[])
+                    : null,
+                  disabledSkillIds: Array.isArray(chatMeta.gameDisabledSkills)
+                    ? (chatMeta.gameDisabledSkills as string[])
+                    : null,
+                  combatStyle: (chatMeta.combatStyle as string | null) ?? null,
+                  genre: (chatMeta.genre as string | null) ?? null,
+                  setting: (chatMeta.setting as string | null) ?? null,
+                }),
               }),
               wrapFormat,
             );
@@ -11999,6 +12034,36 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                   logger.warn(err, "[generate/game/map_update] Failed to apply map_update");
                 }
               }
+
+              const awardedInspiration = parseInspirationAwards(fullResponse);
+              if (awardedInspiration > 0) {
+                try {
+                  const freshChat = await chats.getById(input.chatId);
+                  const freshMeta = freshChat ? (parseExtra(freshChat.metadata) as Record<string, unknown>) : chatMeta;
+                  const currentInspiration =
+                    typeof freshMeta.gameInspiration === "number"
+                      ? freshMeta.gameInspiration
+                      : DEFAULT_STARTING_INSPIRATION;
+                  const newInspiration = Math.min(MAX_INSPIRATION_CAP, currentInspiration + awardedInspiration);
+                  if (newInspiration !== currentInspiration) {
+                    const nextMeta = { ...freshMeta, gameInspiration: newInspiration };
+                    await chats.updateMetadata(input.chatId, nextMeta);
+                    chatMeta.gameInspiration = newInspiration;
+                    sendSseEvent(reply, {
+                      type: "game_inspiration_update",
+                      data: { gameInspiration: newInspiration, delta: awardedInspiration },
+                    });
+                    logger.info(
+                      "[generate/game/inspiration] chatId=%s awarded=%d newTotal=%d",
+                      input.chatId,
+                      awardedInspiration,
+                      newInspiration,
+                    );
+                  }
+                } catch (err) {
+                  logger.warn(err, "[generate/game/inspiration] Failed to apply inspiration award");
+                }
+              }
             }
 
             // Evict cachedPrompt from older messages to save storage (keep last 2 assistant msgs).
@@ -13818,6 +13883,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                 logger.info(
                   `[generate] world-state snapshot: chars=${snapshotChars.length} (prev), personaStats=${snapshotPersonaStats ? "present" : "null"} (prev)`,
                 );
+
                 await gameStateStore.create(
                   {
                     chatId: input.chatId,
