@@ -12,11 +12,15 @@ import { isMessageHidden } from "./message-visibility";
 export { isMessageHidden } from "./message-visibility";
 import {
   SUPPORTED_MACROS,
+  DEFAULT_STARTING_INSPIRATION,
+  MAX_INSPIRATION_CAP,
   buildGuidedGenerationInstructionMessage,
   buildNarratorInstructionMessage,
+  createSkillCheckTagRegex,
   isWithinDiceLimits,
   normalizeTextForMatch,
   parseDiceNotation,
+  parseSkillCheckTagBody,
   rollParsedDice,
   type ParsedDiceNotation,
 } from "@marinara-engine/shared";
@@ -671,6 +675,84 @@ const COMMANDS: SlashCommand[] = [
         extra: { diceRollResult: { notation, rolls, modifier: parsed.modifier, total: sum } },
       });
       return { handled: true };
+    },
+  },
+  {
+    name: "reroll",
+    aliases: ["inspire-reroll", "reroll-check"],
+    description: "Reroll the latest failed skill check using Inspiration",
+    usage: "/reroll",
+    local: true,
+    async execute(_args, ctx) {
+      try {
+        const messages = await api.get<Array<{ id: string; role: string; content: string }>>(
+          `/chats/${ctx.chatId}/messages`,
+        );
+        const assistantMsgs = messages.filter((m) => m.role === "assistant" || m.role === "narrator");
+        const latestAssistant = assistantMsgs[assistantMsgs.length - 1];
+        if (!latestAssistant) {
+          return { handled: true, feedback: "No Game Master message found to reroll." };
+        }
+
+        const checkRegex = createSkillCheckTagRegex();
+        let targetCheck: ReturnType<typeof parseSkillCheckTagBody> | null = null;
+        let match: RegExpExecArray | null;
+        while ((match = checkRegex.exec(latestAssistant.content)) !== null) {
+          const parsed = parseSkillCheckTagBody(match[1] ?? "");
+          if (parsed?.resolvedResult && !parsed.resolvedResult.success) {
+            targetCheck = parsed;
+          }
+        }
+
+        if (!targetCheck) {
+          return { handled: true, feedback: "No failed skill check found on the latest turn to reroll." };
+        }
+
+        const res = await api.post<{
+          success: boolean;
+          swipeIndex: number;
+          result: import("@marinara-engine/shared").SkillCheckResult;
+          inspirationRemaining: number;
+        }>("/game/inspiration-reroll", {
+          chatId: ctx.chatId,
+          messageId: latestAssistant.id,
+          skill: targetCheck.skill,
+          dc: targetCheck.dc,
+        });
+
+        ctx.invalidate();
+        toast.success(
+          `Rerolled ${targetCheck.skill}! (${res.inspirationRemaining}/${MAX_INSPIRATION_CAP} Inspiration left)`,
+        );
+        return { handled: true };
+      } catch (err: any) {
+        return { handled: true, feedback: err.message || "Failed to reroll with Inspiration." };
+      }
+    },
+  },
+  {
+    name: "inspire",
+    aliases: ["award-inspiration"],
+    description: "Award 1 Inspiration point to the player (max 4)",
+    usage: "/inspire",
+    local: true,
+    async execute(_args, ctx) {
+      try {
+        const chat = await api.get<{ metadata?: string | Record<string, unknown> }>(`/chats/${ctx.chatId}`);
+        const meta = chat.metadata
+          ? typeof chat.metadata === "string"
+            ? JSON.parse(chat.metadata)
+            : chat.metadata
+          : {};
+        const current = typeof meta.gameInspiration === "number" ? meta.gameInspiration : DEFAULT_STARTING_INSPIRATION;
+        const updated = Math.min(MAX_INSPIRATION_CAP, current + 1);
+        await api.patch(`/chats/${ctx.chatId}/metadata`, { gameInspiration: updated });
+        ctx.invalidate();
+        toast.success(`✨ Inspiration awarded! (${updated}/${MAX_INSPIRATION_CAP})`);
+        return { handled: true, feedback: `Inspiration awarded! Current: ${updated}/${MAX_INSPIRATION_CAP}` };
+      } catch (err: any) {
+        return { handled: true, feedback: `Failed to award inspiration: ${err.message}` };
+      }
     },
   },
   {

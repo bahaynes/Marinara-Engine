@@ -136,6 +136,9 @@ export function formatNarration(content: string, boldDialogue = true): string {
       const attrs = parseCommandAttributes(rawAttrs);
       return commandBadge("bg-violet-500/15 text-violet-200 ring-1 ring-violet-400/20", "🏁 Session End", attrs.reason);
     })
+    .replace(/\[inspiration:\s*([^\]]+)\]/gi, (_match, body: string) =>
+      commandBadge("bg-amber-500/15 text-amber-200 ring-1 ring-amber-400/20", "✨ Inspiration", body.trim()),
+    )
     .replace(/\[(music|sfx|bg|ambient):\s*([^\]]+)\]/gi, (_match, kind: string, body: string) =>
       commandBadge("bg-slate-500/15 text-slate-200 ring-1 ring-slate-400/20", kind.toUpperCase(), body.trim()),
     )

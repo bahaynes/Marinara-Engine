@@ -606,6 +606,33 @@ export function useSkillCheck() {
   });
 }
 
+export function useInspirationReroll() {
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data: {
+      chatId: string;
+      messageId: string;
+      skill: string;
+      dc: number;
+      connectionId?: string;
+      debugMode?: boolean;
+    }) =>
+      api.post<{
+        success: boolean;
+        swipeIndex: number;
+        result: import("@marinara-engine/shared").SkillCheckResult;
+        inspirationRemaining: number;
+        content: string;
+      }>("/game/inspiration-reroll", data),
+    onSuccess: (_res, variables) => {
+      qc.invalidateQueries({ queryKey: chatKeys.detail(variables.chatId) });
+      qc.invalidateQueries({ queryKey: chatKeys.messages(variables.chatId) });
+      qc.invalidateQueries({ queryKey: ["chat-swipes", variables.messageId] });
+    },
+  });
+}
+
 export function useTransitionGameState() {
   const qc = useQueryClient();
   const store = useGameModeStore;
