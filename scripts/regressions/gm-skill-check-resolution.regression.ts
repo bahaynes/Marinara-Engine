@@ -857,6 +857,141 @@ try {
     "a player with no card of their own falls back to the first card, unchanged",
   );
 
+  // ── 15. Expertise doubles the persona-description proficiency fallback ──
+  //
+  // The fallback that reads `Proficiencies: ...` out of a persona's description
+  // used to strip any parenthetical — including `(Expertise)` — before mapping
+  // the skill to a bonus, so a declared expertise skill scored identically to a
+  // plain proficient one. The bonus is doubled for that entry now, before the
+  // parenthetical is discarded for the name lookup.
+  const expertisePersona = await characters.createPersona(
+    "Kessa Vane",
+    "Proficiencies: Arcana, Persuasion (Expertise)",
+    undefined,
+    { personaStats: JSON.stringify({ rpgStats: { attributes: [{ name: "LEVEL", value: 5 }] } }) },
+  );
+  assert.ok(expertisePersona?.id, "precondition — the chat needs a persona to be identified by");
+  const expertiseChatId = await newGameChat("skill check expertise", expertisePersona.id, []);
+  const expertiseContext = await loadSkillCheckModifierContext(db, expertiseChatId);
+  // Level 5 is proficiency bonus +3 — plain proficiency stays +3, expertise doubles to +6.
+  assert.equal(expertiseContext.skills?.arcana, 3, "plain proficiency is untouched by the expertise change");
+  assert.equal(expertiseContext.skills?.persuasion, 6, "expertise doubles the proficiency bonus");
+
+  // ── 16. Party Mode resolves the best total across the party ──
+  //
+  // Off (the default) leaves every check scored against the player's own
+  // sheet, even when a party member would clearly have done better — Party
+  // Mode has to be an explicit per-chat choice, not a silent behavior change.
+  // On, the check resolves against whichever candidate (player included) has
+  // the best ability-modifier + proficiency total for that skill.
+  const dumbFighterPersona = await characters.createPersona(
+    "Doran Ashfall",
+    "A blunt fighter with no head for magic.",
+    undefined,
+    {
+      personaStats: JSON.stringify({
+        rpgStats: {
+          attributes: [
+            { name: "INT", value: 8 },
+            { name: "LEVEL", value: 5 },
+          ],
+        },
+      }),
+    },
+  );
+  assert.ok(dumbFighterPersona?.id, "precondition — the chat needs a persona to be identified by");
+  const partyCards = [
+    {
+      name: "Doran Ashfall",
+      rpgStats: {
+        attributes: [
+          { name: "INT", value: 8 },
+          { name: "LEVEL", value: 5 },
+        ],
+      },
+    },
+    {
+      name: "Sable",
+      description: "Proficiencies: Arcana",
+      rpgStats: {
+        attributes: [
+          { name: "INT", value: 18 },
+          { name: "LEVEL", value: 5 },
+        ],
+      },
+    },
+  ];
+  const makePartyChat = async (
+    personaId: string,
+    cards: Array<Record<string, unknown>>,
+    partyModeSkillChecks: boolean,
+  ) => {
+    const chat = await chats.create({
+      name: "party mode",
+      mode: "game",
+      characterIds: [],
+      personaId,
+    } as Parameters<typeof chats.create>[0]);
+    assert.ok(chat?.id);
+    createdChatIds.push(chat.id);
+    await chats.patchMetadata(chat.id, { gameCharacterCards: cards, gameSetupConfig: { partyModeSkillChecks } });
+    return chat.id;
+  };
+
+  const partyOffChatId = await makePartyChat(dumbFighterPersona.id, partyCards, false);
+  const offContext = await loadSkillCheckModifierContext(db, partyOffChatId);
+  assert.equal(offContext.partyCandidates, undefined, "Party Mode off carries no candidates at all");
+  const offRoll = await resolve(`[skill_check: skill="Arcana" dc="15"]`, [10], offContext);
+  const offTag = parseSkillCheckTagBody(tagBodies(offRoll.content)[0]!);
+  assert.equal(
+    offTag?.resolvedResult?.modifier,
+    -1,
+    "player's own INT 8 (-1), no proficiency — Sable's sheet is never consulted",
+  );
+
+  const partyOnChatId = await makePartyChat(dumbFighterPersona.id, partyCards, true);
+  const onContext = await loadSkillCheckModifierContext(db, partyOnChatId);
+  const onRoll = await resolve(`[skill_check: skill="Arcana" dc="15"]`, [10], onContext);
+  const onTag = parseSkillCheckTagBody(tagBodies(onRoll.content)[0]!);
+  // Sable: INT 18 (+4) + Arcana proficiency at level 5 (+3) = +7, beats Doran's -1.
+  assert.equal(onTag?.resolvedResult?.modifier, 7, "Party Mode picks Sable's total over the player's own");
+  assert.equal(onTag?.resolvedResult?.total, 17, "10 + 7");
+  assert.equal(onTag?.resolvedResult?.success, true, "17 clears DC 15 — which the player's own -1 never would have");
+
+  // The player's own roll still wins when it genuinely is the party's best.
+  const scholarKnightPersona = await characters.createPersona("Vesper Kade", "Proficiencies: Arcana", undefined, {
+    personaStats: JSON.stringify({
+      rpgStats: {
+        attributes: [
+          { name: "INT", value: 20 },
+          { name: "LEVEL", value: 5 },
+        ],
+      },
+    }),
+  });
+  assert.ok(scholarKnightPersona?.id, "precondition — the chat needs a persona to be identified by");
+  const strongPlayerChatId = await makePartyChat(
+    scholarKnightPersona.id,
+    [
+      {
+        name: "Vesper Kade",
+        rpgStats: {
+          attributes: [
+            { name: "INT", value: 20 },
+            { name: "LEVEL", value: 5 },
+          ],
+        },
+      },
+      partyCards[1]!,
+    ],
+    true,
+  );
+  const strongContext = await loadSkillCheckModifierContext(db, strongPlayerChatId);
+  const strongRoll = await resolve(`[skill_check: skill="Arcana" dc="15"]`, [10], strongContext);
+  const strongTag = parseSkillCheckTagBody(tagBodies(strongRoll.content)[0]!);
+  // Vesper: INT 20 (+5) + Arcana proficiency at level 5 (+3) = +8, beats Sable's +7.
+  assert.equal(strongTag?.resolvedResult?.modifier, 8, "the player candidate is still in the running, not excluded");
+
   console.log("gm-skill-check-resolution regression passed");
 } finally {
   const db = await getDB().catch(() => null);

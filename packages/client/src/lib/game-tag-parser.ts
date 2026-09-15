@@ -9,6 +9,7 @@
 // ──────────────────────────────────────────────
 
 import {
+  parseInspirationAwards,
   parseSkillCheckTagBody,
   stripUnknownBracketTags,
   stripBalancedTag,
@@ -17,6 +18,7 @@ import {
   readGmTagAttributes,
   stripGameBranchDelimiters,
   stripSheetCommandTags,
+  stripInspirationTags,
   type DirectionCommand,
   type DirectionEffect,
   type SkillCheckTag,
@@ -101,6 +103,12 @@ export interface ParsedGmTags {
   qte: { actions: string[]; timer: number } | null;
   /** State transition command */
   stateChange: string | null;
+  /**
+   * Optional subject named directly in a `[state: combat patient="Name"]` tag — currently only
+   * emitted for the triage combat style, so the mini-game's own case-generation call can continue
+   * that exact patient instead of re-guessing "who's the patient" from raw chat history.
+   */
+  stateChangeSubject: string | null;
   /** NPC reputation changes */
   reputationActions: Array<{ npcName: string; action: string }>;
   /** Combat encounter with enemy data */
@@ -121,6 +129,8 @@ export interface ParsedGmTags {
   partyChanges: PartyChangeTag[];
   /** Note or book content for reading display */
   readables: ReadableTag[];
+  /** Inspiration awards parsed from narration (e.g. [inspiration: +1]) */
+  inspirationAwards: number;
 }
 
 function parseQteMatch(match: RegExpMatchArray): { actions: string[]; timer: number } | null {
@@ -540,6 +550,7 @@ export function parseGmTags(content: string): ParsedGmTags {
     choices: null,
     qte: null,
     stateChange: null,
+    stateChangeSubject: null,
     reputationActions: [],
     combatEncounter: null,
     directions: [],
@@ -550,6 +561,7 @@ export function parseGmTags(content: string): ParsedGmTags {
     inventoryUpdates: [],
     partyChanges: [],
     readables: [],
+    inspirationAwards: 0,
   };
 
   // [music: tag]
@@ -623,10 +635,13 @@ export function parseGmTags(content: string): ParsedGmTags {
     }
   }
 
-  // [state: exploration|dialogue|combat|travel_rest]
-  const stateMatch = text.match(/\[state:\s*(exploration|dialogue|combat|travel_rest)\]/i);
+  // [state: exploration|dialogue|combat|travel_rest] or [state: combat patient="Name"]
+  const stateMatch = text.match(/\[state:\s*(exploration|dialogue|combat|travel_rest)(?:\s+patient="([^"]*)")?\]/i);
   if (stateMatch) {
-    if (!result.qte) result.stateChange = stateMatch[1]!.trim();
+    if (!result.qte) {
+      result.stateChange = stateMatch[1]!.trim();
+      result.stateChangeSubject = stateMatch[2]?.trim() || null;
+    }
     text = text.replace(stateMatch[0], "");
   }
 
@@ -827,6 +842,10 @@ export function parseGmTags(content: string): ParsedGmTags {
     }
   }
 
+  // [inspiration: ...]
+  result.inspirationAwards = parseInspirationAwards(text);
+  text = stripInspirationTags(text);
+
   // [dice: ...] — informational dice results
   text = text.replace(/\[dice:\s*[^\]]+\]/gi, "");
 
@@ -866,6 +885,7 @@ export function stripGmTags(content: string): string {
     .replace(/\[party_add:\s*[^\]]+\]/gi, "")
     .replace(/\[party-turn\]/gi, "")
     .replace(/\[party-chat\]/gi, "")
+    .replace(/\[inspiration:\s*[^\]]+\]/gi, "")
     .replace(/\[dice:\s*[^\]]+\]/gi, "");
   // The one-request dice branch delimiters. Three of the four are unreachable by
   // everything below: `stripUnknownBracketTags` and the `[\w+:` catch-all both require a

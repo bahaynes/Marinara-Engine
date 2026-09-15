@@ -200,7 +200,11 @@ import {
   applyTacticalTurn,
   TERRAIN_DATA,
   extractLeadingThinkingBlocks,
+  DEFAULT_STARTING_INSPIRATION,
+  formatSkillCheckResultSummary,
+  getSkillCheckOutcomeLabel,
   type RPGStatsConfig,
+  type SkillCheckTag,
 } from "@marinara-engine/shared";
 import {
   resolveTacticalStartPreferences,
@@ -9342,6 +9346,167 @@ export async function gameRoutes(app: FastifyInstance) {
     }
 
     return { result, updatedContent };
+  });
+
+  // ── POST /game/inspiration-reroll ──
+  // Spend 1 Inspiration point to reroll a failed skill check and generate a revised narration swipe.
+  const inspirationRerollSchema = z.object({
+    chatId: z.string().min(1),
+    messageId: z.string().min(1),
+    skill: z.string().min(1),
+    dc: z.number().int(),
+    connectionId: z.string().optional(),
+    debugMode: z.boolean().optional(),
+  });
+
+  app.post("/inspiration-reroll", async (req, reply) => {
+    const input = inspirationRerollSchema.parse(req.body);
+    const chats = createChatsStorage(app.db);
+    const connections = createConnectionsStorage(app.db);
+    const gameStateStore = createGameStateStorage(app.db);
+
+    const chat = await chats.getById(input.chatId);
+    if (!chat) {
+      return reply.code(404).send({ error: "Chat not found" });
+    }
+
+    const meta = parseMeta(chat.metadata);
+    const setupConfig = meta.gameSetupConfig as GameSetupConfig | null;
+    if (setupConfig?.enableInspiration === false) {
+      return reply.code(400).send({ error: "Inspiration is disabled for this game." });
+    }
+
+    const currentInspiration =
+      typeof meta.gameInspiration === "number" ? meta.gameInspiration : DEFAULT_STARTING_INSPIRATION;
+    if (currentInspiration <= 0) {
+      return reply.code(400).send({ error: "No Inspiration points remaining." });
+    }
+
+    const targetMsg = await chats.getMessage(input.messageId);
+    if (!targetMsg || targetMsg.chatId !== input.chatId) {
+      return reply.code(404).send({ error: "Message not found in this chat." });
+    }
+
+    // Parse existing skill checks from the message
+    const checkRegex = createSkillCheckTagRegex();
+    let targetCheck: SkillCheckTag | null = null;
+    let match: RegExpExecArray | null;
+    while ((match = checkRegex.exec(targetMsg.content)) !== null) {
+      const parsed = parseSkillCheckTagBody(match[1] ?? "");
+      if (parsed && parsed.skill.trim().toLowerCase() === input.skill.trim().toLowerCase() && parsed.dc === input.dc) {
+        targetCheck = parsed;
+        break;
+      }
+    }
+
+    if (!targetCheck) {
+      return reply.code(404).send({ error: "Skill check not found on the specified message." });
+    }
+
+    if (targetCheck.resolvedResult && targetCheck.resolvedResult.success) {
+      return reply.code(400).send({ error: "Cannot use Inspiration on a check that already succeeded." });
+    }
+
+    // Resolve the rerolled check with the same modifiers & advantage/disadvantage
+    const newResult = await resolveChatSkillCheck(app.db, input.chatId, {
+      skill: targetCheck.skill,
+      dc: targetCheck.dc,
+      advantage: targetCheck.advantage,
+      disadvantage: targetCheck.disadvantage,
+    });
+
+    // Deduct 1 Inspiration point
+    const newInspiration = Math.max(0, currentInspiration - 1);
+    const updatedMeta = { ...meta, gameInspiration: newInspiration };
+    await chats.updateMetadata(input.chatId, updatedMeta);
+
+    // Call LLM to rewrite the narration outcome
+    const { conn, baseUrl, defaultGenerationParameters } = await resolveConnection(
+      connections,
+      input.connectionId,
+      chat.connectionId,
+    );
+    const gameGenParams = resolveStoredGameGenerationParameters(meta, defaultGenerationParameters);
+    const provider = await createGameMainProvider(connections, conn, baseUrl);
+
+    // Build context messages for LLM rewrite
+    const allMessages = await chats.listMessages(input.chatId);
+    const targetIdx = allMessages.findIndex((m) => m.id === input.messageId);
+    const contextSlice = (targetIdx >= 0 ? allMessages.slice(0, targetIdx) : allMessages).slice(-4);
+
+    const resolvedSummary = formatSkillCheckResultSummary(newResult);
+    const resolvedTag = serializeResolvedSkillCheckTag(newResult);
+
+    const systemPrompt =
+      "You are the Game Master narrating a tabletop RPG. Maintain immersive prose, dramatic continuity, and strict consistency with resolved dice outcomes.";
+
+    const messages: ChatMessage[] = [
+      { role: "system", content: systemPrompt },
+      ...contextSlice.map((m) => ({
+        role: (m.role === "assistant" || m.role === "narrator" ? "assistant" : "user") as "assistant" | "user",
+        content: m.content,
+      })),
+      { role: "assistant", content: targetMsg.content },
+      {
+        role: "user",
+        content: `[Inspiration Reroll] The player spent 1 Inspiration point to reroll the failed ${targetCheck.skill} check (DC ${targetCheck.dc}).\nNew roll outcome:\n${resolvedSummary}\n\nRewrite your entire last narration based on this new result. The outcome of the check is now a ${getSkillCheckOutcomeLabel(newResult)}. Maintain narrative continuity from the player's action, but rewrite the consequences and following events to reflect this new roll. Do not repeat the player's action, invent numbers, request more rolls, or include dice/check tags: the engine keeps their records. Return only the complete revised GM narration in the game's language.`,
+      },
+    ];
+
+    const abortTracker = createResponseAbortTracker(reply, GAME_GENERATION_TIMEOUT_MS, "Inspiration reroll");
+    const genOptions = gameGenOptions(
+      conn.model,
+      {
+        maxTokens: 4096,
+        signal: abortTracker.signal,
+      },
+      gameGenParams,
+      conn.provider,
+    );
+
+    let rewrittenNarration = "";
+    try {
+      const llmResult = await runGameChatComplete(provider, messages, genOptions, "Inspiration reroll");
+      const extraction = extractLeadingThinkingBlocks(llmResult.content || "", gameGenParams?.customThinkingTags);
+      rewrittenNarration = extraction.content.trim();
+    } catch (err) {
+      logger.error(err, "[game/inspiration-reroll] LLM rewrite failed for chat %s", input.chatId);
+      rewrittenNarration = `${stripGmCommandTags(targetMsg.content)}\n\n*(Inspiration reroll: ${resolvedSummary})*`;
+    }
+
+    rewrittenNarration = rewrittenNarration.replace(createSkillCheckTagRegex(), "").trim();
+    const finalContent = `${rewrittenNarration}\n\n${resolvedTag}`;
+
+    // Add new swipe
+    const swipe = await chats.addSwipe(input.messageId, finalContent);
+
+    // Copy game state snapshot to new swipe if one existed
+    try {
+      const prevSnapshot = await gameStateStore.getByChatAndMessage(
+        input.chatId,
+        input.messageId,
+        targetMsg.activeSwipeIndex ?? 0,
+      );
+      if (prevSnapshot) {
+        const parsed = parseGameStateRow(prevSnapshot as Record<string, unknown>);
+        const { id: _id, createdAt: _createdAt, ...rest } = parsed;
+        await gameStateStore.create({
+          ...rest,
+          messageId: input.messageId,
+          swipeIndex: swipe.index,
+        });
+      }
+    } catch (snapErr) {
+      logger.warn(snapErr, "[game/inspiration-reroll] Could not copy game state snapshot for swipe");
+    }
+
+    return {
+      success: true,
+      swipeIndex: swipe.index,
+      result: newResult,
+      inspirationRemaining: newInspiration,
+      content: finalContent,
+    };
   });
 
   // ── POST /game/morale ──

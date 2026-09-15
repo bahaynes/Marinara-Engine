@@ -571,6 +571,7 @@ export function GameSetupWizard({
   const [gameImageDynamicPromptEnabled, setGameImageDynamicPromptEnabled] = useState(false);
   const [enableAgents, setEnableAgents] = useState(false);
   const [enableQuickTimeEvents, setEnableQuickTimeEvents] = useState(true);
+  const [enableInspiration, setEnableInspiration] = useState(true);
   const [enableSpotifyDj, setEnableSpotifyDj] = useState(false);
   const [gameSpotifySourceType, setGameSpotifySourceType] = useState<GameSpotifySourceType>("liked");
   const [gameSpotifyPlaylistId, setGameSpotifyPlaylistId] = useState("");
@@ -1240,6 +1241,7 @@ export function GameSetupWizard({
           Boolean(config.spatialMapInstructions?.trim()),
       );
       setEnableQuickTimeEvents(config.enableQuickTimeEvents !== false);
+      setEnableInspiration(config.enableInspiration !== false);
       setEnableSpriteGeneration(visualGenerationEnabled);
       setGameImageDynamicPromptEnabled(config.gameImageDynamicPromptEnabled === true);
       setImageConnectionId(config.imageConnectionId ?? null);
@@ -1370,6 +1372,7 @@ export function GameSetupWizard({
       sceneConnectionId: sceneModelValue && sceneModelValue !== "local" ? sceneModelValue : undefined,
       enableAgents: enableAgents || undefined,
       enableQuickTimeEvents: enableQuickTimeEvents ? undefined : false,
+      enableInspiration: enableInspiration ? undefined : false,
       enableSpriteGeneration: illustratorEnabled,
       gameImageDynamicPromptEnabled: illustratorEnabled && gameImageDynamicPromptEnabled,
       imageConnectionId: illustratorEnabled && imageConnectionId ? imageConnectionId : undefined,
@@ -2590,6 +2593,50 @@ export function GameSetupWizard({
                             </span>
                           </span>
                           <SettingsSwitchTrack checked={enableQuickTimeEvents} />
+                        </button>
+
+                        <button
+                          type="button"
+                          aria-pressed={enableInspiration}
+                          onClick={() => setEnableInspiration((enabled) => !enabled)}
+                          className={cn(
+                            "flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-left transition-all",
+                            enableInspiration
+                              ? "bg-[var(--primary)]/10 ring-1 ring-[var(--primary)]/30"
+                              : "bg-[var(--secondary)] ring-1 ring-transparent hover:ring-[var(--border)]",
+                          )}
+                        >
+                          <span className="flex min-w-0 flex-1 items-center gap-2.5">
+                            <Sparkles
+                              size={14}
+                              className={enableInspiration ? "text-[var(--primary)]" : "text-[var(--muted-foreground)]"}
+                            />
+                            <span className="min-w-0">
+                              <span className="block text-xs font-medium text-[var(--foreground)]">
+                                {localizeUi("ui.game.gamesetupwizard.inspirationRerolls", "Inspiration Rerolls")}
+                              </span>
+                              <span className="block text-[0.575rem] text-[var(--muted-foreground)]">
+                                {localizeUi(
+                                  "ui.game.gamesetupwizard.inspirationRerollsDescription",
+                                  "Allow spending Inspiration to reroll failed skill checks with revised narration",
+                                )}
+                              </span>
+                            </span>
+                          </span>
+                          <span
+                            aria-hidden="true"
+                            className={cn(
+                              "h-5 w-9 shrink-0 rounded-full p-0.5 transition-colors",
+                              enableInspiration ? "bg-[var(--primary)]" : "bg-[var(--muted-foreground)]/50",
+                            )}
+                          >
+                            <span
+                              className={cn(
+                                "block h-4 w-4 rounded-full bg-white transition-transform",
+                                enableInspiration && "translate-x-3.5",
+                              )}
+                            />
+                          </span>
                         </button>
 
                         {installedAgentsLoading ? (

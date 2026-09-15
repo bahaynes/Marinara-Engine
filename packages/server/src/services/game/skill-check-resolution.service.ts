@@ -88,6 +88,14 @@ export interface SkillCheckModifierContext {
    * Absent is `engine-legacy`: the arithmetic this service has always done.
    */
   ruleset?: SkillCheckRulesetContext;
+  /**
+   * Every party member's sheet, present only when the chat's Party Mode setting
+   * is on. When set, a check resolves against whichever candidate here (the
+   * player included) has the best total for the requested skill, rather than
+   * always the player's own sheet. Absent entirely when Party Mode is off, so
+   * that behavior is unchanged byte-for-byte from before this field existed.
+   */
+  partyCandidates?: Array<{ sheetAttributes: Partial<RPGAttributes>; skills: Record<string, unknown> | null }>;
 }
 
 export interface SkillCheckRulesetContext {
@@ -164,6 +172,46 @@ function parseChatMetadata(raw: unknown, chatId: string): Record<string, unknown
 
 function readTrimmedString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
+}
+
+/** A sheet's `LEVEL` attribute, or 1 when the sheet doesn't carry one. */
+function findLevelFromAttributes(attrs: ReadonlyArray<{ name: string; value: number }> | undefined): number {
+  const levelAttr = attrs?.find((a: any) => typeof a?.name === "string" && a.name.trim().toUpperCase() === "LEVEL");
+  return levelAttr && Number.isFinite(Number(levelAttr.value)) ? Number(levelAttr.value) : 1;
+}
+
+/**
+ * Read a `Proficiencies: Skill, Skill (Expertise), ...` line out of free-form
+ * sheet text (a persona's `description`, or a party card's own `description`)
+ * and turn it into a flat skill → bonus map.
+ *
+ * Shared by the player's persona-description fallback and Party Mode's
+ * per-card lookup, so the two never drift on what counts as a valid line or
+ * how expertise is written.
+ */
+function deriveProficiencySkillMap(descriptionText: string | undefined, level: number): Record<string, number> | null {
+  if (!descriptionText) return null;
+  const profMatch = /proficiencies:\s*([^\n]+)/i.exec(descriptionText);
+  const profListText = profMatch?.[1];
+  if (!profListText) return null;
+
+  const profBonus = Math.floor((Math.max(1, level) - 1) / 4) + 2;
+  const skillMap: Record<string, number> = {};
+  for (const part of profListText.split(/[,;]/)) {
+    // An "(Expertise)" annotation doubles this entry's bonus before the
+    // parenthetical is stripped for the name lookup below.
+    const hasExpertise = /\(\s*expertise\s*\)/i.test(part);
+    const bonus = hasExpertise ? profBonus * 2 : profBonus;
+    const clean = part
+      .replace(/\s*\([^)]*\)/g, "")
+      .trim()
+      .toLowerCase();
+    if (clean) {
+      skillMap[clean] = bonus;
+      skillMap[clean.replace(/[^a-z0-9]+/g, "_")] = bonus;
+    }
+  }
+  return skillMap;
 }
 
 /**
@@ -292,8 +340,74 @@ export async function loadSkillCheckModifierContext(
   if (attributes) return { skills, attributes, sheetAttributes: {} };
   const playerCard = await findPlayerCharacterCard(db, cards, chat?.personaId, meta, chatId);
   const rpgStats = playerCard?.rpgStats as { attributes?: Array<{ name: string; value: number }> } | undefined;
+  let rawSheetAttributes = rpgStats?.attributes;
+  let resolvedSkills: Record<string, unknown> | null = skills;
 
-  return { skills, attributes: null, sheetAttributes: mapSheetAttributesToRPG(rpgStats?.attributes) };
+  // Fallback to active persona's personaStats.rpgStats and proficiencies when character cards lack stats (e.g. Game Mode)
+  const setupConfig =
+    meta.gameSetupConfig && typeof meta.gameSetupConfig === "object" && !Array.isArray(meta.gameSetupConfig)
+      ? (meta.gameSetupConfig as Record<string, unknown>)
+      : null;
+  const personaId = readTrimmedString(chat?.personaId) || readTrimmedString(setupConfig?.personaId);
+  if (personaId) {
+    try {
+      const persona = await createCharactersStorage(db).getPersona(personaId);
+      if (persona) {
+        if (!rawSheetAttributes || rawSheetAttributes.length === 0) {
+          const pStats =
+            typeof persona.personaStats === "string"
+              ? JSON.parse(persona.personaStats)
+              : (persona.personaStats as Record<string, unknown> | undefined);
+          if (Array.isArray(pStats?.rpgStats?.attributes)) {
+            rawSheetAttributes = pStats.rpgStats.attributes;
+          }
+        }
+        if (!resolvedSkills && persona.description) {
+          resolvedSkills = deriveProficiencySkillMap(persona.description, findLevelFromAttributes(rawSheetAttributes));
+        }
+      }
+    } catch (err) {
+      logger.warn(err, "[game/skill-check] Could not read persona rpgStats for chat %s", chatId);
+    }
+  }
+
+  const sheetAttributes = mapSheetAttributesToRPG(rawSheetAttributes);
+
+  let partyCandidates: SkillCheckModifierContext["partyCandidates"];
+  if (setupConfig?.partyModeSkillChecks === true && cards.length > 0) {
+    partyCandidates = [
+      { sheetAttributes, skills: resolvedSkills },
+      ...cards.map((card) => {
+        const cardRpgStats = card.rpgStats as { attributes?: Array<{ name: string; value: number }> } | undefined;
+        const cardAttributes = cardRpgStats?.attributes;
+        return {
+          sheetAttributes: mapSheetAttributesToRPG(cardAttributes),
+          skills: deriveProficiencySkillMap(
+            readTrimmedString(card.description),
+            findLevelFromAttributes(cardAttributes),
+          ),
+        };
+      }),
+    ];
+  }
+
+  return { skills: resolvedSkills, attributes: null, sheetAttributes, ...(partyCandidates ? { partyCandidates } : {}) };
+}
+
+/** A candidate's flat skill bonus + ability modifier for one requested skill. */
+function candidateSkillTotal(
+  candidate: { sheetAttributes: Partial<RPGAttributes>; skills: Record<string, unknown> | null },
+  attr: ReturnType<typeof getGoverningAttribute>,
+  rawSkillName: string,
+  rawKey: string,
+  normalizedKey: string,
+): { skillMod: number; attrMod: number } {
+  const rawSkillMod = candidate.skills
+    ? (candidate.skills[rawSkillName] ?? candidate.skills[rawKey] ?? candidate.skills[normalizedKey])
+    : undefined;
+  const skillMod = Number.isFinite(Number(rawSkillMod)) ? Number(rawSkillMod) : 0;
+  const attrScore = readContextAttributeScore({ attributes: null, sheetAttributes: candidate.sheetAttributes }, attr);
+  return { skillMod, attrMod: attrScore != null ? attributeModifier(attrScore) : 0 };
 }
 
 /** Evaluate every party card's ruleset sheet once, so all the checks in a turn see one sheet. */
@@ -744,18 +858,34 @@ export function resolveSkillCheckWithContext(
   onSpend?: (key: string, live: RulesetLiveState) => void,
 ): SkillCheckResult {
   if (context.ruleset) return resolveRulesetSkillCheck(context.ruleset, request, rollD20, onSpend);
-  const skills = context.skills;
-  const rawSkillMod = skills ? (skills[request.skill] ?? skills[request.skill.toLowerCase()]) : undefined;
-  const skillMod = Number.isFinite(Number(rawSkillMod)) ? Number(rawSkillMod) : 0;
-
+  const rawKey = request.skill.trim().toLowerCase();
+  const normalizedKey = rawKey.replace(/[^a-z0-9]+/g, "_");
   const attr = getGoverningAttribute(request.skill);
-  const attrScore = readContextAttributeScore(context, attr);
+
+  let skillMod: number;
+  let attrMod: number;
+  if (context.partyCandidates?.length) {
+    // Party Mode: the best TOTAL for this skill wins, so the winning party
+    // member's own ability score and own proficiency both apply together —
+    // never one member's skill spliced onto another's ability score.
+    const best = context.partyCandidates
+      .map((candidate) => candidateSkillTotal(candidate, attr, request.skill, rawKey, normalizedKey))
+      .reduce((a, b) => (a.skillMod + a.attrMod >= b.skillMod + b.attrMod ? a : b));
+    skillMod = best.skillMod;
+    attrMod = best.attrMod;
+  } else {
+    const skills = context.skills;
+    const rawSkillMod = skills ? (skills[request.skill] ?? skills[rawKey] ?? skills[normalizedKey]) : undefined;
+    skillMod = Number.isFinite(Number(rawSkillMod)) ? Number(rawSkillMod) : 0;
+    const attrScore = readContextAttributeScore(context, attr);
+    attrMod = attrScore != null ? attributeModifier(attrScore) : 0;
+  }
 
   return resolveSkillCheck({
     skill: request.skill,
     dc: request.dc,
     skillModifier: skillMod,
-    attributeModifier: attrScore != null ? attributeModifier(attrScore) : 0,
+    attributeModifier: attrMod,
     advantage: request.advantage,
     disadvantage: request.disadvantage,
     preRolledD20: request.preRolledD20,

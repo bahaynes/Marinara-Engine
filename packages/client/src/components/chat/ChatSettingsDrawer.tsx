@@ -6,6 +6,7 @@ import { useQuery, useQueryClient, useQueries } from "@tanstack/react-query";
 import { useTranslation, useTranslation as useUiTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { RoleplayCommandsSettings } from "./RoleplayCommandsSettings";
+import { GameSkillSystemsSettings } from "./GameSkillSystemsSettings";
 import {
   X,
   Users,
@@ -7320,6 +7321,7 @@ export function ChatSettingsDrawer({
               count={isGame ? gameAgentFeatureCount : visibleActiveAgentIds.length}
               help={localizeUi("ui.chat.chatsettingsdrawer.whenEnabledAiAgentsRunAutomaticallyDuringGenerationTo")}
             >
+              {(isGame || isRoleplayMode) && <GameSkillSystemsSettings chat={chat} />}
               {isRoleplayMode && (
                 <RoleplayCommandsSettings
                   chat={chat}
