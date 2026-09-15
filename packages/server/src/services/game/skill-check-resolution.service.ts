@@ -186,8 +186,58 @@ export async function loadSkillCheckModifierContext(db: DB, chatId: string): Pro
     : [];
   const playerCard = await findPlayerCharacterCard(db, cards, chat?.personaId, meta, chatId);
   const rpgStats = playerCard?.rpgStats as { attributes?: Array<{ name: string; value: number }> } | undefined;
+  let rawSheetAttributes = rpgStats?.attributes;
+  let resolvedSkills: Record<string, unknown> | null = skills;
 
-  return { skills, attributes: null, sheetAttributes: mapSheetAttributesToRPG(rpgStats?.attributes) };
+  // Fallback to active persona's personaStats.rpgStats and proficiencies when character cards lack stats (e.g. Game Mode)
+  const setupConfig =
+    meta.gameSetupConfig && typeof meta.gameSetupConfig === "object" && !Array.isArray(meta.gameSetupConfig)
+      ? (meta.gameSetupConfig as Record<string, unknown>)
+      : null;
+  const personaId = readTrimmedString(chat?.personaId) || readTrimmedString(setupConfig?.personaId);
+  if (personaId) {
+    try {
+      const persona = await createCharactersStorage(db).getPersona(personaId);
+      if (persona) {
+        if (!rawSheetAttributes || rawSheetAttributes.length === 0) {
+          const pStats =
+            typeof persona.personaStats === "string"
+              ? JSON.parse(persona.personaStats)
+              : (persona.personaStats as Record<string, unknown> | undefined);
+          if (Array.isArray(pStats?.rpgStats?.attributes)) {
+            rawSheetAttributes = pStats.rpgStats.attributes;
+          }
+        }
+        if (!resolvedSkills && persona.description) {
+          const profMatch = /proficiencies:\s*([^\n]+)/i.exec(persona.description);
+          const profListText = profMatch?.[1];
+          if (profListText) {
+            const levelAttr = rawSheetAttributes?.find(
+              (a: any) => typeof a?.name === "string" && a.name.trim().toUpperCase() === "LEVEL",
+            );
+            const level = levelAttr && Number.isFinite(Number(levelAttr.value)) ? Number(levelAttr.value) : 1;
+            const profBonus = Math.floor((Math.max(1, level) - 1) / 4) + 2;
+            const skillMap: Record<string, number> = {};
+            for (const part of profListText.split(/[,;]/)) {
+              const clean = part
+                .replace(/\s*\([^)]*\)/g, "")
+                .trim()
+                .toLowerCase();
+              if (clean) {
+                skillMap[clean] = profBonus;
+                skillMap[clean.replace(/[^a-z0-9]+/g, "_")] = profBonus;
+              }
+            }
+            resolvedSkills = skillMap;
+          }
+        }
+      }
+    } catch (err) {
+      logger.warn(err, "[game/skill-check] Could not read persona rpgStats for chat %s", chatId);
+    }
+  }
+
+  return { skills: resolvedSkills, attributes: null, sheetAttributes: mapSheetAttributesToRPG(rawSheetAttributes) };
 }
 
 /** Roll one check against an already-loaded chat context. */
@@ -197,7 +247,9 @@ export function resolveSkillCheckWithContext(
   rollD20?: () => number,
 ): SkillCheckResult {
   const skills = context.skills;
-  const rawSkillMod = skills ? (skills[request.skill] ?? skills[request.skill.toLowerCase()]) : undefined;
+  const rawKey = request.skill.trim().toLowerCase();
+  const normalizedKey = rawKey.replace(/[^a-z0-9]+/g, "_");
+  const rawSkillMod = skills ? (skills[request.skill] ?? skills[rawKey] ?? skills[normalizedKey]) : undefined;
   const skillMod = Number.isFinite(Number(rawSkillMod)) ? Number(rawSkillMod) : 0;
 
   const attr = getGoverningAttribute(request.skill);

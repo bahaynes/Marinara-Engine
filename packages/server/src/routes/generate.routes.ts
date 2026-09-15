@@ -593,7 +593,14 @@ import {
   withActiveGameMapMeta,
 } from "../services/game/map-position.service.js";
 import { applyAllSegmentEdits } from "../services/game/segment-edits.js";
-import type { CharacterData, GameMap, GameNpc, Lorebook, LorebookEntry } from "@marinara-engine/shared";
+import {
+  getActiveGameSkills,
+  type CharacterData,
+  type GameMap,
+  type GameNpc,
+  type Lorebook,
+  type LorebookEntry,
+} from "@marinara-engine/shared";
 import {
   buildConversationProfileBlocks,
   readCharacterConvoFields,
@@ -4129,6 +4136,17 @@ export async function generateRoutes(app: FastifyInstance) {
               dicePoolMode: gameDicePoolTurn,
               dicePoolBlock,
               rollDiceToolAttached,
+              activeSkills: getActiveGameSkills({
+                enabledSystemIds: Array.isArray(chatMeta.gameSkillSystems)
+                  ? (chatMeta.gameSkillSystems as string[])
+                  : null,
+                disabledSkillIds: Array.isArray(chatMeta.gameDisabledSkills)
+                  ? (chatMeta.gameDisabledSkills as string[])
+                  : null,
+                combatStyle: (chatMeta.combatStyle as string | null) ?? null,
+                genre: gmCtx.genre,
+                setting: gmCtx.setting,
+              }),
               // A package that brought its own inventory takes the built-in one out of the prompt.
               experienceProvidedSystems: capabilityPromptContext.provides,
               // A package that declares GM verbs gets one COMMANDS line each. No package declares a
