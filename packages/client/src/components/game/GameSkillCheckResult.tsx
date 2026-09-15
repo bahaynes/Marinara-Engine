@@ -9,9 +9,20 @@ import { AnimatedSkillCheckResult } from "../dice/AnimatedSkillCheckResult";
 interface GameSkillCheckResultProps {
   result: SkillCheckResult;
   onDismiss: () => void;
+  canReroll?: boolean;
+  inspirationCount?: number;
+  onReroll?: () => void;
+  isRerolling?: boolean;
 }
 
-export function GameSkillCheckResult({ result, onDismiss }: GameSkillCheckResultProps) {
+export function GameSkillCheckResult({
+  result,
+  onDismiss,
+  canReroll,
+  inspirationCount,
+  onReroll,
+  isRerolling,
+}: GameSkillCheckResultProps) {
   const [animate, setAnimate] = useState(false);
 
   useEffect(() => {
@@ -29,7 +40,16 @@ export function GameSkillCheckResult({ result, onDismiss }: GameSkillCheckResult
         animate ? "translate-y-0 opacity-100" : "translate-y-4 opacity-0",
       )}
     >
-      <AnimatedSkillCheckResult result={result} animate onDismiss={onDismiss} className="skill-check-roll--game" />
+      <AnimatedSkillCheckResult
+        result={result}
+        animate
+        onDismiss={onDismiss}
+        className="skill-check-roll--game"
+        canReroll={canReroll}
+        inspirationCount={inspirationCount}
+        onReroll={onReroll}
+        isRerolling={isRerolling}
+      />
     </div>
   );
 }
