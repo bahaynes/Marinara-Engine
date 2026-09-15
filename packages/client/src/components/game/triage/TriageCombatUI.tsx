@@ -53,7 +53,6 @@ const CATEGORY_ICON: Record<TriageActionCategory, typeof Wind> = {
 const SPEED_LABEL: Record<TriageActionDef["speed"], string> = {
   instant: "Instant",
   bedside: "1 round",
-  formal: "2-3 rounds",
 };
 
 function vitalTone(value: number, low: number, high: number): string {
@@ -579,6 +578,11 @@ export function TriageCombatUI({
             {state.debrief?.label ?? state.outcome}
           </h2>
           {state.debrief && <p className="max-w-xs text-sm text-white/70">{state.debrief.detail}</p>}
+          {state.debrief?.recommendedWorkup && (
+            <p className="max-w-xs text-xs italic text-white/50">
+              {localizeUi("ui.game.triagecombatui.stillToCome")} {state.debrief.recommendedWorkup}
+            </p>
+          )}
           <button
             type="button"
             onClick={onContinue}

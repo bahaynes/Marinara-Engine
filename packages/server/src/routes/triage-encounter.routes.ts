@@ -137,9 +137,12 @@ function buildTriageInitPrompt(
   chatHistory: ChatMessage[],
   flavor: string,
   recentPresentations: { patientName: string; flavor: string }[],
+  patientHint?: string,
 ): ChatMessage[] {
   const msgs: ChatMessage[] = [];
-  const differentialList = DIFFERENTIAL_CATALOG.map((d) => `"${d.id}" (${d.name})`).join(", ");
+  const differentialList = DIFFERENTIAL_CATALOG.map((d) => `"${d.id}" (${d.name}${d.hint ? `: ${d.hint}` : ""})`).join(
+    ", ",
+  );
   const teamLine = partyNames.length > 1 ? partyNames.join(", ") : personaName;
 
   let system = `You are the game master for an ATLS-style ER trauma-triage mini-game (in the spirit of a medical drama, not fantasy combat). Your ONLY job here is to invent the CASE for this encounter — the mechanics (available interventions, AP costs, vitals math) are handled entirely by a fixed game engine, not by you.\n\n`;
@@ -152,9 +155,14 @@ function buildTriageInitPrompt(
     msgs.push({ role: m.role as "user" | "assistant", content: m.content });
   }
 
-  let inst = `</history>\n\nFirst, check the chat history above: does it already show a SPECIFIC patient currently being evaluated or treated — with an apparent diagnosis stated or clearly implied by the scene (their age, what happened to them, symptoms already discussed)?\n\n`;
-  inst += `- If YES: you MUST continue with that exact same patient. Use their real name/identity and match the age, gender, and situation already established in the history — do not invent a different patient or change their demographics. Set "correctDifferentialId" to whichever id from the closed list below best matches the condition already implied by the scene, even if it's not a dramatic or unusual pick. Ignore the scenario flavor below entirely in this case.\n`;
-  inst += `- If NO specific patient is already in progress: invent a new one. The mechanism/setting for this new case is: ${flavor}. Build the presentation around this setting.\n\n`;
+  let inst: string;
+  if (patientHint) {
+    inst = `</history>\n\nThe patient for this case is already decided: "${patientHint}". This is authoritative — it came directly from the scene the GM just narrated. You MUST continue with exactly this patient: find their established age, gender, mechanism of injury, and symptoms in the chat history above and build the case around them. Do NOT invent a different patient or substitute a more recently mentioned one, even if another patient also appears in the history — "${patientHint}" is the one being treated right now. Set "correctDifferentialId" to whichever id from the closed list below best matches the condition already implied by the scene, even if it's not a dramatic or unusual pick. Ignore the scenario flavor below entirely.\n\n`;
+  } else {
+    inst = `</history>\n\nFirst, check the chat history above: does it already show a SPECIFIC patient currently being evaluated or treated — with an apparent diagnosis stated or clearly implied by the scene (their age, what happened to them, symptoms already discussed)?\n\n`;
+    inst += `- If YES: you MUST continue with that exact same patient. Use their real name/identity and match the age, gender, and situation already established in the history — do not invent a different patient or change their demographics. Set "correctDifferentialId" to whichever id from the closed list below best matches the condition already implied by the scene, even if it's not a dramatic or unusual pick. Ignore the scenario flavor below entirely in this case.\n`;
+    inst += `- If NO specific patient is already in progress: invent a new one. The mechanism/setting for this new case is: ${flavor}. Build the presentation around this setting.\n\n`;
+  }
   if (recentPresentations.length > 0) {
     const recentList = recentPresentations.map((r) => `"${r.patientName}" (${r.flavor})`).join(", ");
     inst += `Recent cases in this chat, avoid repeating their setup (only relevant if you're inventing a new patient): ${recentList}.\n\n`;
@@ -170,6 +178,7 @@ function buildTriageInitPrompt(
   inst += `}\n\n`;
   inst += `IMPORTANT NOTES:\n`;
   inst += `- correctDifferentialId and redHerringDifferentialIds MUST use only the exact ids from the closed list above — never invent a new diagnosis id.\n`;
+  inst += `- Use the hint after each id to match the ACTUAL mechanism/complaint (car crash, crush injury, heart attack, infected wound, etc.) to the closest real diagnosis — don't default to a dramatic pick like tension pneumothorax or hemorrhagic shock just because it's familiar; a "boring" but correct match is always better than a dramatic wrong one.\n`;
   inst += `- startingVitals: map (mean arterial pressure, roughly 40-140), spo2 (0-100), gcs (3-15), crash (a 0-100 decompensation meter — pick something tense but survivable, roughly 30-55, never above 65: this should be a hard-won save, not an unwinnable case).\n`;
   inst += `- Make the two red herrings genuinely plausible given the presentation, not obviously wrong.\n`;
   inst += `- clues: short, in-scene findings a clinician would actually observe or read off a monitor/study — not meta-gamey hints.\n`;
@@ -191,9 +200,15 @@ function hydrateCaseSeed(raw: unknown): TriageCaseSeed {
   const validIds = new Set(DIFFERENTIAL_CATALOG.map((d) => d.id));
   const fallbackId = DIFFERENTIAL_CATALOG[0]!.id;
 
-  const correctDifferentialId = validIds.has(obj.correctDifferentialId as string)
-    ? (obj.correctDifferentialId as string)
-    : fallbackId;
+  const requestedDifferentialId = obj.correctDifferentialId as string | undefined;
+  const correctDifferentialId = validIds.has(requestedDifferentialId as string) ? requestedDifferentialId! : fallbackId;
+  if (correctDifferentialId === fallbackId && requestedDifferentialId !== fallbackId) {
+    logger.warn(
+      "[triage-init] LLM returned unrecognized correctDifferentialId %s — falling back to %s",
+      requestedDifferentialId,
+      fallbackId,
+    );
+  }
 
   const rawHerrings = Array.isArray(obj.redHerringDifferentialIds) ? obj.redHerringDifferentialIds : [];
   const herrings = rawHerrings
@@ -332,7 +347,7 @@ export async function triageEncounterRoutes(app: FastifyInstance) {
   const gameState = createGameStateStorage(app.db);
 
   app.post<{ Body: TriageInitRequest }>("/triage-init", async (req, reply) => {
-    const { chatId, connectionId, recentPresentations } = req.body;
+    const { chatId, connectionId, recentPresentations, patientHint } = req.body;
     if (!chatId) return reply.status(400).send({ error: "Missing required field: chatId" });
 
     try {
@@ -382,6 +397,9 @@ export async function triageEncounterRoutes(app: FastifyInstance) {
         content: m.content as string,
       }));
 
+      if (!patientHint) {
+        logger.warn("[triage-init] No patientHint from GM tag for chat %s — falling back to prose inference", chatId);
+      }
       const flavor = pickScenarioFlavor();
       const prompt = buildTriageInitPrompt(
         personaName,
@@ -390,6 +408,7 @@ export async function triageEncounterRoutes(app: FastifyInstance) {
         recentMsgs,
         flavor,
         recentPresentations ?? [],
+        patientHint,
       );
       const result = await provider.chatComplete(prompt, {
         model: conn.model,

@@ -40,8 +40,13 @@ export interface UseTriageCombatIntegrationArgs {
 export interface UseTriageCombatIntegrationResult {
   /** Feed into the same render gate the other combat UIs use (`combatUiActive || triageIntegration.active`). */
   active: boolean;
-  /** Call from the existing combat-start seam instead of the classic `/encounter/init` path. */
-  start: (messageId: string) => void;
+  /**
+   * Call from the existing combat-start seam instead of the classic `/encounter/init` path.
+   * `patientHint`, when the GM named a patient directly in the triggering `[state: combat patient="Name"]`
+   * tag, is forwarded to `/triage-init` as an authoritative override so the case-generation call
+   * continues that exact patient instead of re-guessing "who's the patient" from raw chat history.
+   */
+  start: (messageId: string, patientHint?: string) => void;
   /** Mount when `active` is true. */
   render: () => ReactElement | null;
   /**
@@ -90,7 +95,7 @@ export function useTriageCombatIntegration(args: UseTriageCombatIntegrationArgs)
   );
 
   const start = useCallback(
-    (messageId: string) => {
+    (messageId: string, patientHint?: string) => {
       if (!chatId || pending || localState) return;
       if (startedForMessageRef.current === messageId) return;
       startedForMessageRef.current = messageId;
@@ -100,7 +105,12 @@ export function useTriageCombatIntegration(args: UseTriageCombatIntegrationArgs)
         -HISTORY_LIMIT,
       );
       api
-        .post<TriageInitResponse>("/encounter/triage-init", { chatId, connectionId: null, recentPresentations })
+        .post<TriageInitResponse>("/encounter/triage-init", {
+          chatId,
+          connectionId: null,
+          recentPresentations,
+          patientHint: patientHint || undefined,
+        })
         .then((response) => {
           const seed = Math.floor(Math.random() * 0xffffffff);
           const state = createTriageState(response.case, seed, {

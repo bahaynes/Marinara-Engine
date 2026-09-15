@@ -5,6 +5,14 @@
 // when the player commits an action or ends the round — never live/real-time).
 // Deliberately NOT the tactical grid engine: no map, no movement, no positions.
 //
+// Scoped to the acute stabilization window only — the "got to save someone right
+// now" moment, not the whole case workup. Anything that takes real wait time in
+// reality (formal labs, imaging) doesn't belong in a live turn loop measured in
+// single-digit rounds; that's the kind of "results come back next scene" beat
+// narrative prose already handles well (see TriageDebrief.recommendedWorkup).
+// That's why every action here is either instant or a short (1-round) bedside
+// order — there is no slower "formal" tier.
+//
 // Split of authorship: the ACTION_CATALOG and DIFFERENTIAL_CATALOG (catalog.ts)
 // are fixed, hand-authored content — the same real-world toolkit and closed
 // list of possible diagnoses regardless of patient. The LLM invents only the
@@ -13,8 +21,8 @@
 
 export type TriageActionCategory = "airway" | "breathing" | "circulation" | "drugs" | "diagnostics";
 
-/** Latency tier: instant effects land immediately; bedside/formal orders resolve at a future round-end. */
-export type TriageActionSpeed = "instant" | "bedside" | "formal";
+/** instant effects land immediately; bedside orders resolve one round later. */
+export type TriageActionSpeed = "instant" | "bedside";
 
 export interface TriageActionDef {
   id: string;
@@ -23,26 +31,32 @@ export interface TriageActionDef {
   speed: TriageActionSpeed;
   /** Staff bandwidth cost, out of the 3 AP granted per round. */
   apCost: number;
-  /** Rounds until a bedside/formal order's result lands. 0 for instant actions. */
+  /** Rounds until a bedside order's result lands. 0 for instant actions. */
   latencyRounds: number;
   description: string;
   /** Set on definitive-treatment actions: the ONE differential this action treats. */
   treatsDifferentialId?: string;
   /** Set on diagnostic actions: which differentials (from the case's shown 3) this action can reveal. */
   diagnosesDifferentialIds?: string[];
-  /** CT pan-scan style: a resolved diagnostic order that CONFIRMS (not just "suspects") the true differential. */
-  confirmsOnResolve?: boolean;
   /** Generic supportive vital nudge applied on a successful instant action (not tied to a differential). */
   vitalEffects?: Partial<Record<"map" | "spo2" | "gcs", number>>;
   /** Crash-meter delta applied on success (negative = improves). Definitive treatments use this for the big swing. */
   crashDelta?: number;
-  /** CT pan-scan / any order that should only be ordered once the patient is reasonably stable. Advisory only in v1 (no forced block, just surfaced in the UI). */
-  requiresStablePatient?: boolean;
 }
 
 export interface TriageDifferentialDef {
   id: string;
   name: string;
+  /** GM-facing matching aid only (never shown to the player) — helps the case-generation prompt map a
+   *  presenting mechanism/complaint onto the correct closed-list id instead of guessing. */
+  hint?: string;
+  /**
+   * Player- and GM-facing follow-up workup for this diagnosis (confirmatory imaging, formal labs, the
+   * relevant specialist) — the mini-game only plays out the acute stabilization; this is the "handed
+   * back to the narrative LLM" tail the real case would still need, surfaced via TriageDebrief so the
+   * GM can carry it into later scenes instead of the mini-game trying to simulate real wait times.
+   */
+  recommendedWorkup?: string;
 }
 
 export type TriageDifferentialStatus = "unknown" | "suspected" | "ruled_out" | "confirmed";
@@ -97,6 +111,8 @@ export type TriageOutcome = "victory" | "defeat" | "flee";
 export interface TriageDebrief {
   label: string;
   detail: string;
+  /** Follow-up workup to hand to the GM for narration in later scenes — see TriageDifferentialDef.recommendedWorkup. */
+  recommendedWorkup?: string;
 }
 
 export interface TriageState {
@@ -147,6 +163,13 @@ export interface TriageInitRequest {
   debugMode?: boolean;
   /** Last few cases from this chat's triage history (client-persisted), used to steer the GM away from repeats. */
   recentPresentations?: { patientName: string; flavor: string }[];
+  /**
+   * Patient name the GM named directly in the triggering `[state: combat patient="Name"]` tag, if any.
+   * When present, this is authoritative — the case-generation prompt is told to continue this exact
+   * patient rather than re-inferring "who's the patient" from raw chat history, which is what let a
+   * more recently introduced patient silently displace one already being treated.
+   */
+  patientHint?: string;
 }
 
 /** Server response for POST /api/encounter/triage-init. */
