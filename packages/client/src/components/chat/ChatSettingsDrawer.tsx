@@ -26,6 +26,7 @@ import { listCombatStyles, resolveCombatStyle } from "../game/combat-styles";
 import { AgentActivitySection } from "../agents/AgentActivitySection";
 import { withAgentActivityStatus } from "../agents/AgentActivityIcon";
 import { useKeepFocusedFieldAboveKeyboard } from "../../hooks/use-keep-focused-field-above-keyboard";
+import { GameSkillSystemsSettings } from "./GameSkillSystemsSettings";
 import {
   X,
   Users,
@@ -8454,6 +8455,7 @@ export function ChatSettingsDrawer({
               count={isGame ? gameAgentFeatureCount : visibleActiveAgentIds.length}
               help={localizeUi("ui.chat.chatsettingsdrawer.whenEnabledAiAgentsRunAutomaticallyDuringGenerationTo")}
             >
+              {(isGame || isRoleplayMode) && <GameSkillSystemsSettings chat={chat} />}
               {isRoleplayMode && (
                 <RoleplayCommandsSettings
                   chat={chat}
