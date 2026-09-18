@@ -2055,10 +2055,14 @@ export function createAdvancedMemoryService(db: DB) {
     if (!parts.length) return null;
     if (tokenSize(parts.join("\n\n")) <= contentBudget) candidate.content = parts.join("\n\n");
     else {
-      if (options.readOnly)
-        throw new Error(
-          "Advanced Memory needs preparation before this prompt can fit; generate or resume preparation in Chat Settings",
-        );
+      // A preview can't call the summarizer (that's a real generation side effect), so it can't
+      // produce this section's actual text or size. Say so explicitly rather than failing the
+      // whole preview - sending a real message hits the branch below and synthesizes it for real.
+      if (options.readOnly) {
+        candidate.content =
+          "[Continuity summary not yet generated - it will be created automatically on your next message. This preview's token count does not include it.]";
+        return candidate;
+      }
       await progress(
         ctx,
         { id: newId(), blocking: true, status: "running", stage: "compacting", completed: 0, total: 1, error: null },
