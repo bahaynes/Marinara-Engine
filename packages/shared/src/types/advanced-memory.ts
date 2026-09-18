@@ -19,6 +19,8 @@ export const advancedMemorySettingsSchema = z.object({
   decisionEnabled: z.boolean().default(false),
   decisionConnectionId: z.string().nullable().default(null),
   initialProcessingModel: z.enum(["main", "helper"]).default("helper"),
+  /** custom-mods: thinking for scene summaries. Off is the default; audience checks always stay off. */
+  summaryReasoningEffort: z.enum(["none", "low", "medium", "high"]).default("none"),
   /** Cadence and recent-message window for standalone post-generation scene checks. */
   sceneCheckInterval: z.number().int().min(1).max(100).default(5),
   retrieveMaxScenes: z.number().int().min(0).max(50).default(3),
@@ -112,6 +114,19 @@ export interface AdvancedMemoryFixResult {
   reviewSceneIds: string[];
 }
 
+/**
+ * An explicit elapsed-time statement quoted from the scene text (e.g. "three months ago"),
+ * anchored to that scene's own timeframe. `delta` is never computed into an absolute date -
+ * story calendars aren't necessarily real ones, so only the model's quoted magnitude/direction
+ * against its scene anchor is stored; any ordering math happens relative to that anchor.
+ */
+export interface AdvancedMemoryTimelineEvent {
+  quote: string;
+  description: string;
+  delta: { unit: "days" | "weeks" | "months" | "years"; amount: number; direction: "before" | "after" };
+  anchor: string | null;
+}
+
 export interface AdvancedMemoryRecord {
   id: string;
   chatId: string;
@@ -130,6 +145,8 @@ export interface AdvancedMemoryRecord {
   content: string;
   title: string;
   timeline: string | null;
+  /** Explicit elapsed-time statements found while summarizing this scene; empty is the common case. */
+  timelineEvents: AdvancedMemoryTimelineEvent[];
   enabled: boolean;
   manualOverride: boolean;
   sourceFingerprint: string;

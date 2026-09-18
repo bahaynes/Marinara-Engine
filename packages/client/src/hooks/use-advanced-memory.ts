@@ -160,10 +160,16 @@ export function useAdvancedMemoryStatus(chatId: string, enabled = true) {
   const jobId = query.data?.job.id;
   const jobStatus = query.data?.job.status;
   const jobError = query.data?.job.error;
+  const memoryEnabled = query.data?.settings.enabled === true;
   useEffect(() => {
+    // A failure left behind by a job before memory was switched off is not worth a toast.
     if (enabled && jobStatus)
-      notifyAdvancedMemoryFailure(chatId, { id: jobId, status: jobStatus, error: jobError ?? null });
-  }, [chatId, enabled, jobId, jobStatus, jobError]);
+      notifyAdvancedMemoryFailure(chatId, {
+        id: jobId,
+        status: memoryEnabled ? jobStatus : "idle",
+        error: jobError ?? null,
+      });
+  }, [chatId, enabled, memoryEnabled, jobId, jobStatus, jobError]);
   useEffect(() => {
     if (jobId && jobStatus === "ready") void qc.invalidateQueries({ queryKey: chatKeys.detail(chatId) });
   }, [chatId, jobId, jobStatus, qc]);

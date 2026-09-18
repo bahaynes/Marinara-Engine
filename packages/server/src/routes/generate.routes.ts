@@ -126,6 +126,7 @@ import {
 } from "../services/advanced-memory.js";
 import {
   prepareAdvancedMemoryContext,
+  shrinkToolResultsToFit,
   type AdvancedMemorySnapshot,
 } from "../services/generation/advanced-memory-context.js";
 import { measureContextBudget } from "../services/llm/base-provider.js";
@@ -133,6 +134,7 @@ import {
   resolveAdvancedMemoryPrompt,
   createAdvancedMemoryPlacement,
   ADVANCED_MEMORY_MARKER_TYPES,
+  insertAdvancedMemoryFallbacks,
   type AdvancedMemoryPlacement,
 } from "../services/prompt/advanced-memory-prompt.js";
 import { registerParameterPreviewRoute } from "./generate/parameter-preview-route.js";
@@ -394,6 +396,7 @@ import {
   appendRoleplayPromptTail,
   appendRoleplayWhispers,
   buildRoleplayCommandsReminder,
+  latestRoleplaySceneTitle,
   buildRoleplayPersonalContext,
   parseRoleplayCommands,
   parseRoleplayUserCommands,
@@ -5349,15 +5352,9 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
         // Game places its memory after the history, just before the turn reminder (below), so the
         // summary and recalled scenes that change each turn never sit in front of the cached history.
         if (advancedMemoryEnabled && !presetPlacedAdvancedMemory && chatMode !== "game") {
-          const historyIndex = finalMessages.findIndex((message) => message.contextKind === "history");
-          finalMessages.splice(
-            historyIndex < 0 ? finalMessages.length : historyIndex,
-            0,
-            ...advancedMemoryPlacements.map((placement) => ({
-              role: placement.role,
-              content: placement.token,
-              contextKind: "prompt" as const,
-            })),
+          insertAdvancedMemoryFallbacks(
+            finalMessages as Parameters<typeof insertAdvancedMemoryFallbacks>[0],
+            advancedMemoryPlacements,
           );
         }
         if (chatMode === "roleplay" && !resolvedPreset && !advancedMemoryEnabled) {
@@ -6170,10 +6167,11 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
           );
           if (advancedMemoryEnabled)
             finalMessages.push(
+              // Fork: tagged like a depth-0 section so an impersonate keeps it out of the persona's earlier post.
               ...advancedMemoryPlacements.map((placement) => ({
                 role: placement.role,
                 content: placement.token,
-                contextKind: "prompt" as const,
+                contextKind: "injection" as const,
               })),
             );
           finalMessages.push({ role: "user" as const, content: formatReminder });
@@ -9501,6 +9499,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
               [
                 buildRoleplayCommandsReminder({
                   metadata: chatMeta,
+                  sceneTitle: latestRoleplaySceneTitle(roleplayTimeline),
                   privateAvailable: roleplayPrivateAvailable,
                   availableAgentIds: new Set(resolvedAgents.map((agent) => agent.type)),
                   format: wrapFormat,
@@ -9575,6 +9574,11 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
               audienceCharacterIds:
                 chatMode === "game" && !input.impersonate ? [GAME_MASTER_MEMORY_READER_ID] : audienceCharacterIds,
               audienceMode: input.impersonate ? "owner" : undefined,
+              // Fork: on unless the chat sets advancedMemoryCacheWindow: false; a lapsed cache re-cuts below the cap.
+              cacheTtlMs:
+                chatMeta.advancedMemoryCacheWindow !== false
+                  ? (conn.anthropicExtendedCacheTtl === "true" ? 60 : 5) * 60_000
+                  : undefined,
               maxContext: effectiveMaxContext ?? connectionMaxContext,
               maxTokens,
               tools: gameToolConnection ? undefined : responderToolDefs,
@@ -9623,7 +9627,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
             if (advancedMemoryEnabled) {
               if (advancedMemoryReceipt)
                 await advancedMemory.validatePrepared(input.chatId, advancedSourceMessages, advancedMemoryReceipt);
-              const messages = limitPastReasoningMetadata(candidateMessages, chatMeta);
+              let messages = limitPastReasoningMetadata(candidateMessages, chatMeta);
               maxContextForSend = followUp ? modelMaxContext : effectiveMaxContext;
               const budget = maxContextForSend
                 ? measureContextBudget(messages, {
@@ -9632,12 +9636,20 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                     tools: followUp ? followUp.tools : gameToolConnection ? undefined : responderToolDefs,
                   })
                 : undefined;
-              if (budget && !budget.fits)
-                throw new Error(
-                  followUp
-                    ? "This tool follow-up or continuation exceeds the model's context window. Reduce the tool result or reply space."
-                    : "Advanced Memory: the complete request exceeds the context cap. Reduce fixed prompt content, attachments or the reply reserve, or increase the cap.",
-                );
+              if (budget && !budget.fits) {
+                // The tool reserve covers normal rounds; an oversized result is shortened rather than
+                // trimming prepared memory.
+                const shrunk = shrinkToolResultsToFit(messages, budget.estimatedTokens - budget.inputBudget);
+                if (shrunk) {
+                  messages = shrunk;
+                } else {
+                  throw new Error(
+                    followUp
+                      ? "This tool follow-up or continuation exceeds the model's context window. Reduce the tool result or reply space."
+                      : "Advanced Memory: the complete request exceeds the context cap. Reduce fixed prompt content, attachments or the reply reserve, or increase the cap.",
+                  );
+                }
+              }
               finalPromptSent = messages;
               effectiveMaxTokensForSend = maxTokens;
               return messages;
