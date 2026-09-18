@@ -1175,6 +1175,9 @@ export function GameNarration({
   const activePanelRef = useRef<HTMLDivElement | null>(null);
   const pendingLogScrollAnchorRef = useRef<{ key: string; offsetTop: number; scrollTop: number } | null>(null);
   useEffect(() => {
+    let scrollTimer: number | null = null;
+    let scrollFrame = 0;
+    let keyboardOpen = false;
     const handleViewportChange = (event: Event) => {
       const detail = (event as CustomEvent<ChatVisualViewportChangeDetail>).detail;
       const activeElement = document.activeElement;
@@ -1183,14 +1186,39 @@ export function GameNarration({
         (!(activeElement instanceof HTMLTextAreaElement) && !(activeElement instanceof HTMLInputElement)) ||
         !activePanelRef.current?.contains(activeElement)
       ) {
+        keyboardOpen = false;
+        if (scrollTimer !== null) {
+          window.clearTimeout(scrollTimer);
+          scrollTimer = null;
+        }
+        if (scrollFrame) {
+          cancelAnimationFrame(scrollFrame);
+          scrollFrame = 0;
+        }
         return;
       }
-      requestAnimationFrame(() => {
-        activePanelRef.current?.scrollIntoView({ block: "end", behavior: "auto" });
-      });
+      // Only correct scroll once per keyboard-open transition, not on every subsequent
+      // viewport event. Re-arming this on every event while the keyboard stays open turns
+      // the correction itself into a trigger for more events (scrollIntoView perturbs the
+      // visual viewport on iOS), which is what produced the repeated scroll "seizure".
+      if (keyboardOpen) return;
+      keyboardOpen = true;
+      // ponytail: debounce activePanel scroll until the mobile keyboard animation settles.
+      if (scrollTimer !== null) window.clearTimeout(scrollTimer);
+      scrollTimer = window.setTimeout(() => {
+        scrollTimer = null;
+        scrollFrame = requestAnimationFrame(() => {
+          scrollFrame = 0;
+          activePanelRef.current?.scrollIntoView({ block: "end", behavior: "auto" });
+        });
+      }, 180);
     };
     window.addEventListener(CHAT_VISUAL_VIEWPORT_CHANGE_EVENT, handleViewportChange);
-    return () => window.removeEventListener(CHAT_VISUAL_VIEWPORT_CHANGE_EVENT, handleViewportChange);
+    return () => {
+      if (scrollTimer !== null) window.clearTimeout(scrollTimer);
+      if (scrollFrame) cancelAnimationFrame(scrollFrame);
+      window.removeEventListener(CHAT_VISUAL_VIEWPORT_CHANGE_EVENT, handleViewportChange);
+    };
   }, []);
   const pendingLogScrollTopRef = useRef<number | null>(null);
   const closeLogs = useCallback(() => {

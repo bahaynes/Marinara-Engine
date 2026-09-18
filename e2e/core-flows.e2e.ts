@@ -21396,6 +21396,120 @@ test("mobile chat composer follows the visual viewport above the software keyboa
   }
 });
 
+test("mobile keyboard viewport jitter corrects chat scroll exactly once per open", async ({ page }, testInfo) => {
+  test.skip(!testInfo.project.name.includes("mobile"), "Software-keyboard viewport behavior is mobile-only.");
+
+  // Regression coverage for the scroll "seizure": 8f86c22c1 made the keyboard-open scroll
+  // correction re-arm on every viewport sample instead of firing once per transition, and
+  // AppShell dispatched its viewport-change event on every rAF sample instead of only on an
+  // actual geometry change. Together those let the correction's own scroll perturb the visual
+  // viewport and re-trigger itself, producing repeated visible jumps instead of one settle.
+  const response = await page.request.post("/api/chats", {
+    data: { name: "Keyboard Viewport Jitter Smoke", mode: "roleplay", characterIds: [] },
+  });
+  expect(response.ok()).toBeTruthy();
+  const chat = (await response.json()) as { id: string };
+  for (let index = 0; index < 18; index += 1) {
+    const messageResponse = await page.request.post(`/api/chats/${chat.id}/messages`, {
+      data: {
+        role: index % 2 === 0 ? "user" : "assistant",
+        content: `Keyboard jitter history line ${index + 1}. ${"Keep the latest turn visible. ".repeat(3)}`,
+      },
+    });
+    expect(messageResponse.ok()).toBeTruthy();
+  }
+
+  await installMockVisualViewport(page);
+  await page.addInitScript((chatId) => {
+    localStorage.setItem("marinara-active-chat-id", chatId);
+  }, chat.id);
+  await page.addInitScript(() => {
+    const probeWindow = window as typeof window & { __mariScrollToCalls: number };
+    probeWindow.__mariScrollToCalls = 0;
+    const originalScrollTo = Element.prototype.scrollTo;
+    Element.prototype.scrollTo = function (...args: unknown[]) {
+      if (this.classList.contains("mari-messages-scroll")) probeWindow.__mariScrollToCalls += 1;
+      return (originalScrollTo as (...rest: unknown[]) => void).apply(this, args);
+    };
+  });
+
+  try {
+    await page.goto("/");
+    const composer = page.locator(".chat-input-container:visible");
+    const textarea = composer.locator("textarea:visible");
+    const transcript = page.locator(".mari-messages-scroll:visible").first();
+    await expect(transcript).toBeVisible();
+    await expect(page.getByText(/^Keyboard jitter history line 18\./)).toBeVisible();
+    await expect
+      .poll(() => transcript.evaluate((element) => element.scrollHeight - element.clientHeight))
+      .toBeGreaterThan(400);
+    await transcript.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+
+    const initialViewportHeight = await page.evaluate(() => window.innerHeight);
+    const keyboardHeight = Math.max(240, initialViewportHeight - 320);
+    await textarea.focus();
+    await page.evaluate(() => {
+      (window as typeof window & { __mariScrollToCalls: number }).__mariScrollToCalls = 0;
+    });
+
+    // Simulate the noisy real-device sequence: several closely-spaced samples (faster than the
+    // 180ms settle debounce) as the keyboard animates open, including 1px offsetTop jitter.
+    await page.evaluate(
+      async ({ height, steps }) => {
+        const setViewport = (
+          window as typeof window & {
+            __setMarinaraVisualViewport: (height: number, offsetTop: number, pageTop?: number) => void;
+          }
+        ).__setMarinaraVisualViewport;
+        for (const step of steps) {
+          setViewport(height - step.heightDelta, step.offsetTop);
+          await new Promise((resolve) => setTimeout(resolve, 30));
+        }
+      },
+      {
+        height: keyboardHeight,
+        steps: [
+          { heightDelta: 200, offsetTop: 0 },
+          { heightDelta: 120, offsetTop: 0 },
+          { heightDelta: 40, offsetTop: 0 },
+          { heightDelta: 0, offsetTop: 0 },
+          { heightDelta: 0, offsetTop: 1 },
+          { heightDelta: 0, offsetTop: 0 },
+        ],
+      },
+    );
+
+    await expect(page.locator("html")).toHaveAttribute("data-mari-software-keyboard-open", "");
+    // Let the debounced correction settle well past its 180ms window plus two animation frames.
+    await page.waitForTimeout(400);
+    await expect
+      .poll(() => page.evaluate(() => (window as typeof window & { __mariScrollToCalls: number }).__mariScrollToCalls))
+      .toBe(1);
+
+    // Additional sub-pixel jitter at essentially the same geometry must not trigger another
+    // correction — this is the AppShell dispatch-gating half of the fix.
+    await page.evaluate((height) => {
+      (
+        window as typeof window & {
+          __setMarinaraVisualViewport: (height: number, offsetTop: number) => void;
+        }
+      ).__setMarinaraVisualViewport(height, 0);
+    }, keyboardHeight);
+    await page.waitForTimeout(400);
+    await expect
+      .poll(() => page.evaluate(() => (window as typeof window & { __mariScrollToCalls: number }).__mariScrollToCalls))
+      .toBe(1);
+
+    await expect
+      .poll(() => transcript.evaluate((element) => element.scrollHeight - element.scrollTop - element.clientHeight))
+      .toBeLessThanOrEqual(2);
+  } finally {
+    await page.request.delete(`/api/chats/${chat.id}`).catch(() => undefined);
+  }
+});
+
 test("mobile Roleplay releases its inactive background after a crossfade", async ({ page }, testInfo) => {
   test.skip(!testInfo.project.name.includes("webkit"), "Decoded-background retention is covered in mobile WebKit.");
 
