@@ -250,6 +250,9 @@ export function AppShell() {
     let focusTimers: number[] = [];
     let orientationTimers: number[] = [];
     let largestViewportHeight = window.visualViewport?.height ?? window.innerHeight;
+    let lastAppliedHeight = -1;
+    let lastAppliedOffsetTop = -1;
+    let lastDispatchedKeyboardOpen: boolean | null = null;
     const supportsVirtualKeyboard = navigator.maxTouchPoints > 0 || window.matchMedia("(any-pointer: coarse)").matches;
     const isIosWebKit = isIosWebKitBrowser(navigator.userAgent, navigator.platform, navigator.maxTouchPoints);
     root.toggleAttribute("data-mari-ios-webkit", isIosWebKit);
@@ -270,10 +273,31 @@ export function AppShell() {
         const maxOffsetTop = Math.max(0, layoutViewportHeight - height);
         const visualViewportTop = Math.max(0, viewport?.offsetTop ?? 0, viewport?.pageTop ?? 0);
         const offsetTop = Math.min(maxOffsetTop, visualViewportTop);
-        root.style.setProperty("--mari-visual-viewport-height", `${Math.max(0, Math.round(height))}px`);
-        root.style.setProperty("--mari-visual-viewport-offset-top", `${Math.round(offsetTop)}px`);
+
+        const roundedHeight = Math.max(0, Math.round(height));
+        const roundedOffsetTop = Math.round(offsetTop);
+        let geometryChanged = false;
+        if (roundedHeight !== lastAppliedHeight) {
+          lastAppliedHeight = roundedHeight;
+          root.style.setProperty("--mari-visual-viewport-height", `${roundedHeight}px`);
+          geometryChanged = true;
+        }
+        // ponytail: dampen 1px sub-pixel rounding jitter on offsetTop to prevent oscillation loops
+        if (lastAppliedOffsetTop === -1 || Math.abs(roundedOffsetTop - lastAppliedOffsetTop) > 1) {
+          lastAppliedOffsetTop = roundedOffsetTop;
+          root.style.setProperty("--mari-visual-viewport-offset-top", `${roundedOffsetTop}px`);
+          geometryChanged = true;
+        }
+
         const keyboardOpen = supportsVirtualKeyboard && largestViewportHeight - height >= 80;
         root.toggleAttribute("data-mari-software-keyboard-open", keyboardOpen);
+
+        // Only dispatch when something actually moved. Dispatching on every rAF sample
+        // (even sub-threshold ones) is what let downstream scroll-correction listeners
+        // re-trigger themselves via the viewport shifts their own corrections cause —
+        // a self-sustaining feedback loop, not just a slow keyboard animation.
+        if (!geometryChanged && keyboardOpen === lastDispatchedKeyboardOpen) return;
+        lastDispatchedKeyboardOpen = keyboardOpen;
         dispatchChatVisualViewportChange({
           height,
           offsetTop,
@@ -287,6 +311,8 @@ export function AppShell() {
       updateVisualViewportGeometry();
       // Android browsers can publish the keyboard-adjusted viewport after the
       // focus event. Re-sample both the early animation and settled geometry.
+      // Safe to re-add now that the dispatch above is gated on an actual change:
+      // an early resample that finds nothing new produces no event.
       focusTimers.push(window.setTimeout(updateVisualViewportGeometry, 80));
       focusTimers.push(window.setTimeout(updateVisualViewportGeometry, 320));
     };
