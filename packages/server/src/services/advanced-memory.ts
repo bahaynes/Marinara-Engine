@@ -147,6 +147,20 @@ function object(value: unknown): Metadata {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Metadata) : {};
 }
 
+// Validity checks (recordValid/allowed/etc.) re-scan every message per record, so re-parsing
+// `extra` (observed averaging several KB, occasionally 200KB+) from scratch each time turns a
+// chat with hundreds of records into a multi-second, CPU-pinning status() call. `extra` is never
+// mutated on a loaded message object, so caching by object identity is safe for the object's
+// lifetime (a fresh context() load gets fresh message objects, so nothing goes stale).
+const messageExtraCache = new WeakMap<object, Metadata>();
+function messageExtra(message: { extra?: unknown }): Metadata {
+  const cached = messageExtraCache.get(message);
+  if (cached) return cached;
+  const parsed = object(message.extra);
+  messageExtraCache.set(message, parsed);
+  return parsed;
+}
+
 function strings(value: unknown): string[] {
   if (typeof value === "string") {
     try {
@@ -166,7 +180,7 @@ function hash(value: unknown): string {
 export function advancedMemorySourceFingerprint(messages: readonly AdvancedMemoryMessage[]): string {
   return hash(
     messages.map((message) => {
-      const extra = object(message.extra);
+      const extra = messageExtra(message);
       return [
         message.id,
         message.role,
@@ -256,7 +270,7 @@ export function selectAdvancedMemoryMessages(
 ): AdvancedMemoryMessage[] {
   let start = 0;
   for (let index = 0; index < messages.length; index++) {
-    const extra = object(messages[index]!.extra);
+    const extra = messageExtra(messages[index]!);
     if (
       (respectSharedStart && extra.isConversationStart === true) ||
       strings(extra.conversationStartForCharacterIds).some((id) => audienceCharacterIds.includes(id))
@@ -276,7 +290,7 @@ export function selectAdvancedMemoryMessages(
     }
   }
   return messages.slice(start).filter((message) => {
-    const extra = object(message.extra);
+    const extra = messageExtra(message);
     return (
       extra.hiddenFromAI !== true &&
       extra.commandOnly !== true &&
@@ -319,12 +333,12 @@ function missingKnowledge(ctx: Context): string[] {
         (ctx.settings.knowledgeStarts[id] === null ||
           ctx.messages.some((message) => message.id === ctx.settings.knowledgeStarts[id]))
       ) &&
-      !ctx.messages.some((message) => strings(object(message.extra).conversationStartForCharacterIds).includes(id)),
+      !ctx.messages.some((message) => strings(messageExtra(message).conversationStartForCharacterIds).includes(id)),
   );
 }
 
 function messageText(ctx: Context, message: AdvancedMemoryMessage, index: number): string {
-  const persona = object(object(message.extra).personaSnapshot);
+  const persona = object(messageExtra(message).personaSnapshot);
   const name =
     message.role === "user"
       ? typeof persona.name === "string"
@@ -332,7 +346,7 @@ function messageText(ctx: Context, message: AdvancedMemoryMessage, index: number
         : "User"
       : ((message.characterId ? ctx.names.get(message.characterId) : null) ??
         (message.role === "narrator" ? "Narrator" : "Character"));
-  const extras = object(message.extra);
+  const extras = messageExtra(message);
   const attachments = Array.isArray(extras.attachments)
     ? extras.attachments.map((item) => object(item) as PromptAttachment)
     : [];
@@ -1176,8 +1190,8 @@ export function createAdvancedMemoryService(db: DB) {
       .filter(
         ({ message, index }) =>
           index >= Math.max(0, fromIndex - 4) &&
-          object(message.extra).hiddenFromAI !== true &&
-          object(message.extra).commandOnly !== true,
+          messageExtra(message).hiddenFromAI !== true &&
+          messageExtra(message).commandOnly !== true,
       );
     const trackerSnapshots = await gameStates.getCommittedForMessages(
       ctx.chatId,
@@ -1647,7 +1661,7 @@ export function createAdvancedMemoryService(db: DB) {
     const ctx = { ...full, messages: full.messages.slice(0, end + 1) };
     const actual = ctx.messages.filter(
       (message) =>
-        ["user", "assistant", "narrator"].includes(message.role) && object(message.extra).commandOnly !== true,
+        ["user", "assistant", "narrator"].includes(message.role) && messageExtra(message).commandOnly !== true,
     );
     if (!actual.length) return null;
     const state = object(ctx.metadata.advancedMemoryState);
@@ -1672,7 +1686,7 @@ export function createAdvancedMemoryService(db: DB) {
       sourceFingerprint: advancedMemorySourceFingerprint(ctx.messages),
       policyRevision: preparationPolicyRevision(ctx),
       messages: window
-        .filter((message) => object(message.extra).hiddenFromAI !== true)
+        .filter((message) => messageExtra(message).hiddenFromAI !== true)
         .map((message) => ({ messageId: message.id, role: message.role, content: message.content })),
       prompt: SCENE_CHECK_PROMPT,
     };
@@ -2503,7 +2517,7 @@ export function createAdvancedMemoryService(db: DB) {
     }
     const latestExtra = [...ctx.messages]
       .reverse()
-      .map((message) => object(message.extra))
+      .map((message) => messageExtra(message))
       .find((extra) => extra.advancedMemoryReceipt);
     const latestReceipt = object(latestExtra?.advancedMemoryReceipt);
     const hasReceipt =
