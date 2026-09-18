@@ -509,9 +509,13 @@ export function createAdvancedMemoryService(db: DB) {
   // World State's tracker date is committed, explicit-change-only state (see gameStates), so it
   // anchors a scene's timeframe without inventing one. The text-scan fallback only fires when no
   // tracker snapshot covers the scene, e.g. World State isn't enabled for this chat.
-  async function trackerTimeline(chatId: string, source: readonly AdvancedMemoryMessage[]): Promise<string | null> {
+  type TrackerSnapshotMap = Map<string, { date: string | null; time: string | null }>;
+
+  function trackerTimelineFromSnapshots(
+    snapshots: TrackerSnapshotMap,
+    source: readonly AdvancedMemoryMessage[],
+  ): string | null {
     if (!source.length) return null;
-    const snapshots = await gameStates.getCommittedForMessages(chatId, [...source]);
     const stamps = source
       .map((message) => snapshots.get(message.id))
       .filter((row): row is NonNullable<typeof row> => !!row)
@@ -523,21 +527,32 @@ export function createAdvancedMemoryService(db: DB) {
     return first === last ? first : `${first} → ${last}`;
   }
 
+  async function trackerTimeline(chatId: string, source: readonly AdvancedMemoryMessage[]): Promise<string | null> {
+    if (!source.length) return null;
+    const snapshots = await gameStates.getCommittedForMessages(chatId, [...source]);
+    return trackerTimelineFromSnapshots(snapshots, source);
+  }
+
   async function withSourceTimelines(
     chatId: string,
     records: StoredRecord[],
     source: readonly AdvancedMemoryMessage[],
   ): Promise<StoredRecord[]> {
     const byId = new Map(source.map((message) => [message.id, message]));
-    return Promise.all(
-      records.map(async (record) => {
-        if (record.timeline) return record;
-        const scoped = record.messageIds
-          .map((id) => byId.get(id))
-          .filter((message): message is AdvancedMemoryMessage => !!message);
-        return { ...record, timeline: (await trackerTimeline(chatId, scoped)) ?? sourceTimeline(scoped) };
-      }),
-    );
+    const pending = records.filter((record) => !record.timeline);
+    // One batch lookup for every message these records could touch, instead of one DB scan per
+    // record - status() runs this over the full record set on each load, so per-record queries
+    // turned every settings save/read into an O(records) fan-out.
+    const snapshots = pending.length
+      ? await gameStates.getCommittedForMessages(chatId, [...new Set(pending.flatMap((record) => record.messageIds))])
+      : new Map<string, { date: string | null; time: string | null }>();
+    return records.map((record) => {
+      if (record.timeline) return record;
+      const scoped = record.messageIds
+        .map((id) => byId.get(id))
+        .filter((message): message is AdvancedMemoryMessage => !!message);
+      return { ...record, timeline: trackerTimelineFromSnapshots(snapshots, scoped) ?? sourceTimeline(scoped) };
+    });
   }
 
   function recordValid(ctx: Context, record: StoredRecord, source = ctx.messages): boolean {
