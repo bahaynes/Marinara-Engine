@@ -335,6 +335,7 @@ test("Advanced Memory stays in Chat Settings with confirmed knowledge, resumable
         content: "The laboratory promise concerns a blue notebook.",
         title: "The laboratory promise",
         timeline: "Before the experiment",
+        timelineEvents: [],
         enabled: true,
         manualOverride: false,
         sourceFingerprint: "proof",
