@@ -41,6 +41,7 @@ import {
   appendRoleplayPromptTail,
   appendRoleplayWhispers,
   buildRoleplayCommandsReminder,
+  latestRoleplaySceneTitle,
   buildRoleplayPersonalContext,
   parseRoleplayUserCommands,
   prepareUserRoleplayCommands,
@@ -57,6 +58,7 @@ import {
 import { prepareAdvancedMemoryContext } from "../../services/generation/advanced-memory-context.js";
 import {
   ADVANCED_MEMORY_MARKER_TYPES,
+  insertAdvancedMemoryFallbacks,
   createAdvancedMemoryPlacement,
   resolveAdvancedMemoryPrompt,
   type AdvancedMemoryPlacement,
@@ -2098,15 +2100,9 @@ export async function registerDryRunRoute(app: FastifyInstance) {
       advancedMemoryPlacements = ADVANCED_MEMORY_MARKER_TYPES.map((type) =>
         createAdvancedMemoryPlacement(type, wrapFormat),
       );
-      const firstHistoryIndex = finalMessages.findIndex((message) => message.contextKind === "history");
-      finalMessages.splice(
-        firstHistoryIndex >= 0 ? firstHistoryIndex : finalMessages.length,
-        0,
-        ...advancedMemoryPlacements.map((placement) => ({
-          role: placement.role,
-          content: placement.token,
-          contextKind: "prompt" as const,
-        })),
+      insertAdvancedMemoryFallbacks(
+        finalMessages as Parameters<typeof insertAdvancedMemoryFallbacks>[0],
+        advancedMemoryPlacements,
       );
     }
 
@@ -2378,6 +2374,7 @@ export async function registerDryRunRoute(app: FastifyInstance) {
         }),
         buildRoleplayCommandsReminder({
           metadata: chatMeta,
+          sceneTitle: latestRoleplaySceneTitle(endIndex >= 0 ? scopedMessages.slice(0, endIndex) : scopedMessages),
           characterId: allCharacterIds.length === 1 || individual ? target : null,
           privateAvailable: Boolean(target) && (allCharacterIds.length === 1 || individual),
           availableAgentIds,
@@ -2543,6 +2540,10 @@ export async function registerDryRunRoute(app: FastifyInstance) {
             userMessage ||
             [...advancedMemorySourceMessages].reverse().find((message) => message.role === "user")?.content,
           readOnly: true,
+          cacheTtlMs:
+            chatMeta.advancedMemoryCacheWindow !== false
+              ? (conn?.anthropicExtendedCacheTtl === "true" ? 60 : 5) * 60_000
+              : undefined,
           toProviderMessages: (messages) =>
             prepareProviderMessages(limitPastReasoningMetadata(toProviderMessages(messages), chatMeta)),
         });

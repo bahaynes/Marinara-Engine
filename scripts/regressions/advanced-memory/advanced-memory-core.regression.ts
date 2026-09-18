@@ -89,7 +89,8 @@ assert(address && typeof address === "object");
 const baseUrl = `http://127.0.0.1:${address.port}/v1`;
 const { createFileNativeDB } = await import("../../../packages/server/src/db/file-backed-store.js");
 const { createChatsStorage } = await import("../../../packages/server/src/services/storage/chats.storage.js");
-const { createConnectionsStorage } = await import("../../../packages/server/src/services/storage/connections.storage.js");
+const { createConnectionsStorage } =
+  await import("../../../packages/server/src/services/storage/connections.storage.js");
 const { createAdvancedMemoryService } = await import("../../../packages/server/src/services/advanced-memory.js");
 const { createConnectionSchema } = await import("../../../packages/shared/src/schemas/connection.schema.ts");
 const { DEFAULT_ADVANCED_MEMORY_SETTINGS } = await import("../../../packages/shared/src/types/advanced-memory.ts");
@@ -244,6 +245,31 @@ try {
   assert(prepared.messageIds.includes(source.at(-1)!.id), "the latest message remains exact history");
   assert(prepared.receipt.estimatedTokensAfter <= 1200);
   await memory.validatePrepared(chat.id, source, prepared.receipt);
+  // Fork: with a prompt cache, the open-scene cut holds while warm instead of moving with the budget.
+  const cacheWindow = (budgetTokens: number, cacheTtlMs: number) =>
+    memory.prepare({ chatId: chat.id, messages: source, audienceCharacterIds: [], budgetTokens, cacheTtlMs });
+  const recut = await cacheWindow(1200, 3_600_000);
+  assert(recut.receipt.reasons.includes("cache-window-recut"), "the first cached cut has no held head");
+  assert(recut.messageIds.length < prepared.messageIds.length, "a re-cut leaves room for the window to grow");
+  const jittered = await cacheWindow(1150, 3_600_000);
+  assert(jittered.receipt.reasons.includes("cache-held-window"));
+  assert.equal(jittered.messageIds[0], recut.messageIds[0], "a warm cache keeps the head as the budget jitters");
+  assert(jittered.receipt.estimatedTokensAfter <= 1150, "a held head never exceeds the cap");
+  const sharedHead = await memory.prepare({
+    chatId: chat.id,
+    messages: source,
+    audienceCharacterIds: [],
+    audienceMode: "owner",
+    budgetTokens: 1150,
+    cacheTtlMs: 3_600_000,
+  });
+  assert.equal(sharedHead.messageIds[0], recut.messageIds[0], "impersonate and reply turns share one held head");
+  const cold = await cacheWindow(1150, 0);
+  assert(cold.receipt.reasons.includes("cache-window-recut"), "an expired cache moves the cut");
+  assert.notEqual(cold.messageIds[0], recut.messageIds[0]);
+  const overflow = await cacheWindow(700, 3_600_000);
+  assert(overflow.receipt.reasons.includes("cache-window-recut"), "a held head that no longer fits is re-cut");
+  assert(overflow.receipt.estimatedTokensAfter <= 700);
   assert(
     (await memory.status(chat.id)).records.some((record) => record.kind === "scene" && record.status === "open"),
     "prefix compression leaves the scene open",
@@ -600,7 +626,8 @@ try {
     })),
   );
   const recallSource = await chats.listMessages(recallChat.id);
-  const { createGameStateStorage } = await import("../../../packages/server/src/services/storage/game-state.storage.js");
+  const { createGameStateStorage } =
+    await import("../../../packages/server/src/services/storage/game-state.storage.js");
   const gameStates = createGameStateStorage(db);
   const { characterTrackerLockKey } = await import("../../../packages/shared/src/utils/tracker-field-locks.ts");
   const hiddenNpc = {
@@ -935,6 +962,12 @@ try {
     "repeat import preserves local identities and edits",
   );
 
+  // Checked before this file's own id-only queries below, which lease the table themselves.
+  assert.equal(
+    db._fileStore.getFullyResidentLazyTables().has("advanced_memory_records"),
+    false,
+    "record lookups name their chat, so Advanced Memory never leases every chat's records",
+  );
   const { eq } = await import("../../../packages/server/src/db/file-query.ts");
   await db.delete(advancedMemoryRecords).where(eq(advancedMemoryRecords.id, importedContinuity.id));
   const reorderedExport = {

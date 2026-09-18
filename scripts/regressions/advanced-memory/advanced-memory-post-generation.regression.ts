@@ -1132,7 +1132,7 @@ try {
   // The model's own window, not the cap, bounds a follow-up before it is sent.
   mainInputTokens = 40;
   mainFollowupInputTokens = undefined;
-  await chats.patchMetadata(followupChat.id, { advancedMemory: { ...followupSettings, maxContextTokens: 1_500 } });
+  await chats.patchMetadata(followupChat.id, { advancedMemory: { ...followupSettings, maxContextTokens: 3_000 } });
   mainFirstReplyPadding = "The guard circles slowly. ".repeat(3000); // ~19,500 tokens: past the 16,384 window.
   const oversizedBefore = calls.length;
   const oversizedFollowup = await generateFollowup();
@@ -1142,7 +1142,7 @@ try {
     "a follow-up past the model's own window still fails clearly",
   );
   assert.equal(sentFollowups(oversizedBefore), 0, "the oversized follow-up is never sent");
-  mainFirstReplyPadding = "The guard circles slowly. ".repeat(400); // ~2,600 tokens: past the cap, inside the window.
+  mainFirstReplyPadding = "The guard circles slowly. ".repeat(600); // ~3,900 tokens: past the cap, inside the window.
   const roomyBefore = calls.length;
   const roomyFollowup = await generateFollowup();
   assert.equal(roomyFollowup.statusCode, 200, roomyFollowup.body);
@@ -1169,7 +1169,7 @@ try {
   });
   const generateWithToolRounds = async (repeats: number, maxToolRounds?: string) => {
     const reserveChat = await createFollowupChat("Follow-up tool reserve", reserveConnection.id);
-    await chats.patchMetadata(reserveChat.id, { advancedMemory: { ...followupSettings, maxContextTokens: 1_500 } });
+    await chats.patchMetadata(reserveChat.id, { advancedMemory: { ...followupSettings, maxContextTokens: 3_000 } });
     mainFirstReplyPadding = reservePadding.repeat(repeats);
     const previousMaxToolRounds = process.env.MAX_TOOL_ROUNDS;
     if (maxToolRounds) process.env.MAX_TOOL_ROUNDS = maxToolRounds;
@@ -2989,7 +2989,9 @@ try {
   );
   assert.equal(extraOf(splitFirst).generationInfo, null);
   assert.equal(extraOf(splitLast).generationInfo.model, "fixture", "generation info is on the last part");
-  assert(extraOf(splitLast).cachedPrompt?.length && !extraOf(splitFirst).cachedPrompt);
+  // custom-mods: the Peek Prompt copy is in a file the message points at, not on the message.
+  assert(extraOf(splitLast).cachedPromptStored && !extraOf(splitLast).cachedPrompt);
+  assert(!extraOf(splitFirst).cachedPrompt && !extraOf(splitFirst).cachedPromptStored);
   assert.deepEqual(extraOf(splitFirst).generationReplay, extraOf(splitLast).generationReplay);
   const savedEvents = splitEvents.filter((event) => event.type === "message_saved");
   assert.deepEqual(
@@ -3218,6 +3220,55 @@ try {
   rewriteFailsFor = undefined;
   mainReplyFor = undefined;
   mainReply = undefined;
+
+  const freshStartChat = await chats.create({
+    name: "Fresh-start constant summary update",
+    mode: "roleplay",
+    characterIds: [character.id],
+    connectionId: connection.id,
+  });
+  assert(freshStartChat);
+  chatIds.push(freshStartChat.id);
+  await chats.patchMetadata(freshStartChat.id, {
+    enableAgents: false,
+    advancedMemoryFreshStart: true,
+    advancedMemory: {
+      ...DEFAULT_ADVANCED_MEMORY_SETTINGS,
+      enabled: true,
+      maxContextTokens: 65_000,
+      summaryBudgetTokens: 10_000,
+      sceneCheckInterval: 100,
+    },
+  });
+  await chats.createMessage({ chatId: freshStartChat.id, role: "user", content: "First scene." });
+  await chats.createMessage({
+    chatId: freshStartChat.id,
+    role: "user",
+    content: "SCENE_CHANGE Second scene.",
+    extra: { isConversationStart: true },
+  });
+  summaryResponse = "Summary of first scene.";
+  await memory.initialize(freshStartChat.id);
+  await memory.checkScenesAfterGeneration(freshStartChat.id, { blocking: false });
+  const freshStartEntries = JSON.parse((await chats.getById(freshStartChat.id))!.metadata).summaryEntries;
+  assert.equal(
+    freshStartEntries?.length,
+    1,
+    "fresh-start chats must save constant summaries without failing the preparationPolicyRevision check",
+  );
+  // Compaction must also match the fresh-start policy revision when combining summaries.
+  await chats.patchMetadata(freshStartChat.id, {
+    summaryEntries: [{ ...freshStartEntries[0], content: `{{char}} ${"FRESH_START_CONSTANT ".repeat(3000)}` }],
+  });
+  summaryResponse = "Compacted fresh-start summary.";
+  await memory.checkScenesAfterGeneration(freshStartChat.id, { blocking: false });
+  const compactedFreshStartEntries = JSON.parse((await chats.getById(freshStartChat.id))!.metadata).summaryEntries;
+  assert.equal(
+    compactedFreshStartEntries?.filter((entry: { enabled?: boolean }) => entry.enabled !== false).length,
+    1,
+    "fresh-start chats must compact constant summaries without failing the preparationPolicyRevision check",
+  );
+  summaryResponse = undefined;
 } finally {
   finishStream?.();
   for (const chatId of chatIds) await memory.cancel(chatId);

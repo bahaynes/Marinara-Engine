@@ -15,6 +15,8 @@ export const ROLEPLAY_COMMAND_KEYS = [
   "interrupt",
   "whisper",
   "inspire",
+  // Fork: the story model names the current scene; Advanced Memory splits scenes when it changes.
+  "scene",
 ] as const;
 
 export type RoleplayCommandKey = (typeof ROLEPLAY_COMMAND_KEYS)[number];
@@ -55,7 +57,8 @@ export type RoleplayCommand =
   | { type: "dm"; character: string; message: string }
   | { type: "whisper"; character: string; text: string }
   | { type: "interrupt"; part: string }
-  | { type: "inspire" };
+  | { type: "inspire" }
+  | { type: "scene"; title: string };
 
 export interface RoleplayWhisperRecipient {
   id: string;
@@ -296,7 +299,8 @@ export function getRoleplayCommandNoticeVisibility(
   for (let index = 0; index < activity.length; index++) {
     const item = activity[index];
     if (!item) continue;
-    if (item.command.type === "whisper" && !item.error) continue;
+    // Fork: a scene title rides on every reply; it is bookkeeping for Advanced Memory, not a visible event.
+    if ((item.command.type === "whisper" || item.command.type === "scene") && !item.error) continue;
     if (display === "hide" && !item.error) continue;
     noticeIndices.push(index);
   }

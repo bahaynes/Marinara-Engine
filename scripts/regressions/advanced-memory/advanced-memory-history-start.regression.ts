@@ -40,7 +40,8 @@ const requireServer = createRequire(new URL("../../../packages/server/package.js
 const Fastify = requireServer("fastify") as typeof import("fastify").default;
 const { createFileNativeDB } = await import("../../../packages/server/src/db/file-backed-store.js");
 const { createChatsStorage } = await import("../../../packages/server/src/services/storage/chats.storage.js");
-const { createConnectionsStorage } = await import("../../../packages/server/src/services/storage/connections.storage.js");
+const { createConnectionsStorage } =
+  await import("../../../packages/server/src/services/storage/connections.storage.js");
 const { createAdvancedMemoryService } = await import("../../../packages/server/src/services/advanced-memory.js");
 const { advancedMemoryRoutes } = await import("../../../packages/server/src/routes/advanced-memory.routes.js");
 const { chatsRoutes } = await import("../../../packages/server/src/routes/chats.routes.js");
@@ -622,6 +623,199 @@ try {
   );
   await memory.reset(chat.id);
   assert.equal((await memory.status(chat.id)).job.contextStarts, undefined, "reset clears automatic markers");
+
+  // Fork: advancedMemoryRollingScenes rolls over to the last finished scene plus the open one.
+  const rollingChat = await chats.create({
+    name: "Rolling two scenes",
+    mode: "roleplay",
+    characterIds: ["first", "second"],
+    connectionId: connection.id,
+  });
+  assert(rollingChat);
+  await chats.patchMetadata(rollingChat.id, { groupChatMode: "individual", advancedMemoryRollingScenes: true });
+  await chats.createMessagesBatch(
+    rollingChat.id,
+    Array.from({ length: 30 }, (_, index) => ({
+      role: "user" as const,
+      content: `${index === 10 || index === 20 ? "SCENE_CHANGE " : ""}The brass compass journey continues. `.repeat(12),
+    })),
+  );
+  await memory.updateSettings(rollingChat.id, {
+    enabled: true,
+    maxContextTokens: 16_384,
+    summaryBudgetTokens: 512,
+    retrieveMaxScenes: 0,
+    knowledgeStarts: { first: null, second: null },
+  });
+  await memory.initialize(rollingChat.id);
+  const rollingSource = await chats.listMessages(rollingChat.id);
+  const rollingAll = await memory.prepare({
+    chatId: rollingChat.id,
+    messages: rollingSource,
+    audienceCharacterIds: ["first"],
+    budgetTokens: 100_000,
+    readOnly: true,
+  });
+  const rolled = await memory.prepare({
+    chatId: rollingChat.id,
+    messages: rollingSource,
+    audienceCharacterIds: ["first"],
+    budgetTokens: Math.floor(rollingAll.receipt.estimatedTokensAfter * 0.8),
+    readOnly: true,
+  });
+  assert(rolled.receipt.reasons.includes("scene-boundary-rollover"));
+  assert.deepEqual(
+    rolled.messageIds,
+    rollingSource.slice(10).map((message) => message.id),
+    "rollover keeps the last finished scene and the open scene",
+  );
+  // Fork: MARINARA_AM_ROLLING_SCENES=true is the instance default; a chat's false still opts out.
+  const rolledWith = async (flag: boolean | undefined) => {
+    await chats.patchMetadata(rollingChat.id, { advancedMemoryRollingScenes: flag });
+    return (
+      await memory.prepare({
+        chatId: rollingChat.id,
+        messages: rollingSource,
+        audienceCharacterIds: ["first"],
+        budgetTokens: Math.floor(rollingAll.receipt.estimatedTokensAfter * 0.8),
+        readOnly: true,
+      })
+    ).messageIds;
+  };
+  process.env.MARINARA_AM_ROLLING_SCENES = "true";
+  try {
+    assert.deepEqual(
+      await rolledWith(undefined),
+      rollingSource.slice(10).map((message) => message.id),
+      "the instance default rolls a chat that sets nothing",
+    );
+    assert.deepEqual(
+      await rolledWith(false),
+      rollingSource.slice(20).map((message) => message.id),
+      "a chat's false overrides the instance default",
+    );
+  } finally {
+    delete process.env.MARINARA_AM_ROLLING_SCENES;
+  }
+  await chats.patchMetadata(rollingChat.id, { advancedMemoryRollingScenes: true });
+
+  // Fork: advancedMemoryLooseScenes allows endings inside a message and passes tracked location changes.
+  const { gameStateSnapshots } = await import("../../../packages/server/src/db/schema/game-state.js");
+  const snapshotAt = (index: number, location: string) =>
+    db.insert(gameStateSnapshots).values({
+      id: `rolling-${index}`,
+      chatId: rollingChat.id,
+      messageId: rollingSource[index]!.id,
+      swipeIndex: 0,
+      location,
+      createdAt: new Date(Date.UTC(2026, 0, 1, 0, index)).toISOString(),
+    });
+  await snapshotAt(20, "Market");
+  await snapshotAt(27, "Harbor");
+  const strictCheck = await memory.getSceneCheck(rollingChat.id, { force: true });
+  assert(strictCheck && !strictCheck.prompt.includes("location tracker"), "the strict check is unchanged");
+  await chats.patchMetadata(rollingChat.id, { advancedMemoryLooseScenes: true });
+  const looseCheck = await memory.getSceneCheck(rollingChat.id, { force: true });
+  assert(looseCheck);
+  assert(looseCheck.previous, "the loose check also shows the message the last check ended on");
+  assert(looseCheck.prompt.includes("partway through"), "a move inside a message can end the scene");
+  assert(looseCheck.prompt.includes('#28: "Market" -> "Harbor"'), "tracked location changes are passed as hints");
+  const looseScan = await chats.create({
+    name: "Loose history scan",
+    mode: "roleplay",
+    characterIds: ["first"],
+    connectionId: connection.id,
+  });
+  assert(looseScan);
+  await chats.patchMetadata(looseScan.id, { advancedMemoryLooseScenes: true });
+  await chats.createMessagesBatch(looseScan.id, [
+    { role: "user", content: "The compass points north." },
+    { role: "assistant", content: "They walk out of the market and reach the harbor." },
+    { role: "user", content: "SCENE_CHANGE At the harbor, the ship waits." },
+  ]);
+  await memory.updateSettings(looseScan.id, { enabled: true, knowledgeStarts: { first: null } });
+  requests.length = 0;
+  await memory.initialize(looseScan.id);
+  assert(
+    requests.some((request) => request.kind === "classify" && request.text.includes("list the NEXT message")),
+    "the whole-history scan uses the loose prompt too",
+  );
+
+  // Fork: [scene] titles from the story model end scenes without a helper call.
+  const titledChat = await chats.create({
+    name: "Titled scenes",
+    mode: "roleplay",
+    characterIds: ["first"],
+    connectionId: connection.id,
+  });
+  assert(titledChat);
+  await chats.patchMetadata(titledChat.id, {
+    roleplayCommandsEnabled: true,
+    roleplayCommandToggles: { scene: true },
+  });
+  await chats.createMessagesBatch(
+    titledChat.id,
+    Array.from({ length: 4 }, (_, index) => ({
+      role: index % 2 ? ("assistant" as const) : ("user" as const),
+      content: `Opening beat ${index}.`,
+    })),
+  );
+  await memory.updateSettings(titledChat.id, { enabled: true, knowledgeStarts: { first: null } });
+  await memory.initialize(titledChat.id);
+  const titledReply = (index: number, title: string) => ({
+    role: "assistant" as const,
+    content: `Reply ${index}.`,
+    extra: { roleplayCommandActivity: [{ command: { type: "scene", title }, raw: `[scene: "${title}"]` }] },
+  });
+  await chats.createMessagesBatch(titledChat.id, [
+    { role: "user", content: "We talk in the vestry." },
+    titledReply(1, "Talk in the vestry"),
+    { role: "user", content: "We keep talking." },
+    titledReply(2, "Talk in the Vestry!"),
+    { role: "user", content: "We walk to the barracks." },
+    titledReply(3, "Night at the barracks"),
+  ]);
+  requests.length = 0;
+  await memory.checkScenesAfterGeneration(titledChat.id);
+  assert(
+    !requests.some((request) => request.text.includes("Scene-check output format")),
+    "titled replies decide the check without the helper",
+  );
+  const titledSource = await chats.listMessages(titledChat.id);
+  const titledScenes = (await memory.status(titledChat.id)).records.filter((record) => record.kind === "scene");
+  assert(
+    titledScenes.some((record) => record.status === "closed" && record.endMessageId === titledSource[8]!.id),
+    "a changed title ends the scene before that reply; rewording the same title does not",
+  );
+
+  // Fork: hard-close a scene retroactively, keeping the endings already found.
+  requests.length = 0;
+  assert(await memory.closeScenesAfter(rollingChat.id, [rollingSource[24]!.id]));
+  const closedEnds = new Set(
+    (await memory.status(rollingChat.id)).records
+      .filter((record) => record.kind === "scene" && record.status === "closed")
+      .map((record) => record.endMessageId),
+  );
+  for (const index of [9, 19, 24])
+    assert(closedEnds.has(rollingSource[index]!.id), `the scene ending after message ${index + 1} exists`);
+  assert(
+    requests.some((request) => request.kind === "summary"),
+    "the newly closed scene gets a recap",
+  );
+  await assert.rejects(
+    memory.closeScenesAfter(rollingChat.id, [rollingSource.at(-1)!.id]),
+    /before its latest message/u,
+  );
+  // An oversized real request resets the context too; with rolling scenes it keeps the last finished one.
+  await memory.checkScenesAfterGeneration(rollingChat.id, {
+    maxRequestInputTokens: 1_000_000,
+    asOfMessageId: rollingSource.at(-1)!.id,
+  });
+  assert.equal(
+    (await memory.status(rollingChat.id)).job.contextStarts?.[0]?.messageId,
+    rollingSource[20]!.id,
+    "an oversized request resets to the last two scenes, not the newest scene end",
+  );
   process.stdout.write(
     "Advanced Memory full-history archive, context cutoff and visibility regression passed (1000 messages).\n",
   );
