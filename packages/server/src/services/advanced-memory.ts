@@ -357,18 +357,6 @@ function sourceTimeline(source: readonly AdvancedMemoryMessage[]): string | null
   return anchors.length === 1 ? anchors[0]! : `${anchors[0]} → ${anchors.at(-1)}`;
 }
 
-function withSourceTimelines(records: StoredRecord[], source: readonly AdvancedMemoryMessage[]): StoredRecord[] {
-  const byId = new Map(source.map((message) => [message.id, message]));
-  return records.map((record) => ({
-    ...record,
-    timeline:
-      record.timeline ??
-      sourceTimeline(
-        record.messageIds.map((id) => byId.get(id)).filter((message): message is AdvancedMemoryMessage => !!message),
-      ),
-  }));
-}
-
 function renderMemoryText(
   indexes: Map<string, number>,
   messageIds: readonly string[],
@@ -487,6 +475,40 @@ export function createAdvancedMemoryService(db: DB) {
 
   async function operationRecords(ctx: Context): Promise<StoredRecord[]> {
     return (ctx.recordCache ??= await records(ctx.chatId));
+  }
+
+  // World State's tracker date is committed, explicit-change-only state (see gameStates), so it
+  // anchors a scene's timeframe without inventing one. The text-scan fallback only fires when no
+  // tracker snapshot covers the scene, e.g. World State isn't enabled for this chat.
+  async function trackerTimeline(chatId: string, source: readonly AdvancedMemoryMessage[]): Promise<string | null> {
+    if (!source.length) return null;
+    const snapshots = await gameStates.getCommittedForMessages(chatId, [...source]);
+    const stamps = source
+      .map((message) => snapshots.get(message.id))
+      .filter((row): row is NonNullable<typeof row> => !!row)
+      .map((row) => [row.date, row.time].filter((value) => typeof value === "string" && value.trim()).join(" "))
+      .filter(Boolean);
+    if (!stamps.length) return null;
+    const first = stamps[0]!;
+    const last = stamps.at(-1)!;
+    return first === last ? first : `${first} → ${last}`;
+  }
+
+  async function withSourceTimelines(
+    chatId: string,
+    records: StoredRecord[],
+    source: readonly AdvancedMemoryMessage[],
+  ): Promise<StoredRecord[]> {
+    const byId = new Map(source.map((message) => [message.id, message]));
+    return Promise.all(
+      records.map(async (record) => {
+        if (record.timeline) return record;
+        const scoped = record.messageIds
+          .map((id) => byId.get(id))
+          .filter((message): message is AdvancedMemoryMessage => !!message);
+        return { ...record, timeline: (await trackerTimeline(chatId, scoped)) ?? sourceTimeline(scoped) };
+      }),
+    );
   }
 
   function recordValid(ctx: Context, record: StoredRecord, source = ctx.messages): boolean {
@@ -1783,7 +1805,8 @@ export function createAdvancedMemoryService(db: DB) {
     if (ctx.individual && !audience.length && input.audienceMode !== "owner")
       throw new Error("Individual Advanced Memory requires a responding character");
     const eligible = allowed(ctx, sources, audience);
-    const available = withSourceTimelines(
+    const available = await withSourceTimelines(
+      ctx.chatId,
       (await operationRecords(ctx)).filter((record) => recordValid(ctx, record)),
       sources,
     );
@@ -2172,6 +2195,7 @@ export function createAdvancedMemoryService(db: DB) {
       ["boundaryMessageId", "checkpointId"].every(
         (key) => latestReceipt[key] === null || typeof latestReceipt[key] === "string",
       );
+    const timelinedRecords = await withSourceTimelines(chatId, allRecords, ctx.messages);
     return {
       settings: ctx.settings,
       job,
@@ -2181,7 +2205,7 @@ export function createAdvancedMemoryService(db: DB) {
       summaryModel: summary.ok ? summary.model : null,
       warnings,
       ...(hasReceipt ? { latestReceipt: latestReceipt as unknown as PreparedAdvancedMemory["receipt"] } : {}),
-      records: withSourceTimelines(allRecords, ctx.messages)
+      records: timelinedRecords
         .filter((record) => record.content || record.status === "open")
         .map((record) => ({
           ...record,
