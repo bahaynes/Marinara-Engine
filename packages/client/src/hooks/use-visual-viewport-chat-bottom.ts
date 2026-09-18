@@ -87,6 +87,7 @@ export function useKeepLatestChatMessageVisible(
     let keyboardOpen = false;
     let restoreFrame = 0;
     let settleFrame = 0;
+    let settleTimer = 0;
     let pendingAnchor: { scrollTop: number; pinnedToBottom: boolean } | null = null;
     let revealedEditor: Element | null = null;
 
@@ -125,8 +126,10 @@ export function useKeepLatestChatMessageVisible(
         keyboardOpen = false;
         revealedEditor = null;
         if (wasKeyboardOpen || !focusedChatComposerAcceptsText()) pendingAnchor = null;
+        if (settleTimer) window.clearTimeout(settleTimer);
         if (restoreFrame) cancelAnimationFrame(restoreFrame);
         if (settleFrame) cancelAnimationFrame(settleFrame);
+        settleTimer = 0;
         restoreFrame = 0;
         settleFrame = 0;
         return;
@@ -157,6 +160,9 @@ export function useKeepLatestChatMessageVisible(
         });
         return;
       }
+      // Only correct scroll once per keyboard-open transition. Re-triggering on every
+      // subsequent viewport event (and re-anchoring against mid-animation scroll geometry)
+      // is what turned this into a repeated scroll "seizure" instead of a single settle.
       if (keyboardOpen || !focusedChatComposerAcceptsText()) return;
       keyboardOpen = true;
 
@@ -176,14 +182,20 @@ export function useKeepLatestChatMessageVisible(
         scrollElement.scrollTo({ top: Math.min(anchor.scrollTop, maxScrollTop), behavior: "auto" });
       };
 
-      restoreFrame = requestAnimationFrame(() => {
-        restoreFrame = 0;
-        restore();
-        settleFrame = requestAnimationFrame(() => {
-          settleFrame = 0;
+      // ponytail: debounce scroll restoration until the visual viewport resize settles,
+      // avoiding fighting the mobile keyboard animation frame-by-frame.
+      if (settleTimer) window.clearTimeout(settleTimer);
+      settleTimer = window.setTimeout(() => {
+        settleTimer = 0;
+        restoreFrame = requestAnimationFrame(() => {
+          restoreFrame = 0;
           restore();
+          settleFrame = requestAnimationFrame(() => {
+            settleFrame = 0;
+            restore();
+          });
         });
-      });
+      }, 180);
     };
 
     document.addEventListener("pointerdown", handleComposerPointerDown, true);
@@ -191,6 +203,7 @@ export function useKeepLatestChatMessageVisible(
     document.addEventListener("focusout", handleComposerBlur, true);
     window.addEventListener(CHAT_VISUAL_VIEWPORT_CHANGE_EVENT, handleViewportChange);
     return () => {
+      if (settleTimer) window.clearTimeout(settleTimer);
       if (restoreFrame) cancelAnimationFrame(restoreFrame);
       if (settleFrame) cancelAnimationFrame(settleFrame);
       document.removeEventListener("pointerdown", handleComposerPointerDown, true);
