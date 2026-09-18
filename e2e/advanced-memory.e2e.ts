@@ -590,6 +590,7 @@ test("Advanced Memory scene timeframes save independently, survive reloads and c
     await expect(save).toBeDisabled();
     expect(await readRecord(record.id)).toMatchObject({
       timeline: "Day 2, dawn — after the storm",
+      timelineEvents: [],
       content: record.content,
       messageIds: record.messageIds,
       audienceCharacterIds: record.audienceCharacterIds,
@@ -624,6 +625,7 @@ test("Advanced Memory scene timeframes save independently, survive reloads and c
     await expect(save).toBeDisabled();
     expect(await readRecord(emptyRecord.id)).toMatchObject({
       timeline: "The experiment begins at noon",
+      timelineEvents: [],
       content: "",
       status: "open",
       enabled: true,
@@ -946,6 +948,7 @@ test("Advanced Memory stays in Chat Settings with confirmed knowledge, resumable
         content: "The laboratory promise concerns a blue notebook. ".repeat(80),
         title: "The laboratory promise",
         timeline: "Before the experiment",
+        timelineEvents: [],
         enabled: true,
         manualOverride: true,
         sourceFingerprint: "proof",
@@ -993,6 +996,7 @@ test("Advanced Memory stays in Chat Settings with confirmed knowledge, resumable
         endIndex: 4,
         content: "A later experiment with a silver vial.",
         timeline: null,
+        timelineEvents: [],
       },
     );
     // Explicit actions refresh a ready archive; there is no idle polling.
@@ -1620,6 +1624,7 @@ for (const deleted of [false, true])
       content: "The saved correction stays intact.",
       title: "Saved scene",
       timeline: null,
+      timelineEvents: [],
       enabled: true,
       manualOverride: true,
       sourceFingerprint: "fixture",
@@ -1864,6 +1869,7 @@ test("Advanced Memory problems show a dot and one notice, Fix repairs them and l
     content: `The ${sceneId} recap.`,
     title: "Scene",
     timeline: null,
+    timelineEvents: [],
     enabled: true,
     manualOverride: false,
     sourceFingerprint: "fixture",

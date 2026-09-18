@@ -17,6 +17,7 @@ export const advancedMemoryRecords = fileTable("advanced_memory_records", {
   content: text("content").notNull(),
   title: text("title").notNull(),
   timeline: text("timeline"),
+  timelineEvents: text("timeline_events").notNull().default("[]"),
   enabled: integer("enabled").notNull().default(1),
   manualOverride: integer("manual_override").notNull().default(0),
   sourceFingerprint: text("source_fingerprint").notNull(),
