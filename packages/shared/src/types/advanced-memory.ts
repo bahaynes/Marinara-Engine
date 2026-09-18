@@ -38,6 +38,19 @@ export interface AdvancedMemoryJob {
   contextStarts?: Array<{ messageId: string; audienceCharacterIds: string[] }>;
 }
 
+/**
+ * An explicit elapsed-time statement quoted from the scene text (e.g. "three months ago"),
+ * anchored to that scene's own timeframe. `delta` is never computed into an absolute date -
+ * story calendars aren't necessarily real ones, so only the model's quoted magnitude/direction
+ * against its scene anchor is stored; any ordering math happens relative to that anchor.
+ */
+export interface AdvancedMemoryTimelineEvent {
+  quote: string;
+  description: string;
+  delta: { unit: "days" | "weeks" | "months" | "years"; amount: number; direction: "before" | "after" };
+  anchor: string | null;
+}
+
 export interface AdvancedMemoryRecord {
   id: string;
   chatId: string;
@@ -55,6 +68,8 @@ export interface AdvancedMemoryRecord {
   content: string;
   title: string;
   timeline: string | null;
+  /** Explicit elapsed-time statements found while summarizing this scene; empty is the common case. */
+  timelineEvents: AdvancedMemoryTimelineEvent[];
   enabled: boolean;
   manualOverride: boolean;
   sourceFingerprint: string;
