@@ -13251,7 +13251,21 @@ function GameSurfaceComponent({
                             </div>
                           }
                         >
-                          {combatSetupConfig?.combatDirector && combatStartMessageId ? (
+                          {effectiveCombatStyle === "dnd5e" ? (
+                            <DndCombatUI
+                              key={`${activeChatId}-${combatParty?.map((p) => p.id).join(",") || "empty"}-${combatEnemies?.map((e) => e.id).join(",") || "empty"}`}
+                              chatId={activeChatId}
+                              party={combatParty}
+                              enemies={combatEnemies}
+                              gameCharacterCards={
+                                Array.isArray(chatMeta.gameCharacterCards) ? (chatMeta.gameCharacterCards as any[]) : []
+                              }
+                              difficulty={(combatSetupConfig?.difficulty as string | undefined) ?? "normal"}
+                              onCombatEnd={handleCombatEnd}
+                              onCustomInstruction={handleCombatCustomInstruction}
+                              onSaveCharacterStats={handleSaveCombatantDndStats}
+                            />
+                          ) : combatSetupConfig?.combatDirector && combatStartMessageId ? (
                             <DirectedCombatUI
                               key={`${activeChatId}:${combatStartMessageId}`}
                               chatId={activeChatId}
@@ -13271,19 +13285,23 @@ function GameSurfaceComponent({
                               onInventoryItemUsed={handleUseCombatInventoryItem}
                               onCombatantsChange={handleCombatantsChange}
                             />
-                          ) : effectiveCombatStyle === "dnd5e" ? (
-                            <DndCombatUI
-                              key={`${activeChatId}-${combatParty?.map((p) => p.id).join(",") || "empty"}-${combatEnemies?.map((e) => e.id).join(",") || "empty"}`}
+                          ) : combatSetupConfig?.combatDirector && combatStartMessageId ? (
+                            <DirectedCombatUI
+                              key={`${activeChatId}:${combatStartMessageId}`}
                               chatId={activeChatId}
+                              anchor={combatStartMessageId}
+                              style={effectiveCombatStyle === "tactical" ? "tactical" : "classic"}
+                              battlefield={combatSceneMeta?.battlefield ?? undefined}
                               party={combatParty}
                               enemies={combatEnemies}
-                              gameCharacterCards={
-                                Array.isArray(chatMeta.gameCharacterCards) ? (chatMeta.gameCharacterCards as any[]) : []
-                              }
-                              difficulty={(combatSetupConfig?.difficulty as string | undefined) ?? "normal"}
+                              inventoryItems={inventoryItems}
+                              combatItemEffects={combatItemEffects}
+                              combatMechanics={combatMechanics}
+                              environment={combatSceneMeta?.environmentType ?? undefined}
+                              formation={combatSceneMeta?.formation ?? undefined}
                               onCombatEnd={handleCombatEnd}
-                              onCustomInstruction={handleCombatCustomInstruction}
-                              onSaveCharacterStats={handleSaveCombatantDndStats}
+                              onInventoryItemUsed={handleUseCombatInventoryItem}
+                              onCombatantsChange={handleCombatantsChange}
                             />
                           ) : effectiveCombatStyle === "tactical" ? (
                             <TacticalCombatUI
