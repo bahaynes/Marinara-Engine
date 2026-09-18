@@ -41,8 +41,22 @@ const server = createServer(async (request, response) => {
     .flatMap((item) => (typeof item.content === "string" ? item.content : item.content.map((part) => part.text)))
     .join("\n");
   const classification = body.instructions?.startsWith("Identify scene transitions");
+  const timelineExtraction = body.instructions?.startsWith("Find EXPLICIT statements of elapsed time");
   let content: string;
   let incomplete = false;
+  if (timelineExtraction) {
+    // Best-effort enrichment (extractTimelineEvents), not a paid summary - it must not consume the
+    // beforeSummary/restart-count hook below, which models interrupting real summarize() calls.
+    response.end(
+      JSON.stringify({
+        id: "astra-memory-proof",
+        status: "completed",
+        output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify({ events: [] }) }] }],
+        usage: { input_tokens: 100, output_tokens: 10, output_tokens_details: { reasoning_tokens: 0 } },
+      }),
+    );
+    return;
+  }
   if (classification) {
     const transcript = JSON.parse(input) as Array<{ messageId: string; content: string }>;
     content = JSON.stringify({
@@ -957,7 +971,9 @@ try {
       completedBeforeRestart,
       "completed summaries are reused from disk byte-for-byte after restarting",
     );
-    assert.equal(requests.length - restartedRequestStart, 1, "Resume calls the model only for unfinished scene 20");
+    // 2, not 1: extractTimelineEvents() (added after this assertion was written) makes a second,
+    // best-effort enrichment call for the same scene once it's summarized.
+    assert.equal(requests.length - restartedRequestStart, 2, "Resume calls the model only for unfinished scene 20");
     assert(JSON.stringify(requests.at(-1)!.input).includes("SCENE_20:"));
     assert(!JSON.stringify(requests.at(-1)!.input).includes("SCENE_21:"), "the ongoing scene is not summarized early");
     assert.equal(recovered.records.filter((record) => record.kind === "scene" && record.status === "open").length, 1);
