@@ -87,7 +87,6 @@ function resolveConnectionPlan(
         provider?: string;
         model?: string;
         name?: string;
-        treatAsLocalEndpoint?: string | boolean;
       }
     | null
     | undefined,
@@ -113,11 +112,11 @@ function resolveConnectionPlan(
   const provider = (conn.provider || "").toLowerCase();
   const model = (conn.model || "").toLowerCase();
   const name = (conn.name || "").toLowerCase();
-  const isLocalTreat = conn.treatAsLocalEndpoint === "true" || conn.treatAsLocalEndpoint === true;
 
-  // Truly local models (gemma, llama, local-model, etc.)
+  // Truly local models (gemma, llama, local-model, etc.). treatAsLocalEndpoint is
+  // deliberately excluded here: it's a tool-call transport hint (native tool_use vs.
+  // JSON-protocol fallback), not a signal about which model/provider is actually running.
   if (
-    isLocalTreat ||
     (provider === "custom" &&
       (model.includes("local") || model.includes("gemma") || model.includes("llama") || name.includes("local"))) ||
     provider === "local-sidecar"
