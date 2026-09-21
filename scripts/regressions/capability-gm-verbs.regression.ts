@@ -809,7 +809,7 @@ assert.deepEqual(
 // handed a variable or a helper's return value, in either write shape. Its keys cannot be read from
 // here at all, so the COUNT is pinned — another opaque call fails until someone reads it by hand
 // and either widens a walk above or adds the namespace to ENGINE_OWNED_METADATA_KEY_PREFIXES.
-// Nineteen are `patchMetadata`/`updateMetadata` calls; the other
+// Twenty-one are `patchMetadata`/`updateMetadata` calls; the other
 // two are route PATCHes, and neither is a live gap today — one is the mutation hook's own
 // implementation, whose keys the client-mutation arm reads at its call sites instead, and the other
 // is a debounced scene patch assembled into a variable whose four keys the literal beside it repeats
@@ -817,12 +817,17 @@ assert.deepEqual(
 // existing metadata, remaps Advanced Memory knowledge/narrator settings and roster anchors, and
 // rewrites summary, summaryEntries, and lastAutomaticSummaryMessageId. `advancedMemory` is now reserved;
 // `summary` and `last` already were. This is an audited variable payload, not a newly ignored literal.
+// Two more landed with Inspiration rerolls and GM map-update handling (#6417-adjacent): game.routes.ts
+// passes `updatedMeta` (`{ ...meta, gameInspiration: newInspiration }`) and generate.routes.ts passes
+// `nextMeta` (`withActiveGameMapMeta(freshMeta, nextMap)`, setting `gameMap`/`gameMaps`/
+// `activeGameMapId`). Both squat nothing — `game` and `active` are already owned prefixes — so the
+// count is bumped rather than widening a walk for two one-off variable payloads.
 // The other half of the boundary — a read off a parameter inside a helper — has no count
 // to pin, which is why sub-source 7 exists rather than a seventh sweep. The docs state both limits.
 assert.equal(
   unreadableWriteCalls,
-  21,
-  `chat-metadata writes this sweep cannot read statically changed: expected 21, found ${unreadableWriteCalls}. ` +
+  23,
+  `chat-metadata writes this sweep cannot read statically changed: expected 23, found ${unreadableWriteCalls}. ` +
     "This count is a boundary marker, not a budget, so do not simply edit the number to match. Read the " +
     "call this added by hand — the sites are listed below — and decide what it writes: if it commits a key " +
     "under a namespace that is not already in ENGINE_OWNED_METADATA_KEY_PREFIXES, add that namespace (or " +
