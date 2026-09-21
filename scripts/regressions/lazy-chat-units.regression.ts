@@ -19,7 +19,7 @@ import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { eq, inArray } from "../../packages/server/src/db/file-query.js";
+import { and, eq, inArray, or } from "../../packages/server/src/db/file-query.js";
 import { createFileNativeDB, encodeShardKey } from "../../packages/server/src/db/file-backed-store.js";
 import {
   chats,
@@ -1096,6 +1096,89 @@ const loadedUnitsOf = (db: Awaited<ReturnType<typeof createFileNativeDB>>) => db
     /return platformDefaultMaxResidentChatUnits\(\);/u,
     "an invalid value falls back to the platform default, never to a bare 0",
   );
+}
+
+// ── Joined queries: WHERE-conjunct pushdown never changes which rows match ──
+// SelectQuery.run() used to build the FULL agentRuns×messages cross product of
+// every RESIDENT row on both sides (checking only the join's own predicate),
+// and applied the rest of the WHERE — including the chatId scope every real
+// caller supplies — only afterward. With several chats resident at once (the
+// lazy-unit LRU keeps many around), a single-chat join scanned every other
+// resident chat's rows too. The fix pre-filters each side by whatever WHERE
+// conjuncts reference ONLY that side's table before the nested loop runs; the
+// full WHERE still re-checks every candidate afterward, so this must be a
+// pure perf change. These two cases pin that: a chatId-scoped join still sees
+// only its own chat's rows with another chat resident, and a conjunct whose
+// columns span BOTH joined tables (which can only ever be split correctly by
+// checking every column it references, not just one side) is never wrongly
+// pushed to a single side.
+{
+  const dir = tempStorageDir();
+  const db = await createFileNativeDB();
+  const { agentConfigs, agentRuns } = await import("../../packages/server/src/db/schema/index.js");
+  try {
+    await db.insert(chats).values([chatRow("chat-p"), chatRow("chat-q")]);
+    await db.insert(messages).values([messageRow("m-p1", "chat-p", "p"), messageRow("m-q1", "chat-q", "q")]);
+    await db.insert(agentConfigs).values({
+      id: "cfg-1",
+      type: "world-state",
+      name: "World State",
+      phase: "post_processing",
+      createdAt: "2026-08-28T09:00:00.000Z",
+      updatedAt: "2026-08-28T09:00:00.000Z",
+    });
+    await db.insert(agentRuns).values([
+      {
+        id: "r-p1",
+        agentConfigId: "cfg-1",
+        chatId: "chat-p",
+        messageId: "m-p1",
+        success: "true",
+        resultData: "{}",
+        createdAt: "2026-08-28T09:00:01.000Z",
+      },
+      {
+        id: "r-q1",
+        agentConfigId: "cfg-1",
+        chatId: "chat-q",
+        messageId: "m-q1",
+        success: "true",
+        resultData: "{}",
+        createdAt: "2026-08-28T09:00:01.000Z",
+      },
+    ]);
+
+    const scoped = await db
+      .select()
+      .from(agentRuns)
+      .innerJoin(messages, eq(agentRuns.messageId, messages.id))
+      .where(and(eq(agentRuns.chatId, "chat-p"), eq(messages.chatId, "chat-p")));
+    assert.deepEqual(
+      scoped.map((row) => row.agent_runs.id),
+      ["r-p1"],
+      "a chatId-scoped join returns only the querying chat's row with another chat's rows resident",
+    );
+
+    // Neither disjunct alone is satisfiable by BOTH tables' own rows: the first
+    // names an agentRuns id that does not exist, the second names messages'
+    // chatId. A pushdown bug that peeled off "agentRuns.id equality" as if it
+    // were a whole pushable conjunct (ignoring that the OR also touches
+    // messages) would filter every agentRuns row to nothing before the join
+    // ever runs, silently dropping r-q1.
+    const crossTableOr = await db
+      .select()
+      .from(agentRuns)
+      .innerJoin(messages, eq(agentRuns.messageId, messages.id))
+      .where(or(eq(agentRuns.id, "does-not-exist"), eq(messages.chatId, "chat-q")));
+    assert.deepEqual(
+      crossTableOr.map((row) => row.agent_runs.id),
+      ["r-q1"],
+      "a conjunct spanning both joined tables is still evaluated in full, not split by a single side's pushdown",
+    );
+  } finally {
+    await db._fileStore.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 console.log("Lazy chat-unit regressions passed.");

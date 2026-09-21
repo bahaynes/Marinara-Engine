@@ -2142,6 +2142,75 @@ function evaluateCondition(condition: Condition, ctx: RowContext): boolean {
   return comparison >= 0;
 }
 
+/** Table names referenced by a query operand's columns (recurses into membership arrays). */
+function collectOperandTables(value: unknown, tables: Set<string>): void {
+  if (isColumn(value)) {
+    if (value.table) tables.add(tableNameOf(value.table));
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const entry of value) collectOperandTables(entry, tables);
+  }
+}
+
+/** Every table a condition subtree's columns reference. */
+function tablesReferencedByCondition(condition: FileCondition, tables: Set<string> = new Set()): Set<string> {
+  switch (condition.kind) {
+    case "file-logical":
+      for (const entry of condition.conditions) tablesReferencedByCondition(entry, tables);
+      break;
+    case "file-comparison":
+      collectOperandTables(condition.left, tables);
+      collectOperandTables(condition.right, tables);
+      break;
+    case "file-membership":
+      collectOperandTables(condition.value, tables);
+      for (const entry of condition.values) collectOperandTables(entry, tables);
+      break;
+    case "file-pattern":
+      collectOperandTables(condition.value, tables);
+      collectOperandTables(condition.pattern, tables);
+      break;
+    case "file-null-check":
+    case "file-string-nonblank":
+    case "file-json-flags-not-true":
+      collectOperandTables(condition.value, tables);
+      break;
+  }
+  return tables;
+}
+
+/** Top-level AND conjuncts of a condition; an OR node stays intact since it can't be split by table. */
+function flattenAndConjuncts(condition: Condition, out: FileCondition[] = []): FileCondition[] {
+  if (!condition || !isFileCondition(condition)) return out;
+  if (condition.kind === "file-logical" && condition.operator === "and") {
+    for (const entry of condition.conditions) flattenAndConjuncts(entry, out);
+  } else {
+    out.push(condition);
+  }
+  return out;
+}
+
+/**
+ * WHERE-conjunct pushdown for joins (perf): a conjunct whose columns resolve
+ * entirely to ONE table can be evaluated against that table's rows before the
+ * join's nested loop runs, instead of only after the full cross product is
+ * built. SelectQuery.run() still applies the complete WHERE afterward, so this
+ * is a pure pre-filter — it can only shrink the candidate rows, never change
+ * which rows survive.
+ *
+ * Root cause this addresses: a chat-scoped join (e.g. agentRuns.chatId ⋈
+ * messages.chatId) paired EVERY resident row of both tables — across every
+ * chat the lazy-unit LRU happened to be holding, not just the query's own
+ * chat — before the chatId conjuncts ever narrowed anything.
+ */
+function singleTablePushdownConjuncts(condition: Condition, tableName: string): FileCondition[] {
+  return flattenAndConjuncts(condition).filter((conjunct) => {
+    const tables = tablesReferencedByCondition(conjunct);
+    return tables.size === 1 && tables.has(tableName);
+  });
+}
+
 function orderSpec(ordering: Ordering, ctx: RowContext): { value: unknown; direction: "asc" | "desc" } {
   if (isColumn(ordering)) {
     return { value: resolveValue(ordering, ctx), direction: "asc" };
@@ -5306,11 +5375,25 @@ class SelectQuery implements SelectQueryBuilder<any> {
     };
     this.store.ensureQueryScopeLoaded(this.fromMeta, combined);
     for (const join of this.joins) this.store.ensureQueryScopeLoaded(join.table, combined);
-    let contexts = this.store.rows(this.fromMeta.name).map((row) => this.store.contextForRow(this.fromMeta, row));
+
+    // Pre-filter each side by whatever single-table WHERE conjuncts apply to it
+    // (e.g. a chatId scope) before pairing rows, so the nested loop below never
+    // has to build-then-discard a cross product wider than the query intends.
+    const pushdownFiltered = (meta: TableMeta): Row[] => {
+      const rows = this.store.rows(meta.name);
+      const conjuncts = singleTablePushdownConjuncts(this.condition, meta.name);
+      if (conjuncts.length === 0) return rows;
+      return rows.filter((row) => {
+        const ctx: RowContext = { rows: { [meta.name]: row }, baseTable: meta.name, joined: false };
+        return conjuncts.every((conjunct) => evaluateCondition(conjunct, ctx));
+      });
+    };
+
+    let contexts = pushdownFiltered(this.fromMeta).map((row) => this.store.contextForRow(this.fromMeta, row));
 
     for (const join of this.joins) {
       const joinedContexts: RowContext[] = [];
-      const joinRows = this.store.rows(join.table.name);
+      const joinRows = pushdownFiltered(join.table);
       for (const ctx of contexts) {
         joinRows.forEach((row) => {
           const candidate: RowContext = {
