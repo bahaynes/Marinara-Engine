@@ -166,6 +166,46 @@ function readTrimmedString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
+/** A sheet's `LEVEL` attribute, or 1 when the sheet doesn't carry one. */
+function findLevelFromAttributes(attrs: ReadonlyArray<{ name: string; value: number }> | undefined): number {
+  const levelAttr = attrs?.find((a: any) => typeof a?.name === "string" && a.name.trim().toUpperCase() === "LEVEL");
+  return levelAttr && Number.isFinite(Number(levelAttr.value)) ? Number(levelAttr.value) : 1;
+}
+
+/**
+ * Read a `Proficiencies: Skill, Skill (Expertise), ...` line out of free-form
+ * sheet text (a persona's `description`, or a party card's own `description`)
+ * and turn it into a flat skill → bonus map.
+ *
+ * Shared by the player's persona-description fallback and Party Mode's
+ * per-card lookup, so the two never drift on what counts as a valid line or
+ * how expertise is written.
+ */
+function deriveProficiencySkillMap(descriptionText: string | undefined, level: number): Record<string, number> | null {
+  if (!descriptionText) return null;
+  const profMatch = /proficiencies:\s*([^\n]+)/i.exec(descriptionText);
+  const profListText = profMatch?.[1];
+  if (!profListText) return null;
+
+  const profBonus = Math.floor((Math.max(1, level) - 1) / 4) + 2;
+  const skillMap: Record<string, number> = {};
+  for (const part of profListText.split(/[,;]/)) {
+    // An "(Expertise)" annotation doubles this entry's bonus before the
+    // parenthetical is stripped for the name lookup below.
+    const hasExpertise = /\(\s*expertise\s*\)/i.test(part);
+    const bonus = hasExpertise ? profBonus * 2 : profBonus;
+    const clean = part
+      .replace(/\s*\([^)]*\)/g, "")
+      .trim()
+      .toLowerCase();
+    if (clean) {
+      skillMap[clean] = bonus;
+      skillMap[clean.replace(/[^a-z0-9]+/g, "_")] = bonus;
+    }
+  }
+  return skillMap;
+}
+
 /**
  * The player's card, found by who the player IS rather than where they sit.
  *
@@ -315,27 +355,7 @@ export async function loadSkillCheckModifierContext(
           }
         }
         if (!resolvedSkills && persona.description) {
-          const profMatch = /proficiencies:\s*([^\n]+)/i.exec(persona.description);
-          const profListText = profMatch?.[1];
-          if (profListText) {
-            const levelAttr = rawSheetAttributes?.find(
-              (a: any) => typeof a?.name === "string" && a.name.trim().toUpperCase() === "LEVEL",
-            );
-            const level = levelAttr && Number.isFinite(Number(levelAttr.value)) ? Number(levelAttr.value) : 1;
-            const profBonus = Math.floor((Math.max(1, level) - 1) / 4) + 2;
-            const skillMap: Record<string, number> = {};
-            for (const part of profListText.split(/[,;]/)) {
-              const clean = part
-                .replace(/\s*\([^)]*\)/g, "")
-                .trim()
-                .toLowerCase();
-              if (clean) {
-                skillMap[clean] = profBonus;
-                skillMap[clean.replace(/[^a-z0-9]+/g, "_")] = profBonus;
-              }
-            }
-            resolvedSkills = skillMap;
-          }
+          resolvedSkills = deriveProficiencySkillMap(persona.description, findLevelFromAttributes(rawSheetAttributes));
         }
       }
     } catch (err) {

@@ -857,6 +857,26 @@ try {
     "a player with no card of their own falls back to the first card, unchanged",
   );
 
+  // ── 15. Expertise doubles the persona-description proficiency fallback ──
+  //
+  // The fallback that reads `Proficiencies: ...` out of a persona's description
+  // used to strip any parenthetical — including `(Expertise)` — before mapping
+  // the skill to a bonus, so a declared expertise skill scored identically to a
+  // plain proficient one. The bonus is doubled for that entry now, before the
+  // parenthetical is discarded for the name lookup.
+  const expertisePersona = await characters.createPersona(
+    "Kessa Vane",
+    "Proficiencies: Arcana, Persuasion (Expertise)",
+    undefined,
+    { personaStats: JSON.stringify({ rpgStats: { attributes: [{ name: "LEVEL", value: 5 }] } }) },
+  );
+  assert.ok(expertisePersona?.id, "precondition — the chat needs a persona to be identified by");
+  const expertiseChatId = await newGameChat("skill check expertise", expertisePersona.id, []);
+  const expertiseContext = await loadSkillCheckModifierContext(db, expertiseChatId);
+  // Level 5 is proficiency bonus +3 — plain proficiency stays +3, expertise doubles to +6.
+  assert.equal(expertiseContext.skills?.arcana, 3, "plain proficiency is untouched by the expertise change");
+  assert.equal(expertiseContext.skills?.persuasion, 6, "expertise doubles the proficiency bonus");
+
   console.log("gm-skill-check-resolution regression passed");
 } finally {
   const db = await getDB().catch(() => null);

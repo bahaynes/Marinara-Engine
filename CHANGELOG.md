@@ -137,6 +137,8 @@ This file is the release-notes source of truth for Marinara Engine. Reuse these 
 - Game creation retains Battlefield Size while removing the unused campaign Battlefield Seed control and “current style” from Classic. New battles receive individual internal seeds, while saved battle maps and restarts retain theirs.
 - Combat started from a restored checkpoint uses the restored scene's weather, and Classic end-of-round elemental mechanics respect the encounter's weather modifiers.
 
+- Game Mode skill checks honor a `(Expertise)` annotation on a persona's `Proficiencies:` description line, doubling that skill's proficiency bonus instead of silently discarding the annotation.
+
 - Linux sandbox regressions probe the actual host process instead of Bubblewrap’s isolated supervisor and accept explicit denial when reading a masked secret file, avoiding false failures without weakening the isolation checks.
 
 - Combat AI review fixes keep Methodical units focused on real opponents, respect legacy skill ranges, and report invalid enemy MP and corrupt saves clearly. Combat events can be translated, item prompts match their targets, and mobile terrain inspection leaves battle controls accessible. Battlefield reload checks no longer depend on browser resource-timing history (#6303).
