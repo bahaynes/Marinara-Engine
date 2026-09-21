@@ -263,6 +263,10 @@ export interface GameSetupConfig {
   enableQuickTimeEvents?: boolean;
   /** Allow spending finite Inspiration points to reroll failed checks. Defaults to true. */
   enableInspiration?: boolean;
+  /** Resolve skill checks against whichever party member has the best total for the
+   *  named skill, instead of always the player's own sheet. Defaults to false — this
+   *  changes what a check means narratively, so it's an explicit per-table choice. */
+  partyModeSkillChecks?: boolean;
   /** Enable automatic sprite generation for characters using image model */
   enableSpriteGeneration?: boolean;
   /** Ask the configured prompt model to rewrite Game Illustrator prompts before image generation. */

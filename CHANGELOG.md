@@ -139,6 +139,8 @@ This file is the release-notes source of truth for Marinara Engine. Reuse these 
 
 - Game Mode skill checks honor a `(Expertise)` annotation on a persona's `Proficiencies:` description line, doubling that skill's proficiency bonus instead of silently discarding the annotation.
 
+- Game Mode has an opt-in "Party Mode" setting, next to the skill-system picker, that resolves a skill check against whichever party member has the best ability-and-proficiency total for that skill instead of always the player's own sheet. Off by default.
+
 - Linux sandbox regressions probe the actual host process instead of Bubblewrap’s isolated supervisor and accept explicit denial when reading a masked secret file, avoiding false failures without weakening the isolation checks.
 
 - Combat AI review fixes keep Methodical units focused on real opponents, respect legacy skill ranges, and report invalid enemy MP and corrupt saves clearly. Combat events can be translated, item prompts match their targets, and mobile terrain inspection leaves battle controls accessible. Battlefield reload checks no longer depend on browser resource-timing history (#6303).

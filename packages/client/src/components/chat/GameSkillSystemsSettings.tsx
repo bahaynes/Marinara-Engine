@@ -102,6 +102,15 @@ export function GameSkillSystemsSettings({ chat }: { chat: Chat }) {
     });
   };
 
+  const partyModeEnabled = metadata.gameSetupConfig?.partyModeSkillChecks === true;
+
+  const togglePartyMode = () => {
+    updateMeta.mutate({
+      id: chat.id,
+      gameSetupConfig: { ...metadata.gameSetupConfig, partyModeSkillChecks: !partyModeEnabled },
+    });
+  };
+
   const toggleSkill = (skillId: string) => {
     const nextDisabled = new Set(disabledSkillIds);
     if (nextDisabled.has(skillId.toLowerCase())) {
@@ -208,6 +217,31 @@ export function GameSkillSystemsSettings({ chat }: { chat: Chat }) {
                 );
               })}
             </div>
+          </div>
+
+          {/* Party Mode */}
+          <div
+            className={cn(
+              "flex items-start justify-between gap-2 rounded-lg border p-2.5 transition-colors",
+              partyModeEnabled
+                ? "border-[var(--primary)]/40 bg-[var(--primary)]/5"
+                : "border-[var(--border)] bg-[var(--background)]/60 opacity-70",
+            )}
+          >
+            <div>
+              <span className="text-xs font-semibold text-[var(--foreground)]">
+                {localizeUi("ui.chat.gameskillsystemssettings.partyMode")}
+              </span>
+              <p className="mt-1 text-[11px] leading-tight text-[var(--muted-foreground)]">
+                {localizeUi("ui.chat.gameskillsystemssettings.partyModeDescription")}
+              </p>
+            </div>
+            <SettingsSwitch
+              ariaLabel={localizeUi("ui.chat.gameskillsystemssettings.partyMode")}
+              checked={partyModeEnabled}
+              onChange={togglePartyMode}
+              className="scale-90"
+            />
           </div>
 
           {/* Search & Ability Filters */}

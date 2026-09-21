@@ -88,6 +88,14 @@ export interface SkillCheckModifierContext {
    * Absent is `engine-legacy`: the arithmetic this service has always done.
    */
   ruleset?: SkillCheckRulesetContext;
+  /**
+   * Every party member's sheet, present only when the chat's Party Mode setting
+   * is on. When set, a check resolves against whichever candidate here (the
+   * player included) has the best total for the requested skill, rather than
+   * always the player's own sheet. Absent entirely when Party Mode is off, so
+   * that behavior is unchanged byte-for-byte from before this field existed.
+   */
+  partyCandidates?: Array<{ sheetAttributes: Partial<RPGAttributes>; skills: Record<string, unknown> | null }>;
 }
 
 export interface SkillCheckRulesetContext {
@@ -363,7 +371,43 @@ export async function loadSkillCheckModifierContext(
     }
   }
 
-  return { skills: resolvedSkills, attributes: null, sheetAttributes: mapSheetAttributesToRPG(rawSheetAttributes) };
+  const sheetAttributes = mapSheetAttributesToRPG(rawSheetAttributes);
+
+  let partyCandidates: SkillCheckModifierContext["partyCandidates"];
+  if (setupConfig?.partyModeSkillChecks === true && cards.length > 0) {
+    partyCandidates = [
+      { sheetAttributes, skills: resolvedSkills },
+      ...cards.map((card) => {
+        const cardRpgStats = card.rpgStats as { attributes?: Array<{ name: string; value: number }> } | undefined;
+        const cardAttributes = cardRpgStats?.attributes;
+        return {
+          sheetAttributes: mapSheetAttributesToRPG(cardAttributes),
+          skills: deriveProficiencySkillMap(
+            readTrimmedString(card.description),
+            findLevelFromAttributes(cardAttributes),
+          ),
+        };
+      }),
+    ];
+  }
+
+  return { skills: resolvedSkills, attributes: null, sheetAttributes, ...(partyCandidates ? { partyCandidates } : {}) };
+}
+
+/** A candidate's flat skill bonus + ability modifier for one requested skill. */
+function candidateSkillTotal(
+  candidate: { sheetAttributes: Partial<RPGAttributes>; skills: Record<string, unknown> | null },
+  attr: ReturnType<typeof getGoverningAttribute>,
+  rawSkillName: string,
+  rawKey: string,
+  normalizedKey: string,
+): { skillMod: number; attrMod: number } {
+  const rawSkillMod = candidate.skills
+    ? (candidate.skills[rawSkillName] ?? candidate.skills[rawKey] ?? candidate.skills[normalizedKey])
+    : undefined;
+  const skillMod = Number.isFinite(Number(rawSkillMod)) ? Number(rawSkillMod) : 0;
+  const attrScore = readContextAttributeScore({ attributes: null, sheetAttributes: candidate.sheetAttributes }, attr);
+  return { skillMod, attrMod: attrScore != null ? attributeModifier(attrScore) : 0 };
 }
 
 /** Evaluate every party card's ruleset sheet once, so all the checks in a turn see one sheet. */
@@ -814,20 +858,34 @@ export function resolveSkillCheckWithContext(
   onSpend?: (key: string, live: RulesetLiveState) => void,
 ): SkillCheckResult {
   if (context.ruleset) return resolveRulesetSkillCheck(context.ruleset, request, rollD20, onSpend);
-  const skills = context.skills;
   const rawKey = request.skill.trim().toLowerCase();
   const normalizedKey = rawKey.replace(/[^a-z0-9]+/g, "_");
-  const rawSkillMod = skills ? (skills[request.skill] ?? skills[rawKey] ?? skills[normalizedKey]) : undefined;
-  const skillMod = Number.isFinite(Number(rawSkillMod)) ? Number(rawSkillMod) : 0;
-
   const attr = getGoverningAttribute(request.skill);
-  const attrScore = readContextAttributeScore(context, attr);
+
+  let skillMod: number;
+  let attrMod: number;
+  if (context.partyCandidates?.length) {
+    // Party Mode: the best TOTAL for this skill wins, so the winning party
+    // member's own ability score and own proficiency both apply together —
+    // never one member's skill spliced onto another's ability score.
+    const best = context.partyCandidates
+      .map((candidate) => candidateSkillTotal(candidate, attr, request.skill, rawKey, normalizedKey))
+      .reduce((a, b) => (a.skillMod + a.attrMod >= b.skillMod + b.attrMod ? a : b));
+    skillMod = best.skillMod;
+    attrMod = best.attrMod;
+  } else {
+    const skills = context.skills;
+    const rawSkillMod = skills ? (skills[request.skill] ?? skills[rawKey] ?? skills[normalizedKey]) : undefined;
+    skillMod = Number.isFinite(Number(rawSkillMod)) ? Number(rawSkillMod) : 0;
+    const attrScore = readContextAttributeScore(context, attr);
+    attrMod = attrScore != null ? attributeModifier(attrScore) : 0;
+  }
 
   return resolveSkillCheck({
     skill: request.skill,
     dc: request.dc,
     skillModifier: skillMod,
-    attributeModifier: attrScore != null ? attributeModifier(attrScore) : 0,
+    attributeModifier: attrMod,
     advantage: request.advantage,
     disadvantage: request.disadvantage,
     preRolledD20: request.preRolledD20,

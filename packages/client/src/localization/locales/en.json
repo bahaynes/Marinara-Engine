@@ -4711,6 +4711,8 @@
   "ui.chat.gameprompttemplateselect.value1": "{{value1}}",
   "ui.chat.gameskillsystemssettings.activeSkillSystems": "Active Skill Systems",
   "ui.chat.gameskillsystemssettings.noMatchingSkillsFound": "No matching skills found.",
+  "ui.chat.gameskillsystemssettings.partyMode": "Party Mode",
+  "ui.chat.gameskillsystemssettings.partyModeDescription": "Resolve skill checks against whichever party member is best suited, not just your own character.",
   "ui.chat.gameskillsystemssettings.searchSkillsEGDiagnosticsPoliticsPerception": "Search skills (e.g. diagnostics, politics, perception)...",
   "ui.chat.gameskillsystemssettings.skills": "skills",
   "ui.chat.gameskillsystemssettings.skillSystemsRepertoire": "Skill Systems & Repertoire",
