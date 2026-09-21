@@ -13270,7 +13270,13 @@ function GameSurfaceComponent({
                               key={`${activeChatId}:${combatStartMessageId}`}
                               chatId={activeChatId}
                               anchor={combatStartMessageId}
-                              style={rulesetFightDefinition ? "ruleset" : effectiveCombatStyle}
+                              style={
+                                rulesetFightDefinition
+                                  ? "ruleset"
+                                  : effectiveCombatStyle === "tactical"
+                                    ? "tactical"
+                                    : "classic"
+                              }
                               rulesetDefinition={rulesetFightDefinition ?? undefined}
                               positioned={rulesetFightPositioned}
                               battlefield={combatSceneMeta?.battlefield ?? undefined}
