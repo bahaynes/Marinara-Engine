@@ -543,9 +543,16 @@ export function createAdvancedMemoryService(db: DB) {
     return (ctx.recordCache ??= await records(ctx.chatId));
   }
 
-  // World State's tracker date is committed, explicit-change-only state (see gameStates), so it
-  // anchors a scene's timeframe without inventing one. The text-scan fallback only fires when no
-  // tracker snapshot covers the scene, e.g. World State isn't enabled for this chat.
+  // World State's tracker date is committed, explicit-change-only state (see gameStates). buildRecord
+  // (creation time) still resolves a record's initial timeline from sourceTimeline() alone - tracker
+  // support only ever landed in this repair path - so a record that already has a text-scanned
+  // timeline never sees the tracker. Keep sourceTimeline() primary here too: a scene with two narrated
+  // anchors ("Spring 14" ... "the following morning") carries a real progression a single tracker
+  // snapshot inside the same scene can't express, and this path exists to reproduce what buildRecord
+  // would have produced, not to diverge from it. Tracker only fills in when the text scan finds
+  // nothing, e.g. normal prose with no "Date:"/"Time:" line.
+  // ponytail: making buildRecord itself tracker-aware would need it to become async (a DB read), which
+  // ripples through every one of its six call sites - out of scope for restoring this consistency.
   type TrackerSnapshotMap = Map<string, { date: string | null; time: string | null }>;
 
   function trackerTimelineFromSnapshots(
@@ -579,16 +586,27 @@ export function createAdvancedMemoryService(db: DB) {
     const pending = records.filter((record) => !record.timeline);
     // One batch lookup for every message these records could touch, instead of one DB scan per
     // record - status() runs this over the full record set on each load, so per-record queries
-    // turned every settings save/read into an O(records) fan-out.
-    const snapshots = pending.length
-      ? await gameStates.getCommittedForMessages(chatId, [...new Set(pending.flatMap((record) => record.messageIds))])
+    // turned every settings save/read into an O(records) fan-out. Batched by MESSAGE OBJECT, not
+    // bare id: getCommittedForMessages only applies its per-message activeSwipeIndex filter when
+    // given objects, so batching by id alone silently dropped that filter and let an inactive
+    // swipe's committed snapshot win over null, short-circuiting the sourceTimeline() fallback
+    // below with a wrong (but non-null) tracker date.
+    const pendingMessages = new Map<string, AdvancedMemoryMessage>();
+    for (const record of pending) {
+      for (const id of record.messageIds) {
+        const message = byId.get(id);
+        if (message) pendingMessages.set(id, message);
+      }
+    }
+    const snapshots = pendingMessages.size
+      ? await gameStates.getCommittedForMessages(chatId, [...pendingMessages.values()])
       : new Map<string, { date: string | null; time: string | null }>();
     return records.map((record) => {
       if (record.timeline) return record;
       const scoped = record.messageIds
         .map((id) => byId.get(id))
         .filter((message): message is AdvancedMemoryMessage => !!message);
-      return { ...record, timeline: trackerTimelineFromSnapshots(snapshots, scoped) ?? sourceTimeline(scoped) };
+      return { ...record, timeline: sourceTimeline(scoped) ?? trackerTimelineFromSnapshots(snapshots, scoped) };
     });
   }
 
@@ -1067,7 +1085,9 @@ export function createAdvancedMemoryService(db: DB) {
   ): Promise<AdvancedMemoryTimelineEvent[]> {
     if (!anchor || !source.length) return [];
     try {
-      const resolved = await connection(ctx, true);
+      // Runs after a scene is already summarized via the helper connection - match that choice
+      // (initial=false) rather than classify()'s initial-detection routing, which this isn't.
+      const resolved = await connection(ctx);
       if (!resolved.ok) return [];
       const storedConnection = await connections.getById(resolved.connectionId);
       const modelLimit = resolveModelAccessPolicy({
@@ -1486,8 +1506,7 @@ export function createAdvancedMemoryService(db: DB) {
                 : []),
             ];
             candidate.content =
-              summaryCache.get(summaryKey) ??
-              (await summarize(ctx, inputs, Math.min(1024, ctx.settings.summaryBudgetTokens), options, candidate));
+              summaryCache.get(summaryKey) ?? (await summarize(ctx, inputs, 1024, options, candidate));
             const timelineAnchor = (await trackerTimeline(ctx.chatId, source)) ?? candidate.timeline;
             candidate.timelineEvents = await extractTimelineEvents(ctx, source, timelineAnchor, options);
             await put(ctx, candidate, options);
