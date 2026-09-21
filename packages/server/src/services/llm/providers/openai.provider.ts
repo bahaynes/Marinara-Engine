@@ -903,21 +903,9 @@ export class OpenAIProvider extends BaseLLMProvider {
         body.reasoning_effort = customGlmEffort;
       } else if (this.hasExplicitReasoningDisable(options.reasoningEffort)) {
         body.reasoning_effort = "none";
-      } else if (this.hasActiveReasoningEffort(options.reasoningEffort)) {
+      } else if (this.shouldSendReasoningEffort(options.model, options.reasoningEffort)) {
         body.reasoning_effort = options.reasoningEffort;
       }
-      return;
-    }
-
-    if (this.isOpenRouterEndpoint() && isGlm53MandatoryReasoningModel(options.model)) {
-      const effort = this.hasExplicitReasoningDisable(options.reasoningEffort)
-        ? "low"
-        : (options.reasoningEffort ?? "low");
-      const existingReasoning =
-        body.reasoning && typeof body.reasoning === "object" && !Array.isArray(body.reasoning)
-          ? (body.reasoning as Record<string, unknown>)
-          : {};
-      body.reasoning = { ...existingReasoning, effort };
       return;
     }
 
