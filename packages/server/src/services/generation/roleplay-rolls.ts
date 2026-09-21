@@ -27,11 +27,16 @@ export function prepareRoleplayRoll(
   const stats = character.rpgStats;
   let bonus = 0;
 
-  // Resolve skill and governing attribute using the same service as Game Mode
+  // Resolve skill and governing attribute using the same service as Game Mode. A name already on
+  // the sheet (including homebrew abilities like "Luck") always wins over the skill table - only
+  // reroute through getGoverningAttribute when the name isn't a stat the character actually has.
   const isBareAbility = /^(str(ength)?|dex(terity)?|con(stitution)?|int(elligence)?|wis(dom)?|cha(risma)?)$/i.test(
     rawAttribute,
   );
-  const skillName = requestedSkill || (!isBareAbility && rawAttribute ? rawAttribute : "");
+  const isSheetAttribute = stats?.attributes.some(
+    (item) => item.name.trim().toLowerCase() === rawAttribute.toLowerCase(),
+  );
+  const skillName = requestedSkill || (!isBareAbility && !isSheetAttribute && rawAttribute ? rawAttribute : "");
   const attributeToLookup = skillName ? getGoverningAttribute(skillName) : rawAttribute;
 
   if (stats?.enabled && attributeToLookup) {

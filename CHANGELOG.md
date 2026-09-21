@@ -4,6 +4,9 @@ This file is the release-notes source of truth for Marinara Engine. Reuse these 
 
 ## [Unreleased]
 
+- Roleplay dice rolls against a homebrew ability score (like a custom "Luck" stat) again apply that score's modifier; a recent skill-check addition had rerouted any name not on the standard six abilities through the skill table, silently dropping the bonus.
+- Fixed a GLM 5.3 reasoning-effort regression: a local custom connection stopped honoring an active reasoning effort, and GLM 5.3 Flash on OpenRouter had started sending an explicit reasoning override instead of keeping the provider's own mandatory-reasoning default.
+- Advanced Memory scene recaps recover a richer narrated timeframe (e.g. "Spring 14 → the following morning") instead of collapsing to a single World State tracker snapshot when repairing an older record's timeline, and the elapsed-time enrichment pass now uses the same helper connection as the rest of scene summarization instead of the chat's main connection.
 - Advanced Memory recalls up to three relevant past scenes by default, with a configurable maximum. Each scene summary is paired with one bounded excerpt and a grouped message range; recalled context identifies the live range and last user message. Routine recall reuses the archive, bounds optional embedding latency, and stays out of agent and auxiliary generation requests (#6471).
 - Advanced Memory checks scenes independently after main Roleplay replies at the configured interval, and prepares the archive only when a scene ends. Background progress appears as **Advanced Recall** in the top-left Agents menu, including when ordinary agents are disabled (#6471).
 
