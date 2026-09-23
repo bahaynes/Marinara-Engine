@@ -1717,7 +1717,8 @@ export async function connectionsRoutes(app: FastifyInstance) {
           model.includes("claude") ||
           model.includes("sonnet") ||
           model.includes("haiku") ||
-          model.includes("opus"));
+          model.includes("opus") ||
+          model.includes("fable"));
 
       const isProxyTracked = !isLocal && (isClaude || isAgy);
       if (isProxyTracked) {
