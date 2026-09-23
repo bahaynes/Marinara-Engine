@@ -64,6 +64,32 @@ References: [OpenAI agent instructions](https://learn.chatgpt.com/docs/agent-con
 
 - Do not keep `.test.ts` files in the repo. If an agent creates one for local proof, remove it after the test is done.
 
+## custom-mods Branch Workflow (provisional)
+
+This fork's own trunk is `custom-mods`, separate from the upstream `staging`/`main`
+workflow below. Direct commits to `custom-mods` skip the one gate that actually
+catches collateral damage — a single push at the end of one coherent change is
+what makes the pre-push regression run meaningful; batching arbitrary unrelated
+commits before pushing defeats it. For anything beyond a one-line fix:
+
+- Branch off `custom-mods` for the change: `git checkout -b <topic> custom-mods`.
+- Commit there as usual — the pre-commit hook stays fast (staged-file-scoped
+  lint/format only, `scripts/pre-commit-check.mjs`).
+- Push the branch before opening a PR. `.githooks/pre-push` runs `pnpm check`
+  plus the full regression suite (`pnpm regression`) — this is the actual
+  gate, and it needs to fail here, on one feature's own commits, not weeks
+  later during an unrelated bisection.
+- Open the PR with `gh pr create --base custom-mods`. Merge with
+  `gh pr merge` once that branch's own pre-push run was clean. No mandatory
+  second-review wait on this fork — the gate is the checks passing, not
+  another person's approval.
+- A true one-liner (a typo, a stale comment, a config value) can still go
+  straight to `custom-mods` when a full branch+PR cycle would be pure
+  ceremony. Use judgment.
+
+This is new and provisional — reassess if it turns out to add more friction
+than the bugs it catches are worth.
+
 ## Repo-Specific Cautions
 
 - Keep edits non-destructive. Do not revert unrelated work in the tree.
