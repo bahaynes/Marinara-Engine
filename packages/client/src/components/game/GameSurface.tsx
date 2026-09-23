@@ -13291,24 +13291,6 @@ function GameSurfaceComponent({
                               onInventoryItemUsed={handleUseCombatInventoryItem}
                               onCombatantsChange={handleCombatantsChange}
                             />
-                          ) : combatSetupConfig?.combatDirector && combatStartMessageId ? (
-                            <DirectedCombatUI
-                              key={`${activeChatId}:${combatStartMessageId}`}
-                              chatId={activeChatId}
-                              anchor={combatStartMessageId}
-                              style={effectiveCombatStyle === "tactical" ? "tactical" : "classic"}
-                              battlefield={combatSceneMeta?.battlefield ?? undefined}
-                              party={combatParty}
-                              enemies={combatEnemies}
-                              inventoryItems={inventoryItems}
-                              combatItemEffects={combatItemEffects}
-                              combatMechanics={combatMechanics}
-                              environment={combatSceneMeta?.environmentType ?? undefined}
-                              formation={combatSceneMeta?.formation ?? undefined}
-                              onCombatEnd={handleCombatEnd}
-                              onInventoryItemUsed={handleUseCombatInventoryItem}
-                              onCombatantsChange={handleCombatantsChange}
-                            />
                           ) : effectiveCombatStyle === "tactical" ? (
                             <TacticalCombatUI
                               key={activeChatId}
