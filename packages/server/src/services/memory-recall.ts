@@ -19,6 +19,12 @@ const CHUNK_SIZE = 5;
 /** Keep embedding requests comfortably below common 8k-token embedding ceilings. */
 const MAX_EMBEDDING_CHUNK_CHARS = 18_000;
 
+/**
+ * Texts per request to a configured embedding source. A chat rebuild embeds every chunk at once;
+ * one request for all of them can outlast EMBEDDING_TIMEOUT_MS on slow (e.g. CPU) endpoints.
+ */
+const EMBEDDING_REQUEST_BATCH_SIZE = 8;
+
 /** Minimum similarity score to include a memory in results. */
 const SIMILARITY_THRESHOLD = 0.25;
 
@@ -130,16 +136,18 @@ export async function embedMemoryRecallTexts(
   options: MemoryRecallEmbeddingOptions = {},
 ): Promise<number[][]> {
   if (options.embeddingSource) {
-    const configuredEmbeddings = await options.embeddingSource.embed(
-      texts,
-      options.signal,
-      options.inputType ?? "document",
-    );
-    if (configuredEmbeddings) {
-      logger.debug("[memory-recall] Used configured embedding source %s", options.embeddingSource.label);
-      return configuredEmbeddings;
+    const configuredEmbeddings: number[][] = [];
+    for (let i = 0; i < texts.length; i += EMBEDDING_REQUEST_BATCH_SIZE) {
+      const batch = await options.embeddingSource.embed(
+        texts.slice(i, i + EMBEDDING_REQUEST_BATCH_SIZE),
+        options.signal,
+        options.inputType ?? "document",
+      );
+      if (!batch) return [];
+      configuredEmbeddings.push(...batch);
     }
-    return [];
+    logger.debug("[memory-recall] Used configured embedding source %s", options.embeddingSource.label);
+    return configuredEmbeddings;
   }
 
   const localEmbedder = options.localEmbedder ?? localEmbed;
