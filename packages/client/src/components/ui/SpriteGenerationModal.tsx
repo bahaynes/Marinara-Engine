@@ -78,12 +78,22 @@ interface FailedMatchedFullBodyBatch {
   error: string;
 }
 
+interface FailedIndividualSpriteItem {
+  index: number;
+  total: number;
+  item: string;
+  remainingItems: string[];
+  error: string;
+}
+
 type GenerationConnectionOption = {
   id: string;
   name: string;
   model?: string;
   provider?: string;
   defaultForAgents?: boolean | string;
+  imageGenerationSource?: string;
+  imageService?: string;
 };
 
 interface SliceAdjustments {
@@ -579,6 +589,8 @@ export function SpriteGenerationModal({
     ...EXPRESSION_PRESETS[DEFAULT_SPRITE_PRESET].expressions,
   ]);
   const [matchExistingExpressions, setMatchExistingExpressions] = useState(false);
+  const [generateIndividually, setGenerateIndividually] = useState(false);
+  const individualToggleTouchedRef = useRef(false);
   const [nativeTransparentPng, setNativeTransparentPng] = useState(true);
   const [noBackground, setNoBackground] = useState(true);
   const [cleanupStrength, setCleanupStrength] = useState(35);
@@ -591,6 +603,7 @@ export function SpriteGenerationModal({
   const [cells, setCells] = useState<SlicedCell[]>([]);
   const [neutralFullBodyCandidate, setNeutralFullBodyCandidate] = useState<SlicedCell | null>(null);
   const [failedMatchedBatch, setFailedMatchedBatch] = useState<FailedMatchedFullBodyBatch | null>(null);
+  const [failedIndividualBatch, setFailedIndividualBatch] = useState<FailedIndividualSpriteItem | null>(null);
   const [generationProgress, setGenerationProgress] = useState<string | null>(null);
   const [cleanupApplying, setCleanupApplying] = useState(false);
   const [cleanupApplied, setCleanupApplied] = useState(false);
@@ -728,6 +741,16 @@ export function SpriteGenerationModal({
   );
   const selectedImageModel = selectedImageConnection?.model?.trim().toLowerCase() ?? "";
   const selectedModelIsGptImage2 = /^gpt-image-2(?:$|-)/.test(selectedImageModel);
+  const selectedConnectionIsLocalComfy =
+    selectedImageConnection?.imageGenerationSource === "comfyui" || selectedImageConnection?.imageService === "comfyui";
+
+  // Local ComfyUI checkpoints rarely lay out a clean multi-panel grid reliably, so default
+  // individual generation on for that backend. Once the user picks a value themselves, stop
+  // overriding it when the connection changes.
+  useEffect(() => {
+    if (individualToggleTouchedRef.current) return;
+    setGenerateIndividually(selectedConnectionIsLocalComfy);
+  }, [selectedConnectionIsLocalComfy]);
 
   const openPromptReview = useCallback((items: ImagePromptReviewItem[]) => {
     return new Promise<ImagePromptOverride[] | null>((resolve) => {
@@ -773,6 +796,7 @@ export function SpriteGenerationModal({
         setCells([]);
         setNeutralFullBodyCandidate(null);
         setFailedMatchedBatch(null);
+        setFailedIndividualBatch(null);
         setGenerationProgress(null);
         setCleanupApplying(false);
         setCleanupApplied(false);
@@ -815,6 +839,7 @@ export function SpriteGenerationModal({
     setCells([]);
     setNeutralFullBodyCandidate(null);
     setFailedMatchedBatch(null);
+    setFailedIndividualBatch(null);
     setGenerationProgress(null);
     setCleanupApplying(false);
     setCleanupApplied(false);
@@ -842,6 +867,7 @@ export function SpriteGenerationModal({
     setCells([]);
     setNeutralFullBodyCandidate(null);
     setFailedMatchedBatch(null);
+    setFailedIndividualBatch(null);
     setGenerationProgress(null);
     setSliceAdjustments(DEFAULT_SLICE_ADJUSTMENTS);
     setActiveFrameIndex(null);
@@ -1234,6 +1260,127 @@ export function SpriteGenerationModal({
     [generateMatchedFullBodyBatch, localizeUi, noBackground],
   );
 
+  const generateIndividualSpriteItem = useCallback(
+    async (item: string, index: number, total: number) => {
+      const grid = { cols: 1, rows: 1 };
+      let lastError = "Image generation failed";
+
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        if (generationControllerRef.current?.signal.aborted) throw new SpriteGenerationAbortedError();
+        setGenerationProgress(
+          localizeUi(
+            attempt === 1
+              ? "ui.spriteGeneration.individual.progressRetrying"
+              : "ui.spriteGeneration.individual.progress",
+            { value1: index + 1, value2: total, value3: item.replace(/_/g, " ") },
+          ),
+        );
+
+        try {
+          const result = await requestGeneratedSheet([item], grid, false);
+          if (result.failedExpressions?.length) {
+            throw new Error(result.failedExpressions.map((entry) => `${entry.expression}: ${entry.error}`).join("; "));
+          }
+          if (result.cells.length < 1) {
+            throw new Error("The provider did not return this sprite");
+          }
+          return createGeneratedSpritesFromResult(result, grid, `Sprite ${index + 1}`);
+        } catch (err) {
+          if (isSpritePromptReviewCancelled(err) || isSpriteGenerationAborted(err)) throw err;
+          lastError = getGenerationErrorMessage(err);
+        }
+      }
+
+      throw new Error(lastError);
+    },
+    [localizeUi, requestGeneratedSheet],
+  );
+
+  const runIndividualSpriteBatches = useCallback(
+    async ({
+      items,
+      startIndex,
+      initialCells,
+      initialSheets,
+    }: {
+      items: string[];
+      startIndex: number;
+      initialCells: SlicedCell[];
+      initialSheets: GeneratedSheetPreview[];
+    }) => {
+      let nextCells = [...initialCells];
+      let nextSheets = [...initialSheets];
+
+      setFailedIndividualBatch(null);
+
+      for (let index = startIndex; index < items.length; index += 1) {
+        if (generationControllerRef.current?.signal.aborted) {
+          setGenerationProgress(null);
+          setStep(nextCells.length > 0 ? 2 : 0);
+          return;
+        }
+        const item = items[index];
+        if (!item) continue;
+
+        try {
+          const generated = await generateIndividualSpriteItem(item, index, items.length);
+          if (generationControllerRef.current?.signal.aborted) {
+            setGenerationProgress(null);
+            setStep(0);
+            return;
+          }
+          nextCells = [...nextCells, ...generated.cells];
+          if (generated.sheet) nextSheets = [...nextSheets, generated.sheet];
+          setCells(nextCells);
+          setGeneratedSheets(nextSheets);
+          setGeneratedSheet(nextSheets[0]?.dataUrl ?? null);
+        } catch (err) {
+          if (isSpritePromptReviewCancelled(err) || isSpriteGenerationAborted(err)) {
+            setCells(nextCells);
+            setGeneratedSheets(nextSheets);
+            setGeneratedSheet(nextSheets[0]?.dataUrl ?? null);
+            setStep(nextCells.length > 0 ? 2 : 0);
+            setError(null);
+            setGenerationProgress(null);
+            return;
+          }
+          const message = getGenerationErrorMessage(err);
+          setCells(nextCells);
+          setGeneratedSheets(nextSheets);
+          setGeneratedSheet(nextSheets[0]?.dataUrl ?? null);
+          setFailedIndividualBatch({
+            index,
+            total: items.length,
+            item,
+            remainingItems: items.slice(index + 1),
+            error: message,
+          });
+          setCleanupApplied(noBackground);
+          setGenerationProgress(null);
+          setStep(2);
+          setError(
+            localizeUi("ui.spriteGeneration.individual.failed", {
+              value1: index + 1,
+              value2: items.length,
+              value3: message,
+            }),
+          );
+          return;
+        }
+      }
+
+      setCells(nextCells);
+      setGeneratedSheets(nextSheets);
+      setGeneratedSheet(nextSheets[0]?.dataUrl ?? null);
+      setFailedIndividualBatch(null);
+      setCleanupApplied(noBackground);
+      setGenerationProgress(null);
+      setError(null);
+      setStep(2);
+    },
+    [generateIndividualSpriteItem, localizeUi, noBackground],
+  );
+
   const handleGenerate = useCallback(async () => {
     if (generationUnavailable || !effectiveConnectionId || cappedSelectedExpressions.length === 0) return;
 
@@ -1250,6 +1397,7 @@ export function SpriteGenerationModal({
     setCells([]);
     setNeutralFullBodyCandidate(null);
     setFailedMatchedBatch(null);
+    setFailedIndividualBatch(null);
     setGenerationProgress(null);
     setCleanupApplied(false);
     setActiveFrameIndex(null);
@@ -1297,6 +1445,16 @@ export function SpriteGenerationModal({
         return;
       }
 
+      if (generateIndividually && !singleImageMode) {
+        await runIndividualSpriteBatches({
+          items: cappedSelectedExpressions,
+          startIndex: 0,
+          initialCells: [],
+          initialSheets: [],
+        });
+        return;
+      }
+
       const result = await requestGeneratedSheet(cappedSelectedExpressions, generationGrid, false);
       if (controller.signal.aborted) throw new SpriteGenerationAbortedError();
       const generated = createGeneratedSpritesFromResult(result, generationGrid, "Generated sheet");
@@ -1339,6 +1497,9 @@ export function SpriteGenerationModal({
     requestGeneratedAnimatedExpressions,
     fullBodyExpressionMode,
     generateNeutralFullBodyCandidate,
+    generateIndividually,
+    singleImageMode,
+    runIndividualSpriteBatches,
     requestGeneratedSheet,
     generationGrid,
     spriteType,
@@ -1445,6 +1606,49 @@ export function SpriteGenerationModal({
     matchedFullBodyBatches,
     localizeUi,
     runMatchedFullBodyBatches,
+    spriteGenerationUnavailable,
+  ]);
+
+  const handleRetryFailedIndividualBatch = useCallback(async () => {
+    if (!failedIndividualBatch || spriteGenerationUnavailable || !effectiveConnectionId) return;
+
+    generationControllerRef.current?.abort();
+    const controller = new AbortController();
+    generationControllerRef.current = controller;
+    const runId = generationRunIdRef.current + 1;
+    generationRunIdRef.current = runId;
+
+    setStep(1);
+    setError(null);
+    setActiveFrameIndex(null);
+    setFrameAdjustments(DEFAULT_SPRITE_FRAME_ADJUSTMENTS);
+    setFramePreviewUrl(null);
+
+    const retryItems = [
+      ...cappedSelectedExpressions.slice(0, failedIndividualBatch.index),
+      failedIndividualBatch.item,
+      ...failedIndividualBatch.remainingItems,
+    ];
+
+    try {
+      await runIndividualSpriteBatches({
+        items: retryItems,
+        startIndex: failedIndividualBatch.index,
+        initialCells: cells,
+        initialSheets: generatedSheets,
+      });
+    } finally {
+      if (generationRunIdRef.current === runId && generationControllerRef.current === controller) {
+        generationControllerRef.current = null;
+      }
+    }
+  }, [
+    cappedSelectedExpressions,
+    cells,
+    effectiveConnectionId,
+    failedIndividualBatch,
+    generatedSheets,
+    runIndividualSpriteBatches,
     spriteGenerationUnavailable,
   ]);
 
@@ -1803,6 +2007,7 @@ export function SpriteGenerationModal({
       setCells([]);
       setNeutralFullBodyCandidate(null);
       setFailedMatchedBatch(null);
+      setFailedIndividualBatch(null);
       setGenerationProgress(null);
       handleCloseCellFrame();
     } catch (err: any) {
@@ -1819,6 +2024,7 @@ export function SpriteGenerationModal({
     setCells([]);
     setNeutralFullBodyCandidate(null);
     setFailedMatchedBatch(null);
+    setFailedIndividualBatch(null);
     setGenerationProgress(null);
     handleCloseCellFrame();
     setCleanupApplied(false);
@@ -2080,6 +2286,26 @@ export function SpriteGenerationModal({
               </span>
             </label>
 
+            {!animatedExpressionMode && !fullBodyExpressionMode && !singleImageMode && (
+              <label className="flex items-start gap-3 rounded-lg bg-[var(--secondary)]/60 p-2.5 text-xs text-[var(--foreground)] ring-1 ring-[var(--border)]/60">
+                <input
+                  type="checkbox"
+                  checked={generateIndividually}
+                  onChange={(e) => {
+                    individualToggleTouchedRef.current = true;
+                    setGenerateIndividually(e.target.checked);
+                  }}
+                  className="mt-0.5 accent-[var(--primary)]"
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="block font-medium">{localizeUi("ui.spriteGeneration.individual.toggleLabel")}</span>
+                  <span className="mt-0.5 block text-[0.625rem] leading-relaxed text-[var(--muted-foreground)]">
+                    {localizeUi("ui.spriteGeneration.individual.toggleHelp")}
+                  </span>
+                </span>
+              </label>
+            )}
+
             {/* Preset and Expression Selection (Expressions mode) */}
             {spriteType === "expressions" && (
               <>
@@ -2328,11 +2554,13 @@ export function SpriteGenerationModal({
                   ? localizeUi("ui.ui.spritegenerationmodal.eachExpressionBecomesAShortVideoFirstThenMarinara")
                   : fullBodyExpressionMode
                     ? localizeUi("ui.spriteGeneration.matched.automaticRetry")
-                    : spriteType === "full-body"
-                      ? singleImageMode
-                        ? localizeUi("ui.ui.spritegenerationmodal.thisMayTake3060SecondsDependingOnThe")
-                        : localizeUi("ui.ui.spritegenerationmodal.thisMayTake3060SecondsDependingOnThe_d8728f7")
-                      : localizeUi("ui.ui.spritegenerationmodal.thisMayTake3060SecondsDependingOnThe")}
+                    : generateIndividually
+                      ? localizeUi("ui.spriteGeneration.individual.automaticRetry")
+                      : spriteType === "full-body"
+                        ? singleImageMode
+                          ? localizeUi("ui.ui.spritegenerationmodal.thisMayTake3060SecondsDependingOnThe")
+                          : localizeUi("ui.ui.spritegenerationmodal.thisMayTake3060SecondsDependingOnThe_d8728f7")
+                        : localizeUi("ui.ui.spritegenerationmodal.thisMayTake3060SecondsDependingOnThe")}
               </p>
             </div>
             <button
@@ -2421,6 +2649,35 @@ export function SpriteGenerationModal({
                   >
                     <RotateCcw size={13} />
                     {localizeUi("ui.spriteGeneration.matched.retry")}
+                  </button>
+                </div>
+              </div>
+            )}
+            {failedIndividualBatch && (
+              <div className="rounded-lg bg-[var(--secondary)]/60 p-3 ring-1 ring-[var(--border)]/70">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-medium text-[var(--foreground)]">
+                      {localizeUi("ui.spriteGeneration.individual.paused", {
+                        value1: failedIndividualBatch.index + 1,
+                        value2: failedIndividualBatch.total,
+                      })}
+                    </p>
+                    <p className="mt-1 text-[0.625rem] leading-relaxed text-[var(--muted-foreground)]">
+                      {failedIndividualBatch.item.replace(/_/g, " ")}
+                    </p>
+                    <p className="mt-1 text-[0.625rem] leading-relaxed text-[var(--muted-foreground)]">
+                      {localizeUi("ui.spriteGeneration.individual.retryHelp")}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleRetryFailedIndividualBatch}
+                    disabled={spriteGenerationUnavailable || !effectiveConnectionId}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--primary)] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:opacity-90 disabled:opacity-50"
+                  >
+                    <RotateCcw size={13} />
+                    {localizeUi("ui.spriteGeneration.individual.retry")}
                   </button>
                 </div>
               </div>
