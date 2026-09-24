@@ -51,6 +51,11 @@ commits before pushing defeats it. For anything beyond a one-line fix:
 - A true one-liner (a typo, a stale comment, a config value) can still go
   straight to `custom-mods` when a full branch+PR cycle would be pure
   ceremony. Use judgment.
+- Do not add `CHANGELOG.md` entries for `custom-mods` work. This overrides the
+  changelog rule in the upstream sections, `AGENTS.md`, `CONTRIBUTING.md`, and
+  `.github/agents/chai-workflow.md`: fork-local entries conflict on every rebase
+  onto upstream and are never released from here. Describe the change in the
+  commit message instead.
 
 This is new and provisional — reassess if it turns out to add more friction
 than the bugs it catches are worth.
