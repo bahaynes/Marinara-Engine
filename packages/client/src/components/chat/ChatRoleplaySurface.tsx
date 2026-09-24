@@ -1094,7 +1094,11 @@ function AuthorNotesButton({
       setMobileFrame(null);
       return;
     }
-    const update = () => {
+    const update = (event?: Event) => {
+      // Freeze the frame while editing: iOS pans and scrolls on every caret tap,
+      // and re-anchoring mid-edit slides the panel out from under the paste callout.
+      if (panelRef.current?.contains(document.activeElement)) return;
+      if (event?.target instanceof Node && panelRef.current?.contains(event.target)) return;
       const next = getMobileFloatingPanelFrame(buttonRef.current, 288);
       // Keep the last good frame when the anchor button is transiently
       // unmeasurable (e.g. the mobile keyboard opening collapses the toolbar /
@@ -1172,12 +1176,15 @@ function AuthorNotesButton({
                 ref={panelRef}
                 data-chat-floating-panel
                 className={cn(NEUTRAL_PANEL_SHELL, NEUTRAL_PANEL_SCROLL_AREA, "fixed z-[9999] overflow-y-auto p-3")}
-                style={{
-                  top: mobileFrame.top,
-                  left: mobileFrame.left,
-                  width: mobileFrame.width,
-                  maxHeight: mobileFrame.maxHeight,
-                }}
+                style={
+                  {
+                    top: mobileFrame.top,
+                    left: mobileFrame.left,
+                    width: mobileFrame.width,
+                    maxHeight: mobileFrame.maxHeight,
+                    "--mari-floating-panel-anchor-top": `${mobileFrame.top}px`,
+                  } as CSSProperties
+                }
                 onMouseDown={(e) => e.stopPropagation()}
                 onPointerDown={(e) => e.stopPropagation()}
                 onTouchStart={(e) => e.stopPropagation()}

@@ -481,6 +481,8 @@ export function AuthorNotesPanel({
         rows={4}
         ariaLabel={localizeUi("ui.chat.authornotespanel.authorSNotes")}
         wrapperClassName="mari-author-notes-field min-w-0"
+        buttonClassName="pointer-coarse:p-2 pointer-coarse:[&>svg]:h-4 pointer-coarse:[&>svg]:w-4"
+        controlPaddingClassName="pr-8 pointer-coarse:pr-10"
         tokenCountFooter={
           <div className="flex items-center gap-2">
             <span className="shrink-0 text-[0.625rem] text-[var(--muted-foreground)]">

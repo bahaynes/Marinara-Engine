@@ -4,6 +4,7 @@ This file is the release-notes source of truth for Marinara Engine. Reuse these 
 
 ## [Unreleased]
 
+- On iPhone, the Roleplay Author's Notes popover stays where it opened when you tap into it instead of jumping to the top of the screen as the keyboard appears, so long-press **Paste** works again. On touch screens, its expand and macro-reference buttons are also larger and easier to tap.
 - Roleplay dice rolls against a homebrew ability score (like a custom "Luck" stat) again apply that score's modifier; a recent skill-check addition had rerouted any name not on the standard six abilities through the skill table, silently dropping the bonus.
 - Fixed a GLM 5.3 reasoning-effort regression: a local custom connection stopped honoring an active reasoning effort, and GLM 5.3 Flash on OpenRouter had started sending an explicit reasoning override instead of keeping the provider's own mandatory-reasoning default.
 - Advanced Memory scene recaps recover a richer narrated timeframe (e.g. "Spring 14 → the following morning") instead of collapsing to a single World State tracker snapshot when repairing an older record's timeline, and the elapsed-time enrichment pass now uses the same helper connection as the rest of scene summarization instead of the chat's main connection.

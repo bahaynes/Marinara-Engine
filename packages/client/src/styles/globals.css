@@ -6237,14 +6237,20 @@ strong {
 
   /* Body-portalled chat menus otherwise stay in layout-viewport coordinates
      while iPhone pans the visual viewport for its keyboard. Keep the focused
-     menu and its scroll shell inside the screen the user can actually see. */
+     menu and its scroll shell inside the screen the user can actually see.
+     Panels that set --mari-floating-panel-anchor-top keep their own spot
+     instead of jumping to the top edge, so iOS paste callouts stay put. */
   html[data-mari-software-keyboard-open]
     body
     > [data-chat-floating-panel]:not(.mari-modal):not([data-component="ExpandedTextarea"]):focus-within {
     position: absolute !important;
-    top: calc(var(--mari-visual-viewport-offset-top, 0px) + 0.5rem) !important;
+    top: calc(
+      var(--mari-visual-viewport-offset-top, 0px) + var(--mari-floating-panel-anchor-top, 0.5rem)
+    ) !important;
     bottom: auto !important;
-    max-height: calc(var(--mari-visual-viewport-height, 100dvh) - 1rem) !important;
+    max-height: calc(
+      var(--mari-visual-viewport-height, 100dvh) - var(--mari-floating-panel-anchor-top, 0.5rem) - 0.5rem
+    ) !important;
   }
 
   html[data-mari-software-keyboard-open]
