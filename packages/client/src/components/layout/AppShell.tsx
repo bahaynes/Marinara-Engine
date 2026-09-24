@@ -308,6 +308,24 @@ export function AppShell({
     const supportsVirtualKeyboard = navigator.maxTouchPoints > 0 || window.matchMedia("(any-pointer: coarse)").matches;
     const isIosWebKit = isIosWebKitBrowser(navigator.userAgent, navigator.platform, navigator.maxTouchPoints);
     root.toggleAttribute("data-mari-ios-webkit", isIosWebKit);
+    // iOS pans the visual viewport a few pixels while you place the caret, select text or drag a
+    // selection handle, and again when its Copy/Paste callout appears. Following those pans moves
+    // the whole app under the finger, which cancels the selection and dismisses the callout. Hold
+    // the geometry still while a touch or an expanded selection is active in a text field; a
+    // keyboard opening or closing still applies at once, and the held sample is taken afterwards.
+    let touchActive = false;
+    let heldForTextGesture = false;
+    let textGestureReleaseTimer = 0;
+    const textGestureInProgress = () => {
+      if (!isIosWebKit) return false;
+      const field = document.activeElement;
+      if (field instanceof HTMLTextAreaElement || field instanceof HTMLInputElement) {
+        if (field instanceof HTMLInputElement && field.selectionStart === null) return false; // not a text input
+        return touchActive || field.selectionStart !== field.selectionEnd;
+      }
+      if (!(field instanceof HTMLElement) || !field.isContentEditable) return false;
+      return touchActive || document.getSelection()?.isCollapsed === false;
+    };
     const updateVisualViewportGeometry = () => {
       if (frame) cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
@@ -355,6 +373,11 @@ export function AppShell({
         const maxOffsetTop = Math.max(0, layoutViewportHeight - height);
         const visualViewportTop = Math.max(0, viewport?.offsetTop ?? 0, viewport?.pageTop ?? 0);
         const offsetTop = Math.min(maxOffsetTop, visualViewportTop);
+        if (keyboardOpen === lastDispatchedKeyboardOpen && textGestureInProgress()) {
+          heldForTextGesture = true;
+          return;
+        }
+        heldForTextGesture = false;
 
         const roundedHeight = Math.max(0, Math.round(height));
         const roundedOffsetTop = Math.round(offsetTop);
@@ -410,7 +433,30 @@ export function AppShell({
       orientationTimers.push(window.setTimeout(resetViewportBaseline, 320));
     };
 
+    const releaseHeldGeometry = () => {
+      if (heldForTextGesture && !textGestureInProgress()) updateVisualViewportGeometry();
+    };
+    const handleTouchStart = (event: TouchEvent) => {
+      // Only a touch on the field being edited; dragging the transcript still follows the pan.
+      touchActive = event.target instanceof Node && !!document.activeElement?.contains(event.target);
+      window.clearTimeout(textGestureReleaseTimer);
+    };
+    const handleTouchEnd = (event: TouchEvent) => {
+      if (event.touches.length > 0) return;
+      touchActive = false;
+      // Let the selection or callout settle before taking the held sample.
+      window.clearTimeout(textGestureReleaseTimer);
+      textGestureReleaseTimer = window.setTimeout(releaseHeldGeometry, 300);
+    };
+
     updateVisualViewportGeometry();
+    if (isIosWebKit) {
+      document.addEventListener("touchstart", handleTouchStart, { capture: true, passive: true });
+      document.addEventListener("touchend", handleTouchEnd, { capture: true, passive: true });
+      document.addEventListener("touchcancel", handleTouchEnd, { capture: true, passive: true });
+      // Capture: engines differ on whether a field's selection change reaches the document.
+      document.addEventListener("selectionchange", releaseHeldGeometry, { capture: true });
+    }
     window.visualViewport?.addEventListener("resize", updateVisualViewportGeometry);
     window.visualViewport?.addEventListener("scroll", updateVisualViewportGeometry);
     window.addEventListener("resize", updateVisualViewportGeometry);
@@ -423,6 +469,11 @@ export function AppShell({
       if (frame) cancelAnimationFrame(frame);
       focusTimers.forEach((timer) => window.clearTimeout(timer));
       orientationTimers.forEach((timer) => window.clearTimeout(timer));
+      window.clearTimeout(textGestureReleaseTimer);
+      document.removeEventListener("touchstart", handleTouchStart, { capture: true });
+      document.removeEventListener("touchend", handleTouchEnd, { capture: true });
+      document.removeEventListener("touchcancel", handleTouchEnd, { capture: true });
+      document.removeEventListener("selectionchange", releaseHeldGeometry, { capture: true });
       window.visualViewport?.removeEventListener("resize", updateVisualViewportGeometry);
       window.visualViewport?.removeEventListener("scroll", updateVisualViewportGeometry);
       window.removeEventListener("resize", updateVisualViewportGeometry);

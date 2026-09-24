@@ -6997,16 +6997,22 @@ strong {
      while iPhone pans the visual viewport for its keyboard. Keep the focused
      menu and its scroll shell inside the screen the user can actually see.
      Full-screen editors stay out: shrinking one to its content scrolled its
-     header and Save button out of reach on Android (#7452). */
+     header and Save button out of reach on Android (#7452).
+     Panels that set --mari-floating-panel-anchor-top keep their own spot
+     instead of jumping to the top edge, so iOS paste callouts stay put. */
   html[data-mari-software-keyboard-open]
     body
     > [data-chat-floating-panel]:not(.mari-modal):not([data-component="ExpandedTextarea"]):not(
       :has(> .mari-editor-shell.flex-1)
     ):focus-within {
     position: absolute !important;
-    top: calc(var(--mari-visual-viewport-offset-top, 0px) + 0.5rem) !important;
+    top: calc(
+      var(--mari-visual-viewport-offset-top, 0px) + var(--mari-floating-panel-anchor-top, 0.5rem)
+    ) !important;
     bottom: auto !important;
-    max-height: calc(var(--mari-visual-viewport-height, 100dvh) - 1rem) !important;
+    max-height: calc(
+      var(--mari-visual-viewport-height, 100dvh) - var(--mari-floating-panel-anchor-top, 0.5rem) - 0.5rem
+    ) !important;
   }
 
   html[data-mari-software-keyboard-open]
