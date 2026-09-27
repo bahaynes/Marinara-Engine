@@ -42,6 +42,7 @@ import {
 } from "../services/advanced-memory.js";
 import {
   prepareAdvancedMemoryContext,
+  shrinkToolResultsToFit,
   type AdvancedMemorySnapshot,
 } from "../services/generation/advanced-memory-context.js";
 import { measureContextBudget } from "../services/llm/base-provider.js";
@@ -7596,13 +7597,19 @@ export async function generateRoutes(app: FastifyInstance) {
             if (advancedMemoryEnabled) {
               if (advancedMemoryReceipt)
                 await advancedMemory.validatePrepared(input.chatId, advancedSourceMessages, advancedMemoryReceipt);
-              const messages = limitPastReasoningMetadata(candidateMessages, chatMeta);
+              let messages = limitPastReasoningMetadata(candidateMessages, chatMeta);
               const budget = measureContextBudget(messages, {
                 maxContext: effectiveMaxContext!,
                 maxTokens,
                 tools: gameToolConnection ? undefined : responderToolDefs,
               });
-              if (!budget.fits)
+              // The tool reserve covers normal rounds; an oversized result is shortened rather than
+              // trimming prepared memory.
+              const shrunk = budget.fits
+                ? messages
+                : shrinkToolResultsToFit(messages, budget.estimatedTokens - budget.inputBudget);
+              if (shrunk) messages = shrunk;
+              else
                 throw new Error(
                   "Advanced Memory: this tool follow-up or continuation exceeds the context cap. Increase the cap or reduce the tool result or reply space.",
                 );

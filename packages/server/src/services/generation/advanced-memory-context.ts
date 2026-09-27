@@ -1,4 +1,9 @@
-import type { AdvancedMemorySettings, PreparedAdvancedMemory } from "@marinara-engine/shared";
+import {
+  estimateTextTokens,
+  sliceTextToTokenBudget,
+  type AdvancedMemorySettings,
+  type PreparedAdvancedMemory,
+} from "@marinara-engine/shared";
 import { z } from "zod";
 import type {
   AdvancedMemoryMessage,
@@ -47,6 +52,43 @@ const memorySnapshotSchema = z.object({
 });
 export type AdvancedMemorySnapshot = z.infer<typeof memorySnapshotSchema>;
 
+/**
+ * Selection fills history up to the cap, but tool rounds append calls and results to the
+ * same request afterwards. Keep part of the cap free for them when tools are attached.
+ */
+export function advancedMemoryToolRoundReserve(maxContextTokens: number, tools?: LLMToolDefinition[]): number {
+  if (!tools?.length) return 0;
+  return Math.min(8192, Math.max(1024, Math.floor(maxContextTokens * 0.2)));
+}
+
+const TOOL_RESULT_TRUNCATION_MARKER = "\n\n[Tool result truncated to fit the Advanced Memory context cap]";
+
+/**
+ * A follow-up that still overflows (one oversized tool result) shortens this turn's tool
+ * results, largest first, instead of dropping prepared memory or failing the reply.
+ * Returns null when tool results alone cannot make room.
+ */
+export function shrinkToolResultsToFit(messages: ChatMessage[], overflowTokens: number): ChatMessage[] | null {
+  if (overflowTokens <= 0) return messages;
+  const out = messages.map((message) => ({ ...message }));
+  const toolIndexes = out
+    .map((message, index) => ({ index, tokens: message.role === "tool" ? estimateTextTokens(message.content) : 0 }))
+    .filter((entry) => entry.tokens > 0)
+    .sort((a, b) => b.tokens - a.tokens);
+  const markerTokens = estimateTextTokens(TOOL_RESULT_TRUNCATION_MARKER);
+  let remaining = overflowTokens;
+  for (const { index, tokens } of toolIndexes) {
+    if (remaining <= 0) break;
+    // Keep a readable head of every result; tiny results cannot give anything back.
+    const keep = Math.max(256, tokens - remaining - markerTokens);
+    if (keep >= tokens) continue;
+    const content = sliceTextToTokenBudget(out[index]!.content, keep) + TOOL_RESULT_TRUNCATION_MARKER;
+    remaining -= tokens - estimateTextTokens(content);
+    out[index]!.content = content;
+  }
+  return remaining <= 0 ? out : null;
+}
+
 /** Reuse the prepared prompt: budgeting must not run lorebooks or agents a second time. */
 export async function prepareAdvancedMemoryContext(
   input: AdvancedMemoryOperationOptions & {
@@ -75,6 +117,9 @@ export async function prepareAdvancedMemoryContext(
     contextWindowForInputBudget(input.settings.maxContextTokens, maxTokens),
     input.maxContext ?? Infinity,
   );
+  // History is sized as if the reply were larger by the tool reserve; the real reply
+  // allowance is returned unchanged, so the reserve stays free for tool follow-ups.
+  const packingMaxTokens = maxTokens + advancedMemoryToolRoundReserve(input.settings.maxContextTokens, input.tools);
   const sourceIds = new Set(input.sourceMessages.map((message) => message.id));
   const fixed = input.toProviderMessages(
     resolveAdvancedMemoryPrompt(
@@ -83,7 +128,7 @@ export async function prepareAdvancedMemoryContext(
       {},
     ),
   );
-  const fixedBudget = measureContextBudget(fixed, { maxContext, maxTokens, tools: input.tools });
+  const fixedBudget = measureContextBudget(fixed, { maxContext, maxTokens: packingMaxTokens, tools: input.tools });
   let budgetTokens = fixedBudget.inputBudget - fixedBudget.estimatedTokens;
   if (budgetTokens <= 0) {
     throw new Error(
@@ -135,7 +180,11 @@ export async function prepareAdvancedMemoryContext(
     const parts = prepared;
     let messages = resolveAdvancedMemoryPrompt(selected, input.placements, parts);
     let providerMessages = input.toProviderMessages(messages);
-    let budget = measureContextBudget(providerMessages, { maxContext, maxTokens, tools: input.tools });
+    let budget = measureContextBudget(providerMessages, {
+      maxContext,
+      maxTokens: packingMaxTokens,
+      tools: input.tools,
+    });
     if (!budget.fits && (parts.recalledMessages || parts.recalledScenes)) {
       messages = resolveAdvancedMemoryPrompt(selected, input.placements, {
         ...parts,
@@ -143,7 +192,7 @@ export async function prepareAdvancedMemoryContext(
         recalledScenes: null,
       });
       providerMessages = input.toProviderMessages(messages);
-      budget = measureContextBudget(providerMessages, { maxContext, maxTokens, tools: input.tools });
+      budget = measureContextBudget(providerMessages, { maxContext, maxTokens: packingMaxTokens, tools: input.tools });
       for (const recordId of prepared.recalledRecordIds) {
         delete prepared.receipt.recordRevisions[recordId];
       }
@@ -157,7 +206,7 @@ export async function prepareAdvancedMemoryContext(
     if (budget.fits) {
       prepared.receipt.estimatedTokensBefore = measureContextBudget(
         input.toProviderMessages(resolveAdvancedMemoryPrompt(input.messages, input.placements, {})),
-        { maxContext, maxTokens, tools: input.tools },
+        { maxContext, maxTokens: packingMaxTokens, tools: input.tools },
       ).estimatedTokens;
       prepared.receipt.estimatedTokensAfter = budget.estimatedTokens;
       prepared.receipt.budgetTokens = budget.inputBudget;

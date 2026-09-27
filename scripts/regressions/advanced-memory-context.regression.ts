@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
-import { prepareAdvancedMemoryContext } from "../../packages/server/src/services/generation/advanced-memory-context.js";
+import {
+  advancedMemoryToolRoundReserve,
+  prepareAdvancedMemoryContext,
+  shrinkToolResultsToFit,
+} from "../../packages/server/src/services/generation/advanced-memory-context.js";
 import {
   createAdvancedMemoryPlacement,
   describeAdvancedMemoryPlacements,
@@ -243,4 +247,43 @@ const fitting = fitMessagesToContext(limited.providerMessages, {
 });
 assert.equal(fitting.trimmed, false);
 assert.equal(fitting.maxTokens, 4096, "managed context preserves the requested completion reserve");
+const tools = [{ name: "roll_dice", description: "Roll dice", parameters: { type: "object", properties: {} } }];
+const tightSettings = { ...settings, maxContextTokens: 12_000 };
+const withoutTools = await prepareAdvancedMemoryContext({ ...input, settings: tightSettings });
+const withTools = await prepareAdvancedMemoryContext({ ...input, settings: tightSettings, tools });
+const reserve = advancedMemoryToolRoundReserve(tightSettings.maxContextTokens, tools);
+assert.equal(advancedMemoryToolRoundReserve(tightSettings.maxContextTokens), 0, "no tools, no reserve");
+assert.equal(withTools.maxTokens, 4096, "the reserve never shrinks the real reply allowance");
+assert(
+  withTools.messages.filter((message) => message.contextKind === "history").length <
+    withoutTools.messages.filter((message) => message.contextKind === "history").length,
+  "attached tools leave history room for tool rounds",
+);
+assert(
+  measureContextBudget(withTools.providerMessages, {
+    maxContext: withTools.maxContext,
+    maxTokens: withTools.maxTokens + reserve,
+    tools,
+  }).fits,
+  "the prepared prompt keeps the whole tool reserve free",
+);
+
+const followUp = [
+  ...withTools.providerMessages,
+  {
+    role: "assistant" as const,
+    content: "",
+    tool_calls: [{ id: "t1", type: "function" as const, function: { name: "roll_dice", arguments: "{}" } }],
+  },
+  { role: "tool" as const, content: "result ".repeat(20_000), tool_call_id: "t1" },
+];
+const overflow = measureContextBudget(followUp, { maxContext: withTools.maxContext, maxTokens: 4096, tools });
+assert(!overflow.fits);
+const shrunkFollowUp = shrinkToolResultsToFit(followUp, overflow.estimatedTokens - overflow.inputBudget)!;
+assert(shrunkFollowUp, "an oversized tool result is shortened instead of failing the turn");
+assert(measureContextBudget(shrunkFollowUp, { maxContext: withTools.maxContext, maxTokens: 4096, tools }).fits);
+assert.match(shrunkFollowUp.at(-1)!.content, /Tool result truncated/);
+assert.deepEqual(shrunkFollowUp.slice(0, -1), followUp.slice(0, -1), "prepared memory and history are untouched");
+assert.equal(followUp.at(-1)!.content.length, "result ".repeat(20_000).length, "the input is not mutated");
+assert.equal(shrinkToolResultsToFit(withTools.providerMessages, 500), null, "no tool results means no room to make");
 process.stdout.write("Advanced memory complete-context regression passed.\n");
