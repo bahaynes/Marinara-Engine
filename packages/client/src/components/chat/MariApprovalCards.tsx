@@ -241,7 +241,18 @@ function DatabaseWorkspaceApprovalCard({
             ) : null}
             {/* Slice 87: an applied change is already saved, so it has no Keep; Undo is the only answer. A
                 change still waiting for the user is a real question, so Apply is its one solid button. */}
-            {approval.kind === "applied_review" ? null : (
+            {approval.kind === "applied_review" ? (
+              // fork: "Done" keeps the saved change and drops its Undo card; without it, reviews made
+              // through the MCP pile up in the list until their undo copies expire.
+              <button
+                type="button"
+                onClick={() => onKeep(approval.id)}
+                disabled={busy || disabled}
+                className="mari-link"
+              >
+                {localizeUi("ui.chat.mariappliededit.done")}
+              </button>
+            ) : (
               <button
                 type="button"
                 onClick={() => onKeep(approval.id)}
