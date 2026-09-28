@@ -65,6 +65,7 @@ import {
   Music,
   RotateCcw,
   SlidersHorizontal,
+  Wrench,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useTranslation, useTranslation as useUiTranslation } from "react-i18next";
@@ -463,6 +464,7 @@ export function ConnectionEditor() {
   const [localMaxTokensOverride, setLocalMaxTokensOverride] = useState<number | null>(null);
   const [localClaudeFastMode, setLocalClaudeFastMode] = useState(false);
   const [localTreatAsLocalEndpoint, setLocalTreatAsLocalEndpoint] = useState(false);
+  const [localDisableNativeTools, setLocalDisableNativeTools] = useState(false);
   const [localDefaultParametersEnabled, setLocalDefaultParametersEnabled] = useState(false);
   const [localDefaultParameters, setLocalDefaultParameters] =
     useState<EditableGenerationParameters>(CONNECTION_PARAMETER_DEFAULTS);
@@ -630,6 +632,7 @@ export function ConnectionEditor() {
     setLocalMaxTokensOverride(typeof c.maxTokensOverride === "number" ? (c.maxTokensOverride as number) : null);
     setLocalClaudeFastMode(c.claudeFastMode === "true" || c.claudeFastMode === true);
     setLocalTreatAsLocalEndpoint(c.treatAsLocalEndpoint === "true" || c.treatAsLocalEndpoint === true);
+    setLocalDisableNativeTools(c.disableNativeTools === "true" || c.disableNativeTools === true);
     const imageCaptioningDefaults = parseConnectionImageCaptioningDefaults(c.defaultParameters);
     setLocalDefaultParametersEnabled(
       !!parseEditableGenerationParameters(c.defaultParameters) || Object.keys(imageCaptioningDefaults).length > 0,
@@ -1027,6 +1030,7 @@ export function ConnectionEditor() {
       maxTokensOverride: localMaxTokensOverride ?? null,
       claudeFastMode: localClaudeFastMode,
       treatAsLocalEndpoint: canTreatAsLocalEndpoint ? localTreatAsLocalEndpoint : false,
+      disableNativeTools: canTreatAsLocalEndpoint ? localDisableNativeTools : false,
       decisionSource: localProvider === "decision" ? localDecisionSource : null,
       credentialsFromConnectionId: localProvider === "decision" ? localCredentialsFrom || null : null,
       maxStateTokens: localProvider === "decision" ? localMaxStateTokens : null,
@@ -1191,6 +1195,7 @@ export function ConnectionEditor() {
     localMaxTokensOverride,
     localClaudeFastMode,
     localTreatAsLocalEndpoint,
+    localDisableNativeTools,
     localDefaultParametersEnabled,
     localDefaultParameters,
     localImageCaptioningEnabled,
@@ -1306,6 +1311,7 @@ export function ConnectionEditor() {
       maxParallelJobs: localMaxParallelJobs,
       maxRequestsPerMinute: localMaxRequestsPerMinute,
       treatAsLocalEndpoint: canTreatAsLocalEndpoint ? localTreatAsLocalEndpoint : false,
+      disableNativeTools: canTreatAsLocalEndpoint ? localDisableNativeTools : false,
       promptPresetId: !isMediaProvider ? localPromptPresetId || null : null,
       defaultParameters,
       enableCaching: localEnableCaching,
@@ -1400,6 +1406,7 @@ export function ConnectionEditor() {
     localMaxParallelJobs,
     localMaxRequestsPerMinute,
     localTreatAsLocalEndpoint,
+    localDisableNativeTools,
     localPromptPresetId,
     localDefaultParametersEnabled,
     localDefaultParameters,
@@ -3672,6 +3679,29 @@ export function ConnectionEditor() {
               />
               <p className="mt-1 text-[0.625rem] text-[var(--muted-foreground)]">
                 {localizeUi("ui.connections.connectioneditor.enableThisIfProfessorMariStopsAfterToolUse")}
+              </p>
+            </FieldGroup>
+          )}
+
+          {canTreatAsLocalEndpoint && (
+            <FieldGroup
+              label={localizeUi("ui.connections.connectioneditor.nativeToolCalls") || "Native Tool Calling"}
+              icon={<Wrench size="0.875rem" className="text-[var(--marinara-chat-chrome-button-text-active)]" />}
+              help={
+                localizeUi("ui.connections.connectioneditor.nativeToolCallsHelp") ||
+                "Configure whether Marinara sends OpenAI-style function calling schemas to this connection."
+              }
+            >
+              <SettingsSwitch
+                label={localizeUi("ui.connections.connectioneditor.disableNativeToolCallsTextOnlyMode")}
+                checked={localDisableNativeTools}
+                onChange={(checked) => {
+                  setLocalDisableNativeTools(checked);
+                  markDirty();
+                }}
+              />
+              <p className="mt-1 text-[0.625rem] text-[var(--muted-foreground)]">
+                {localizeUi("ui.connections.connectioneditor.enableThisForProxiedCliBackendsSuchAsClaude")}
               </p>
             </FieldGroup>
           )}
