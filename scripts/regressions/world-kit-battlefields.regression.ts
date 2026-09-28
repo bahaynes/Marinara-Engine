@@ -313,7 +313,7 @@ try {
     // A turn's passive perception reads the setting's places.
     const turn = async (chatMetadata: Record<string, unknown>) => {
       const messages = [{ role: "system", content: "placeholder" }];
-      await injectGameGmPromptRuntime({
+      const { volatileTail } = await injectGameGmPromptRuntime({
         messages,
         chatId: "battlefields",
         chat: {},
@@ -330,7 +330,8 @@ try {
         personaName: "Player",
         resolvePromptMacros: (value: string) => value,
       } as unknown as Parameters<typeof injectGameGmPromptRuntime>[0]);
-      return messages.map((message) => message.content).join("\n");
+      // Lore in the tail (the default) hands perception back for the final user turn.
+      return [...messages.map((message) => message.content), volatileTail].join("\n");
     };
     assert.match(await turn(cyberGame), /hidden passage/);
     assert.doesNotMatch(await turn({}), /hidden passage/);

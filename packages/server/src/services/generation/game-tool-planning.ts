@@ -34,7 +34,13 @@ export async function planGameToolCalls(args: {
   // multi-round tool reasoning. Keep this opt-in pass independent and bounded.
   const fit = fitMessagesForModelAccess({
     messages: [
-      ...args.messages.map((m): ChatMessage => ({ ...m, role: m.role === "tool" ? "user" : m.role })),
+      // Keep the context-fitting hint, never the narrator's tool-call ids or provider-private metadata
+      // (Gemini thought signatures): the planner may be another model, and those replay only to their own.
+      ...args.messages.map(({ role, content, contextKind }): ChatMessage => ({
+        role: role === "tool" ? "user" : role,
+        content,
+        ...(contextKind ? { contextKind } : {}),
+      })),
       {
         // Anthropic and Google hoist system messages; keep this request-local
         // instruction in the final conversation turn on every provider.
