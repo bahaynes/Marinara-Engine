@@ -168,6 +168,10 @@ const AGENT_ONLY_TOOL_NAMES = new Set([
 // tool filter, so they can never be called in Roleplay/VN/Game.
 const CONVERSATION_ONLY_TOOL_NAMES = new Set(["update_about_me"]);
 
+// Tools whose handlers refuse outside Game Mode (update_game_state writes the Game
+// state snapshot). Offering them elsewhere only earns the model a refusal.
+const GAME_ONLY_TOOL_NAMES = new Set(["update_game_state"]);
+
 // Tools that are off unless the user explicitly enables them via activeToolIds
 // (excluded from the "no filter set = all tools on" default).
 // web_fetch belongs here because it is the only tool that lets the model pick where the Engine sends a
@@ -931,6 +935,9 @@ async function resolveToolRuntime(
   // update_about_me's Conversation-only scope (the UI filter is cosmetic).
   if (toolDefs && agentContext.chatMode !== "conversation") {
     toolDefs = toolDefs.filter((toolDef) => !CONVERSATION_ONLY_TOOL_NAMES.has(toolDef.function.name));
+  }
+  if (toolDefs && agentContext.chatMode !== "game") {
+    toolDefs = toolDefs.filter((toolDef) => !GAME_ONLY_TOOL_NAMES.has(toolDef.function.name));
   }
   if (toolDefs && agentContext.chatMode === "game" && !booleanText(chatMetadata.gameLorebookSearch)) {
     toolDefs = toolDefs.filter((toolDef) => toolDef.function.name !== "search_lorebook");
