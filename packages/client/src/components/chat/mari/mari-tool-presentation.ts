@@ -835,6 +835,7 @@ export function inferToolPresentation(tool: WorkspaceToolCall): ToolPresentation
       "chat.get": "Reading chat",
       // UX-17: was the raw action, "Read chat diagnose".
       "chat.diagnose": "Checking the last reply",
+      "chat.cacheReport": "Checking cache hits",
       "chat.messages": "Reading recent messages",
       "chat.updateMessage": "Fixing a reply",
       "character.get": "Reading character",

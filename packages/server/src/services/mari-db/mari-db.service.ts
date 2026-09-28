@@ -168,7 +168,8 @@ type ParsedMutationRequest = {
     | "theme-set-active"
     | "character-move-folder"
     | "preset-section-delete"
-    | "preset-group-delete";
+    | "preset-group-delete"
+    | "batch";
   table: string | "all";
   id?: string;
   characterId?: string;
@@ -189,6 +190,8 @@ type ParsedMutationRequest = {
   reason: string | null;
   generatedIds?: string[];
   relatedInserts?: Array<{ table: string; row: Row }>;
+  /** kind "batch": insert/patch/delete requests planned together as one reviewable change. */
+  operations?: ParsedMutationRequest[];
 };
 type PendingRecord = MariDbPendingApproval & {
   plan: Plan;
@@ -1111,6 +1114,99 @@ function presetDataFromFlags(flags: Map<string, string | boolean>): Row {
   return data;
 }
 
+// custom-mods: a whole page of lorebook reads (measured as sent) stays under the 24k read bound,
+// which would otherwise elide the entire items array; the caller continues from nextOffset / remainingIds.
+const LOREBOOK_READ_PAGE_BUDGET = 22_000;
+const LOREBOOK_BATCH_MAX_OPERATIONS = 200;
+const LOREBOOK_ENTRY_CREATE_FIELDS = [
+  "name",
+  "content",
+  "description",
+  "tag",
+  "keys",
+  "secondaryKeys",
+  "enabled",
+  "constant",
+  "order",
+  "position",
+  "outletName",
+  "depth",
+  "role",
+  "group",
+  "selective",
+  "selectiveLogic",
+  "matchWholeWords",
+  "caseSensitive",
+  "useRegex",
+  "probability",
+  "scanDepth",
+  "sticky",
+  "cooldown",
+  "delay",
+  "ephemeral",
+  "groupWeight",
+  "preventRecursion",
+  "excludeRecursion",
+  "delayUntilRecursion",
+  "excludeFromVectorization",
+  "decisionStatement",
+  "decisionMode",
+  "locked",
+  "characterFilterMode",
+  "characterFilterIds",
+  "characterTagFilterMode",
+  "characterTagFilters",
+  "generationTriggerFilterMode",
+  "generationTriggerFilters",
+  "additionalMatchingSources",
+  "folderId",
+];
+const LOREBOOK_ENTRY_UPDATE_FIELDS = [
+  "name",
+  "content",
+  "description",
+  "tag",
+  "keys",
+  "secondaryKeys",
+  "enabled",
+  "enable",
+  "disable",
+  "constant",
+  "order",
+  "position",
+  "outletName",
+  "depth",
+  "role",
+  "group",
+  "selective",
+  "selectiveLogic",
+  "matchWholeWords",
+  "caseSensitive",
+  "useRegex",
+  "probability",
+  "scanDepth",
+  "sticky",
+  "cooldown",
+  "delay",
+  "ephemeral",
+  "groupWeight",
+  "preventRecursion",
+  "excludeRecursion",
+  "delayUntilRecursion",
+  "excludeFromVectorization",
+  "decisionStatement",
+  "decisionMode",
+  "locked",
+  "characterFilterMode",
+  "characterFilterIds",
+  "characterTagFilterMode",
+  "characterTagFilters",
+  "generationTriggerFilterMode",
+  "generationTriggerFilters",
+  "additionalMatchingSources",
+  "folderId",
+];
+
 // Exported so callers outside this module can compare against the same normalized action name the
 // dispatch table itself uses.
 export function normalizeAppDataActionName(action: string): string {
@@ -1144,6 +1240,11 @@ export function normalizeAppDataActionName(action: string): string {
     "lorebook.removeentry": "lorebook.deleteentry",
     "character.linklorebook": "lorebook.linkcharacter",
     "character.unlinklorebook": "lorebook.unlinkcharacter",
+    "lorebook.entries.batch": "lorebook.batch",
+    "lorebook.entries.bulk": "lorebook.batch",
+    "lorebook.bulk": "lorebook.batch",
+    "lorebook.entries.getmany": "lorebook.getentries",
+    "lorebook.getmanyentries": "lorebook.getentries",
     "theme.set": "theme.setactive",
     "theme.activate": "theme.setactive",
     "promptpreset.list": "preset.list",
@@ -4286,6 +4387,35 @@ export class MariDbService {
     }
   }
 
+  /** One lorebook entry row for insertion, from app_data arguments (lorebook.addEntry and lorebook.batch). */
+  private async buildLorebookEntryInsert(args: Row, lorebookId: string): Promise<{ id: string; row: Row }> {
+    assertEntryMacros(args as Record<string, unknown>, "lorebook.addEntry");
+    assertLiteralEntryFields(args as Record<string, unknown>, "lorebook.addEntry");
+    const data = actionDataWithTopLevel(args, ["data", "entry", "row"], LOREBOOK_ENTRY_CREATE_FIELDS);
+    const timestamp = now();
+    const id = firstString(args, ["entryId", "id"]) ?? newId();
+    const row = buildLorebookEntryCreateRow(data, lorebookId, id, timestamp);
+    this.assignLorebookEntryActionFields(row, data);
+    await this.assignEntryFolderId(row, data, lorebookId);
+    return { id, row };
+  }
+
+  /** A lorebook entry patch from app_data arguments (lorebook.updateEntry and lorebook.batch). */
+  private async buildLorebookEntryPatch(args: Row, lorebookId: string): Promise<Row> {
+    assertEntryMacros(args as Record<string, unknown>, "lorebook.updateEntry");
+    assertLiteralEntryFields(args as Record<string, unknown>, "lorebook.updateEntry");
+    const data = actionDataWithTopLevel(args, ["patch", "data", "entry"], LOREBOOK_ENTRY_UPDATE_FIELDS);
+    const patch: Row = { updatedAt: now() };
+    this.assignLorebookEntryActionFields(patch, data);
+    await this.assignEntryFolderId(patch, data, lorebookId);
+    if (Object.keys(patch).length <= 1) {
+      throw new Error(
+        "lorebook.updateEntry needs entryId plus a patch field such as name, content, keys, description, enabled, constant, or order",
+      );
+    }
+    return patch;
+  }
+
   private async executeLorebookAction(
     sub: string,
     args: Row,
@@ -4325,6 +4455,107 @@ export class MariDbService {
           firstNumber(args, ["limit"]),
         );
         return { ok: true, mode: "read", command: context.command, output };
+      }
+      case "getentries": {
+        const entryIds = [...new Set(firstStringList(args, ["entryIds", "ids"]) ?? [])];
+        if (entryIds.length === 0) throw new Error("lorebook.getEntries needs entryIds: a list of lorebook entry ids");
+        if (entryIds.length > LOREBOOK_BATCH_MAX_OPERATIONS)
+          throw new Error(`lorebook.getEntries takes at most ${LOREBOOK_BATCH_MAX_OPERATIONS} entryIds per call`);
+        const lorebookId = firstString(args, ["lorebookId"]);
+        const items: Row[] = [];
+        const missingIds: string[] = [];
+        let index = 0;
+        for (; index < entryIds.length; index += 1) {
+          const id = entryIds[index]!;
+          const row = await this.getRawById(getMeta("lorebook_entries"), id);
+          if (!row || (lorebookId && row.lorebookId !== lorebookId)) {
+            missingIds.push(id);
+            continue;
+          }
+          items.push(parseRow("lorebook_entries", row));
+          const candidate = { items, missingIds, remainingIds: entryIds.slice(index + 1) };
+          if (items.length > 1 && prettyLength(candidate) > LOREBOOK_READ_PAGE_BUDGET) {
+            items.pop();
+            break;
+          }
+        }
+        return {
+          ok: true,
+          mode: "read",
+          command: context.command,
+          output: { items, missingIds, remainingIds: entryIds.slice(index) },
+        };
+      }
+      case "batch": {
+        const lorebookId = requiredString(args, ["lorebookId"], "lorebook id");
+        if (!(await this.getRawById(getMeta("lorebooks"), lorebookId))) {
+          throw new Error(`Lorebook ${lorebookId} not found`);
+        }
+        const records = (key: string): Row[] => {
+          const value = args[key];
+          if (value === undefined) return [];
+          if (!Array.isArray(value) || value.some((item) => !item || typeof item !== "object" || Array.isArray(item)))
+            throw new Error(`lorebook.batch ${key} must be a list of entry objects`);
+          return value as Row[];
+        };
+        const adds = records("add");
+        const updates = records("update");
+        const deletes = [...new Set(firstStringList(args, ["delete"]) ?? [])];
+        const count = adds.length + updates.length + deletes.length;
+        if (count === 0) throw new Error("lorebook.batch needs at least one of add, update, or delete");
+        if (count > LOREBOOK_BATCH_MAX_OPERATIONS)
+          throw new Error(`lorebook.batch takes at most ${LOREBOOK_BATCH_MAX_OPERATIONS} operations per call`);
+        // Deletes and patches plan by id alone, so the lorebook scope is enforced here.
+        const requireOwnEntry = async (entryId: string) => {
+          const row = await this.getRawById(getMeta("lorebook_entries"), entryId);
+          if (!row || row.lorebookId !== lorebookId)
+            throw new Error(`Lorebook entry ${entryId} not found in lorebook ${lorebookId}`);
+        };
+        const reason = firstString(args, ["reason"]) ?? null;
+        const operations: ParsedMutationRequest[] = [];
+        for (const add of adds) {
+          const { id, row } = await this.buildLorebookEntryInsert(add, lorebookId);
+          operations.push({ kind: "insert", table: "lorebook_entries", id, row, apply: true, cascade: false, reason });
+        }
+        for (const update of updates) {
+          const entryId = requiredString(update, ["entryId", "id"], "lorebook.batch update entryId");
+          await requireOwnEntry(entryId);
+          const patch = await this.buildLorebookEntryPatch(update, lorebookId);
+          operations.push({
+            kind: "patch",
+            table: "lorebook_entries",
+            id: entryId,
+            patch,
+            apply: true,
+            cascade: false,
+            reason,
+          });
+        }
+        for (const entryId of deletes) {
+          await requireOwnEntry(entryId);
+          // Cascade only reaches the entry's activation stats (see deleteentry).
+          operations.push({
+            kind: "delete",
+            table: "lorebook_entries",
+            id: entryId,
+            apply: true,
+            cascade: true,
+            reason,
+          });
+        }
+        return this.executeMutation(
+          {
+            kind: "batch",
+            table: "lorebook_entries",
+            operations,
+            apply: firstBoolean(args, ["apply"]) === true,
+            cascade: false,
+            reason,
+            cwd: context.cwd,
+          },
+          context.command,
+          context.sessionId,
+        );
       }
       case "getentry": {
         const entryId = requiredString(args, ["entryId", "id"], "lorebook entry id");
@@ -4751,60 +4982,7 @@ export class MariDbService {
         const lorebookId = requiredString(args, ["lorebookId"], "lorebook id");
         const lorebookExists = await this.getRawById(getMeta("lorebooks"), lorebookId);
         if (!lorebookExists) throw missingRecord("lorebook", lorebookId, "lorebook.list (or lorebook.search)");
-        assertEntryMacros(args as Record<string, unknown>, "lorebook.addEntry");
-        assertLiteralEntryFields(args as Record<string, unknown>, "lorebook.addEntry");
-        const data = actionDataWithTopLevel(
-          args,
-          ["data", "entry", "row"],
-          [
-            "name",
-            "content",
-            "description",
-            "tag",
-            "keys",
-            "secondaryKeys",
-            "enabled",
-            "constant",
-            "order",
-            "position",
-            "outletName",
-            "depth",
-            "role",
-            "group",
-            "selective",
-            "selectiveLogic",
-            "matchWholeWords",
-            "caseSensitive",
-            "useRegex",
-            "probability",
-            "scanDepth",
-            "sticky",
-            "cooldown",
-            "delay",
-            "ephemeral",
-            "groupWeight",
-            "preventRecursion",
-            "excludeRecursion",
-            "delayUntilRecursion",
-            "excludeFromVectorization",
-            "decisionStatement",
-            "decisionMode",
-            "locked",
-            "characterFilterMode",
-            "characterFilterIds",
-            "characterTagFilterMode",
-            "characterTagFilters",
-            "generationTriggerFilterMode",
-            "generationTriggerFilters",
-            "additionalMatchingSources",
-            "folderId",
-          ],
-        );
-        const timestamp = now();
-        const id = firstString(args, ["entryId", "id"]) ?? newId();
-        const row = buildLorebookEntryCreateRow(data, lorebookId, id, timestamp);
-        this.assignLorebookEntryActionFields(row, data);
-        await this.assignEntryFolderId(row, data, lorebookId);
+        const { id, row } = await this.buildLorebookEntryInsert(args, lorebookId);
         const addResult = await this.executeMutation(
           {
             kind: "insert",
@@ -4826,65 +5004,7 @@ export class MariDbService {
         const entryId = requiredString(args, ["entryId", "id"], "lorebook entry id");
         const entryExists = await this.getRawById(getMeta("lorebook_entries"), entryId);
         if (!entryExists) throw missingRecord("lorebook entry", entryId, "lorebook.entries <lorebook-id>");
-        assertEntryMacros(args as Record<string, unknown>, "lorebook.updateEntry");
-        assertLiteralEntryFields(args as Record<string, unknown>, "lorebook.updateEntry");
-        const data = actionDataWithTopLevel(
-          args,
-          ["patch", "data", "entry"],
-          [
-            "name",
-            "content",
-            "description",
-            "tag",
-            "keys",
-            "secondaryKeys",
-            "enabled",
-            "enable",
-            "disable",
-            "constant",
-            "order",
-            "position",
-            "outletName",
-            "depth",
-            "role",
-            "group",
-            "selective",
-            "selectiveLogic",
-            "matchWholeWords",
-            "caseSensitive",
-            "useRegex",
-            "probability",
-            "scanDepth",
-            "sticky",
-            "cooldown",
-            "delay",
-            "ephemeral",
-            "groupWeight",
-            "preventRecursion",
-            "excludeRecursion",
-            "delayUntilRecursion",
-            "excludeFromVectorization",
-            "decisionStatement",
-            "decisionMode",
-            "locked",
-            "characterFilterMode",
-            "characterFilterIds",
-            "characterTagFilterMode",
-            "characterTagFilters",
-            "generationTriggerFilterMode",
-            "generationTriggerFilters",
-            "additionalMatchingSources",
-            "folderId",
-          ],
-        );
-        const patch: Row = { updatedAt: now() };
-        this.assignLorebookEntryActionFields(patch, data);
-        await this.assignEntryFolderId(patch, data, String(entryExists.lorebookId));
-        if (Object.keys(patch).length <= 1) {
-          throw new Error(
-            "lorebook.updateEntry needs entryId plus a patch field such as name, content, keys, description, enabled, constant, or order",
-          );
-        }
+        const patch = await this.buildLorebookEntryPatch(args, String(entryExists.lorebookId));
         const updateResult = await this.executeMutation(
           {
             kind: "patch",
@@ -4973,7 +5093,9 @@ export class MariDbService {
             table: "lorebook_entries",
             id: entryId,
             apply: firstBoolean(args, ["apply"]) === true,
-            cascade: false,
+            // custom-mods: an entry's only cascade child is its activation stats row. Without cascade,
+            // any entry that has ever fired refused deletion with "re-run with --cascade".
+            cascade: true,
             reason: firstString(args, ["reason"]) ?? null,
             cwd: context.cwd,
           },
@@ -6756,9 +6878,11 @@ export class MariDbService {
           });
         }
       }
+      // Illustrator's 0 is "manual only" (see agents.routes.ts), the one cadence below 1 that is valid.
+      const minRunInterval = row.type === "illustrator" ? 0 : 1;
       if (
         changedSettings.runInterval !== undefined &&
-        (!Number.isSafeInteger(changedSettings.runInterval) || Number(changedSettings.runInterval) < 1)
+        (!Number.isSafeInteger(changedSettings.runInterval) || Number(changedSettings.runInterval) < minRunInterval)
       ) {
         issues.push({
           level: "error",
@@ -8111,6 +8235,7 @@ export class MariDbService {
     if (sub === "updatemessage") return this.executeChatUpdateMessage(args, context);
     // R3: the reply checkup for Professor Mari — numbers and names only, never message text.
     if (sub === "diagnose") return this.executeChatDiagnose(args, context);
+    if (sub === "cachereport") return this.executeChatCacheReport(args, context);
     // #7289: nanoid ids start with "--" about 1 in 4096, so values must never read as flags:
     // flag values ride `--flag=value` and positionals go after the `--` end-of-options marker.
     const argv = [sub];
@@ -8410,6 +8535,168 @@ export class MariDbService {
         },
         lorebooks,
         preset,
+      },
+    };
+  }
+
+  /**
+   * fork: Professor Mari's per-reply prompt-cache numbers for one chat, read from the usage each
+   * reply stored (`generationInfo`). Main replies only; agent calls record their usage elsewhere.
+   * Post numbers match `chat.messages`. Never returns message text.
+   */
+  private async executeChatCacheReport(
+    args: Row,
+    context: { command: string; sessionId: string; cwd?: string },
+  ): Promise<MariDbCommandResult> {
+    const chatId = requiredString(args, ["chatId", "chat_id"], "chat id");
+    const chat = await createChatsStorage(this.db).getById(chatId);
+    if (!chat)
+      return {
+        ok: false,
+        mode: "read",
+        command: context.command,
+        error: missingRecord("chat", chatId, "chat.list").message,
+      };
+    const last = Math.min(Math.max(Math.trunc(firstNumber(args, ["last", "limit"]) ?? 12), 1), 50);
+    const count = (value: unknown) => (typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0);
+    const pct = (part: number, whole: number) => (whole ? `${Math.min(100, Math.round((part / whole) * 100))}%` : null);
+
+    // The cache lifetime is known only for a Claude reply on the chat's current Claude connection.
+    const connection = chat.connectionId ? await createConnectionsStorage(this.db).getById(chat.connectionId) : null;
+    const extendedTtl = connection?.anthropicExtendedCacheTtl === "true";
+    const ttlMinutes = (info: Record<string, unknown>) =>
+      connection &&
+      (info.provider === "anthropic" || info.provider === "claude_subscription") &&
+      connection.provider === info.provider &&
+      connection.model === info.model
+        ? extendedTtl
+          ? 60
+          : 5
+        : null;
+
+    const messages = (await this.rawRows("messages")).filter((m) => m.chatId === chatId);
+    messages.sort((a, b) => String(a.createdAt ?? "").localeCompare(String(b.createdAt ?? "")));
+    // A reply can only hit what the previous prompt held, and only while that cache was alive and for
+    // the same model, so each reply is judged against that: gaps, swipes and model changes are
+    // reported as their own status, not as misses.
+    const rows: Array<Record<string, unknown>> = [];
+    const ttls: Array<number | null> = [];
+    let previousAt: number | null = null;
+    let previous: { model: unknown; provider: unknown; prompt: number } | null = null;
+    messages.forEach((message, index) => {
+      if (message.role !== "assistant" && message.role !== "narrator") return;
+      const at = Date.parse(String(message.createdAt ?? ""));
+      const gapMinutes = previousAt !== null && Number.isFinite(at) ? Math.round((at - previousAt) / 6000) / 10 : null;
+      if (Number.isFinite(at)) previousAt = at;
+      const info = (parseJsonMaybe(message.extra) as { generationInfo?: Record<string, unknown> } | null)
+        ?.generationInfo;
+      if (!info || info.tokensPrompt == null) return;
+      const cached = count(info.tokensCachedPrompt);
+      const written = count(info.tokensCacheWritePrompt);
+      // Claude's native APIs report only the uncached input as prompt tokens (getRequestInputTokens).
+      const prompt =
+        count(info.tokensPrompt) +
+        (info.provider === "anthropic" || info.provider === "claude_subscription" ? cached + written : 0);
+      const ttl = ttlMinutes(info);
+      const swipe = Number(message.activeSwipeIndex ?? 0) > 0;
+      let status = "counted";
+      let expected = 0;
+      if (swipe) status = "swipe";
+      else if (!previous) status = "first reply";
+      else if (previous.model !== info.model || previous.provider !== info.provider) status = "model changed";
+      else if (ttl !== null && gapMinutes !== null && gapMinutes > ttl) status = "cache expired between replies";
+      else expected = Math.min(prompt, previous.prompt);
+      if (!swipe) previous = { model: info.model, provider: info.provider, prompt };
+      rows.push({
+        post: index + 1,
+        model: info.model ?? null,
+        "Prompt tokens": prompt,
+        "Cached tokens": cached,
+        "Cache-written tokens": info.tokensCacheWritePrompt ?? null,
+        "Cache hit": pct(cached, prompt),
+        "Minutes since previous reply": gapMinutes,
+        Status: status,
+        ...(expected ? { "Should have hit": expected, "Hit of should-have": pct(cached, expected) } : {}),
+        // Tool-call turns sum every request's tokens (addGenerationUsage); only the hit % compares.
+        ...(count(info.requestCount) > 1 ? { requests: info.requestCount } : {}),
+      });
+      ttls.push(ttl);
+    });
+
+    const from = Math.max(rows.length - last, 0);
+    const shown = rows.slice(from);
+    const shownTtls = ttls.slice(from);
+    const sum = (list: Array<Record<string, unknown>>, key: string) =>
+      list.reduce((total, row) => total + (typeof row[key] === "number" ? (row[key] as number) : 0), 0);
+    const counted = shown.filter((row) => row.Status === "counted");
+    const expired = shown.filter((row) => row.Status === "cache expired between replies");
+    const countedExpected = sum(counted, "Should have hit");
+    const countedCached = sum(counted, "Cached tokens");
+
+    // Findings are decided here, so the model relays them instead of inferring causes from numbers.
+    // They assume the user plays at the pace they like: settings that make that pace cheaper only.
+    const findings: string[] = [];
+    if (expired.length) {
+      const ttl = shownTtls.find((value) => value !== null) ?? null;
+      const gaps = expired.map((row) => row["Minutes since previous reply"] as number);
+      if (ttl === 5 && gaps.every((gap) => gap <= 60)) {
+        findings.push(
+          `${expired.length} of ${shown.length} replies came after the 5-minute cache lapsed, all within an hour. The connection's extended (1h) cache would have kept them. A 1h write costs 2x instead of 1.25x, so it pays when most replies then read the cache.`,
+        );
+      } else {
+        findings.push(
+          `${expired.length} of ${shown.length} replies came after the cache lapsed (${ttl === 60 ? "the 1h lifetime is the longest available" : "gaps over an hour"}). No cache setting covers gaps that long, so those replies are paid in full.`,
+        );
+      }
+    }
+    if (counted.length >= 2 && countedExpected && countedCached / countedExpected < 0.8) {
+      const meta = (parseJsonMaybe(chat.metadata) as Row | null) ?? {};
+      const advancedMemoryOn = (meta.advancedMemory as Row | undefined)?.enabled === true;
+      const causes: string[] = [];
+      if (meta.enableMemoryRecall === true && !advancedMemoryOn)
+        causes.push(
+          "Memory Recall is on: it inserts recalled fragments chosen by the latest message near the top of the prompt, so the cache breaks at that point every reply. Turning it off, or using Advanced Memory with Recalled Scenes after Chat History, fixes it.",
+        );
+      if (typeof meta.authorNotes === "string" && meta.authorNotes.trim() && Number(meta.authorNotesDepth ?? 0) > 0)
+        causes.push(
+          `The Author's Note is at depth ${meta.authorNotesDepth}, so it moves a few messages from the end every reply. Depth 0 keeps it at the end.`,
+        );
+      const limit = Number(meta.contextMessageLimit ?? 0);
+      if (limit > 0 && messages.filter((m) => m.role !== "system").length >= limit)
+        causes.push(
+          `The chat is at its context message limit (${limit}), so the oldest message drops every reply and the start of the history changes. Cutting in larger chunks less often keeps the cache between cuts.`,
+        );
+      findings.push(
+        `Counted replies hit ${pct(countedCached, countedExpected)} of what the previous prompt held.`,
+        ...(causes.length
+          ? causes
+          : [
+              "No chat setting explains it: something inside the prompt changes each reply. Run chat.cacheCompare to see where the prompt first changes.",
+            ]),
+      );
+    }
+
+    return {
+      ok: true,
+      mode: "read",
+      command: context.command,
+      output: {
+        chatId,
+        replies: shown,
+        overall: {
+          replies: shown.length,
+          "Counted replies": counted.length,
+          "Should have hit": countedExpected,
+          "Cached tokens": countedCached,
+          "Hit of should-have": pct(countedCached, countedExpected),
+          "Left out": {
+            "cache expired between replies": expired.length,
+            "model changed": shown.filter((row) => row.Status === "model changed").length,
+            swipe: shown.filter((row) => row.Status === "swipe").length,
+            "first reply": shown.filter((row) => row.Status === "first reply").length,
+          },
+        },
+        findings,
       },
     };
   }
@@ -8872,6 +9159,7 @@ export class MariDbService {
     else if (request.kind === "character-move-folder") changes = await this.planCharacterMoveFolder(request, timestamp);
     else if (request.kind === "preset-section-delete") changes = await this.planPresetSectionDelete(request, timestamp);
     else if (request.kind === "preset-group-delete") changes = await this.planPresetGroupDelete(request, timestamp);
+    else if (request.kind === "batch") changes = await this.planBatch(request, timestamp, issues, allocateId);
     else changes = await this.planTransform(request, timestamp, allocateId);
 
     // systemKey identifies Engine-owned presets. Apply this after every planner so raw writes and
@@ -9461,6 +9749,33 @@ export class MariDbService {
       if (this.reviewLocks.get(id) === tail) this.reviewLocks.delete(id);
     });
     return run;
+  }
+
+  /**
+   * custom-mods: plans several insert/patch/delete requests as ONE change, so a bulk edit is one
+   * Keep/Restore card and one journal instead of a model round trip per row. Each operation goes
+   * through its normal planner; every planner reads the pre-batch state, so a row may appear once.
+   */
+  private async planBatch(
+    request: ParsedMutationRequest,
+    timestamp: string,
+    issues: MariDbValidationIssue[],
+    allocateId: () => string,
+  ): Promise<PlanChange[]> {
+    const changes: PlanChange[] = [];
+    for (const operation of request.operations ?? []) {
+      if (operation.kind === "insert") changes.push(...(await this.planInsert(operation, timestamp, allocateId)));
+      else if (operation.kind === "patch") changes.push(...(await this.planPatch(operation, timestamp)));
+      else if (operation.kind === "delete") changes.push(...(await this.planDelete(operation, issues)));
+      else throw new Error(`A batch cannot contain a ${operation.kind} operation`);
+    }
+    const seen = new Set<string>();
+    for (const change of changes) {
+      const key = `${change.table}:${change.id}`;
+      if (seen.has(key)) throw new Error(`A batch may change each row once; ${key} appears more than once`);
+      seen.add(key);
+    }
+    return changes;
   }
 
   private async planDelete(request: ParsedMutationRequest, issues: MariDbValidationIssue[]): Promise<PlanChange[]> {
