@@ -1731,16 +1731,34 @@ function chunkText(value: string, chunkSize = 1200): string[] {
   return chunks;
 }
 
-function mapUsage(usage: LLMUsage | undefined): {
+type MariUsageTotals = {
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
-} {
-  if (!usage) return { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+  /** custom-mods: provider-reported cache reads / writes, so a reply's total separates cheap cache
+   * reads from full-price input. Kept in the usage record only: the context-budget meter adds
+   * tokensCachedPrompt to promptTokens, which double-counts providers whose prompt includes cache. */
+  cachedPromptTokens: number;
+  cacheWritePromptTokens: number;
+};
+
+function mapUsage(usage: LLMUsage | undefined): MariUsageTotals {
   return {
-    promptTokens: usage.promptTokens,
-    completionTokens: usage.completionTokens,
-    totalTokens: usage.totalTokens,
+    promptTokens: usage?.promptTokens ?? 0,
+    completionTokens: usage?.completionTokens ?? 0,
+    totalTokens: usage?.totalTokens ?? 0,
+    cachedPromptTokens: usage?.cachedPromptTokens ?? 0,
+    cacheWritePromptTokens: usage?.cacheWritePromptTokens ?? 0,
+  };
+}
+
+function addUsage(total: MariUsageTotals, usage: MariUsageTotals): MariUsageTotals {
+  return {
+    promptTokens: total.promptTokens + usage.promptTokens,
+    completionTokens: total.completionTokens + usage.completionTokens,
+    totalTokens: total.totalTokens + usage.totalTokens,
+    cachedPromptTokens: total.cachedPromptTokens + usage.cachedPromptTokens,
+    cacheWritePromptTokens: total.cacheWritePromptTokens + usage.cacheWritePromptTokens,
   };
 }
 
@@ -2751,7 +2769,7 @@ export class ProfessorMariWorkspaceService {
     const workspaceTrace: MariWorkspaceTraceItem[] = [];
     let assistantText = "";
     let thinkingText = "";
-    let totalUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+    let totalUsage = mapUsage(undefined);
     let latestUsage: LLMUsage | undefined;
     let latestFinishReason: string | null = null;
     const commandResultsForContinuity: WorkspaceCommandResult[] = [];
@@ -2923,11 +2941,7 @@ export class ProfessorMariWorkspaceService {
         latestUsage = result.usage;
         latestFinishReason = result.finishReason ?? null;
         const usage = mapUsage(result.usage);
-        totalUsage = {
-          promptTokens: totalUsage.promptTokens + usage.promptTokens,
-          completionTokens: totalUsage.completionTokens + usage.completionTokens,
-          totalTokens: totalUsage.totalTokens + usage.totalTokens,
-        };
+        totalUsage = addUsage(totalUsage, usage);
 
         const rawContent = result.content ?? "";
         debugLog?.("[debug/professor-mari] Raw response:\n%s", rawContent);
@@ -3269,11 +3283,7 @@ export class ProfessorMariWorkspaceService {
           latestUsage = finalResult.usage;
           latestFinishReason = finalResult.finishReason ?? null;
           const finalUsage = mapUsage(finalResult.usage);
-          totalUsage = {
-            promptTokens: totalUsage.promptTokens + finalUsage.promptTokens,
-            completionTokens: totalUsage.completionTokens + finalUsage.completionTokens,
-            totalTokens: totalUsage.totalTokens + finalUsage.totalTokens,
-          };
+          totalUsage = addUsage(totalUsage, finalUsage);
           const finalAction = parseAssistantWorkspaceAction(finalResult.content ?? "");
           const finalVerificationIssue = auditWorkspaceCompletionClaim(finalAction, commandResultsForContinuity, {
             auditFrom: claimAuditWatermark,
