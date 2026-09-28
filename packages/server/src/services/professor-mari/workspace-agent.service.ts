@@ -1555,6 +1555,103 @@ ${output}
   return `Marinara executed Professor Mari's hidden workspace command${results.length === 1 ? "" : "s"}. Use these results to decide the next command or final answer.\n\n${blocks.join("\n\n")}`;
 }
 
+// custom-mods: within one reply every command result used to stay verbatim in every later model
+// call, so a long task re-sent all of them each round (a 190-entry lorebook edit ran to ~2M prompt
+// tokens). Past a high-water mark, older results are shortened in one burst down to a low-water
+// mark. A result is shortened at most once, so the provider's cached prefix stays valid up to it.
+// The high mark fits three full lorebook read pages, so paging reads are not cut mid-task.
+export const WORKSPACE_RESULT_HIGH_WATER_CHARS = 80_000;
+export const WORKSPACE_RESULT_LOW_WATER_CHARS = 40_000;
+const WORKSPACE_RESULT_KEEP_CHARS = 600;
+const WORKSPACE_RESULT_KEEP_FAILURE_CHARS = 2_000;
+
+export type WorkspaceResultRecord = {
+  message: ChatMessage;
+  results: WorkspaceCommandResult[];
+  compacted: boolean;
+};
+
+function resultIsWrite(result: WorkspaceCommandResult): boolean {
+  return isMutatingWorkspaceCommand({ id: result.id, name: result.name, arguments: result.input });
+}
+
+/** A write's lasting facts: status, review id, counts and affected rows; its preview has been seen. */
+function writeDigest(stdout: string): string | null {
+  try {
+    const parsed = JSON.parse(stdout) as Record<string, unknown>;
+    if (!isRecord(parsed) || !isRecord(parsed.summary)) return null;
+    const summary = parsed.summary;
+    const preview = Array.isArray(summary.preview) ? summary.preview : [];
+    return JSON.stringify({
+      ok: parsed.ok,
+      mode: parsed.mode,
+      status: parsed.status,
+      approval: isRecord(parsed.approval) ? { id: parsed.approval.id, status: parsed.approval.status } : undefined,
+      readBack: isRecord(parsed.readBack) ? { status: parsed.readBack.status } : undefined,
+      summary: {
+        insertedRows: summary.insertedRows,
+        updatedRows: summary.updatedRows,
+        replacedRows: summary.replacedRows,
+        deletedRows: summary.deletedRows,
+        affected: preview
+          .filter(isRecord)
+          .map((change) => `${String(change.action)} ${String(change.table)}:${String(change.id)}`),
+      },
+    });
+  } catch {
+    return null;
+  }
+}
+
+function compactCommandResultOutput(result: WorkspaceCommandResult): string {
+  if (!result.success) return compactTraceText(result.output, WORKSPACE_RESULT_KEEP_FAILURE_CHARS);
+  const marker = "\nstdout:\n";
+  const split = result.output.indexOf(marker);
+  const header = split >= 0 ? result.output.slice(0, split + marker.length) : "";
+  const stdout = split >= 0 ? result.output.slice(split + marker.length) : result.output;
+  const digest = resultIsWrite(result) ? writeDigest(stdout) : null;
+  const body = digest ?? compactTraceText(stdout, WORKSPACE_RESULT_KEEP_CHARS);
+  const removed = stdout.length - body.length;
+  if (removed <= 0) return result.output;
+  return `${header}${body}\n[Earlier result shortened by ${removed} characters to save context. Run this command again with the same input if you need the full output.]`;
+}
+
+function formatCompactedCommandResultsForPrompt(results: WorkspaceCommandResult[]): string {
+  return formatCommandResultForPrompt(
+    results.map((result) => ({ ...result, output: compactCommandResultOutput(result) })),
+  );
+}
+
+/**
+ * Shortens older command-result messages of the current reply in place once their full text passes
+ * highWaterChars, until it is at or below lowWaterChars. The newest result is never touched, a
+ * shortened message never changes again, and successful writes go before reads.
+ */
+export function compactWorkspaceResultHistory(
+  records: WorkspaceResultRecord[],
+  limits: { highWaterChars: number; lowWaterChars: number } = {
+    highWaterChars: WORKSPACE_RESULT_HIGH_WATER_CHARS,
+    lowWaterChars: WORKSPACE_RESULT_LOW_WATER_CHARS,
+  },
+): { shortened: number; beforeChars: number; afterChars: number } | null {
+  const fullChars = () =>
+    records.reduce((total, record) => total + (record.compacted ? 0 : String(record.message.content).length), 0);
+  const beforeChars = fullChars();
+  if (beforeChars <= limits.highWaterChars) return null;
+  const candidates = records.slice(0, -1).filter((record) => !record.compacted);
+  const writesOnly = (record: WorkspaceResultRecord) =>
+    record.results.length > 0 && record.results.every((result) => result.success && resultIsWrite(result));
+  const ordered = [...candidates.filter(writesOnly), ...candidates.filter((record) => !writesOnly(record))];
+  let shortened = 0;
+  for (const record of ordered) {
+    if (fullChars() <= limits.lowWaterChars) break;
+    record.message.content = formatCompactedCommandResultsForPrompt(record.results);
+    record.compacted = true;
+    shortened += 1;
+  }
+  return shortened ? { shortened, beforeChars, afterChars: fullChars() } : null;
+}
+
 function formatContinuityResult(result: WorkspaceCommandResult, index: number): string {
   const input = JSON.stringify(compactTraceValue(result.input, 600));
   const output = compactTraceText(result.output, 1000);
@@ -2791,8 +2888,21 @@ export class ProfessorMariWorkspaceService {
         ? (message: string, ...values: unknown[]) => logDebugOverride(true, message, ...values)
         : undefined;
 
+      const resultRecords: WorkspaceResultRecord[] = [];
+      const shortenOldResults = () => {
+        const compaction = compactWorkspaceResultHistory(resultRecords);
+        if (compaction)
+          logger.debug(
+            "[professor-mari] Shortened %d earlier command result message(s): %d -> %d characters",
+            compaction.shortened,
+            compaction.beforeChars,
+            compaction.afterChars,
+          );
+      };
+
       for (let round = 0; round < MAX_COMMAND_ROUNDS; round += 1) {
         if (controller.signal.aborted) throw new Error("aborted");
+        shortenOldResults();
         let result: ChatCompletionResult;
         try {
           result = await this.chatCompleteWorkspace(provider, messages, baseOptions, () => {}, debugLog);
@@ -3137,7 +3247,13 @@ export class ProfessorMariWorkspaceService {
           break;
         }
 
-        messages.push({ role: "user", content: formatCommandResultForPrompt(commandResults), contextKind: "history" });
+        const resultMessage: ChatMessage = {
+          role: "user",
+          content: formatCommandResultForPrompt(commandResults),
+          contextKind: "history",
+        };
+        messages.push(resultMessage);
+        resultRecords.push({ message: resultMessage, results: [...commandResults], compacted: false });
 
         if (round === MAX_COMMAND_ROUNDS - 1) {
           const content = "Command round limit reached; asking Professor Mari to summarize with the evidence she has.";
@@ -3148,6 +3264,7 @@ export class ProfessorMariWorkspaceService {
             content:
               "You reached the workspace command round limit. Do not issue more commands. Summarize what you learned or what remains blocked.",
           });
+          shortenOldResults();
           const finalResult = await this.chatCompleteWorkspace(provider, messages, baseOptions, () => {}, debugLog);
           latestUsage = finalResult.usage;
           latestFinishReason = finalResult.finishReason ?? null;
