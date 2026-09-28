@@ -163,6 +163,8 @@ export const createConnectionSchema = z.object({
   /** Claude (Subscription) and OpenAI (ChatGPT): which plan windows the usage widget shows. */
   showUsageFiveHour: z.boolean().default(true),
   showUsageWeekly: z.boolean().default(true),
+  /** When true, Marinara omits tool schemas and treats this connection as text-only. */
+  disableNativeTools: z.boolean().default(false),
 });
 
 export type CreateConnectionInput = z.infer<typeof createConnectionSchema>;
