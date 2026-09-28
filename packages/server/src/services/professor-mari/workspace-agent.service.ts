@@ -1740,7 +1740,7 @@ function appDataActionLooksReadOnly(action: unknown): boolean {
     .trim()
     .toLowerCase()
     .replace(/[-_\s]+/g, "");
-  return /\.(list|get|getentry|search|active|entries|messages|sections|getsection|groups|getgroup|choiceblocks|getchoiceblock)$/.test(
+  return /\.(list|get|getentry|getentries|getmany|getmanyentries|search|active|entries|messages|sections|getsection|groups|getgroup|choiceblocks|getchoiceblock)$/.test(
     normalized,
   );
 }

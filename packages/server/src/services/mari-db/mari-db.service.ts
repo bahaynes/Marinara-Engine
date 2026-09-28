@@ -908,9 +908,9 @@ function presetDataFromFlags(flags: Map<string, string | boolean>): Row {
   return data;
 }
 
-// custom-mods: a page of lorebook reads stays under the 24k read bound, which would otherwise elide
-// the whole items array; the caller continues from nextOffset / remainingIds.
-const LOREBOOK_READ_PAGE_BUDGET = 20_000;
+// custom-mods: a whole page of lorebook reads (measured as sent) stays under the 24k read bound,
+// which would otherwise elide the entire items array; the caller continues from nextOffset / remainingIds.
+const LOREBOOK_READ_PAGE_BUDGET = 22_000;
 const LOREBOOK_BATCH_MAX_OPERATIONS = 200;
 const LOREBOOK_ENTRY_CREATE_FIELDS = [
   "name",
@@ -3621,30 +3621,30 @@ export class MariDbService {
           .filter((entry) => entry.lorebookId === lorebookId)
           .filter((entry) => !entryId || entry.id === entryId)
           .sort((a, b) => Number(a.order ?? 100) - Number(b.order ?? 100));
+        const page = (items: Row[]) => ({
+          items,
+          total: entries.length,
+          offset,
+          nextOffset: offset + items.length < entries.length ? offset + items.length : null,
+        });
         const items: Row[] = [];
-        let size = 0;
         for (const entry of entries.slice(offset, offset + limit)) {
-          const summary = summarizeLorebookEntryRow(entry);
-          const length = prettyLength(summary);
-          if (items.length > 0 && size + length > LOREBOOK_READ_PAGE_BUDGET) break;
-          items.push(summary);
-          size += length;
+          items.push(summarizeLorebookEntryRow(entry));
+          if (items.length > 1 && prettyLength(page(items)) > LOREBOOK_READ_PAGE_BUDGET) {
+            items.pop();
+            break;
+          }
         }
-        const nextOffset = offset + items.length < entries.length ? offset + items.length : null;
-        return {
-          ok: true,
-          mode: "read",
-          command: context.command,
-          output: { items, total: entries.length, offset, nextOffset },
-        };
+        return { ok: true, mode: "read", command: context.command, output: page(items) };
       }
       case "getentries": {
         const entryIds = [...new Set(firstStringList(args, ["entryIds", "ids"]) ?? [])];
         if (entryIds.length === 0) throw new Error("lorebook.getEntries needs entryIds: a list of lorebook entry ids");
+        if (entryIds.length > LOREBOOK_BATCH_MAX_OPERATIONS)
+          throw new Error(`lorebook.getEntries takes at most ${LOREBOOK_BATCH_MAX_OPERATIONS} entryIds per call`);
         const lorebookId = firstString(args, ["lorebookId"]);
         const items: Row[] = [];
         const missingIds: string[] = [];
-        let size = 0;
         let index = 0;
         for (; index < entryIds.length; index += 1) {
           const id = entryIds[index]!;
@@ -3653,11 +3653,12 @@ export class MariDbService {
             missingIds.push(id);
             continue;
           }
-          const parsed = parseRow("lorebook_entries", row);
-          const length = prettyLength(parsed);
-          if (items.length > 0 && size + length > LOREBOOK_READ_PAGE_BUDGET) break;
-          items.push(parsed);
-          size += length;
+          items.push(parseRow("lorebook_entries", row));
+          const candidate = { items, missingIds, remainingIds: entryIds.slice(index + 1) };
+          if (items.length > 1 && prettyLength(candidate) > LOREBOOK_READ_PAGE_BUDGET) {
+            items.pop();
+            break;
+          }
         }
         return {
           ok: true,
@@ -3713,12 +3714,13 @@ export class MariDbService {
         }
         for (const entryId of deletes) {
           await requireOwnEntry(entryId);
+          // Cascade only reaches the entry's activation stats (see deleteentry).
           operations.push({
             kind: "delete",
             table: "lorebook_entries",
             id: entryId,
             apply: true,
-            cascade: false,
+            cascade: true,
             reason,
           });
         }
@@ -4038,7 +4040,9 @@ export class MariDbService {
             table: "lorebook_entries",
             id: entryId,
             apply: firstBoolean(args, ["apply"]) === true,
-            cascade: false,
+            // custom-mods: an entry's only cascade child is its activation stats row. Without cascade,
+            // any entry that has ever fired refused deletion with "re-run with --cascade".
+            cascade: true,
             reason: firstString(args, ["reason"]) ?? null,
             cwd: context.cwd,
           },
