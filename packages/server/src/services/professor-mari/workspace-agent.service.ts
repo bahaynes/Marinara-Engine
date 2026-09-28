@@ -2555,7 +2555,10 @@ export function resolveWorkspaceMutationVerification(
   return mutationSeen ? "verified" : "none";
 }
 
-export function workspaceTextClaimsMutationCompletion(text: string): boolean {
+export function workspaceTextClaimsMutationCompletion(
+  text: string,
+  options: { conversational?: boolean } = {},
+): boolean {
   const normalized = text.trim().replace(/[’‘]/gu, "'").replace(/\s+/gu, " ");
   if (!normalized) return false;
   if (/^(?:have|has|did|is|are|was|were)\b[^.!]*\?$/iu.test(normalized)) return false;
@@ -2571,6 +2574,23 @@ export function workspaceTextClaimsMutationCompletion(text: string): boolean {
       normalized.slice(0, match.index),
     ) || /^\s*by default\b/iu.test(normalized.slice((match.index ?? 0) + match[0].length));
   const claims = (pattern: RegExp) => [...normalized.matchAll(pattern)].some((match) => !describesFeature(match));
+  // custom-mods: in a reply that ran no commands, "it's/that's <verb>" and "is/are/was/were <verb>"
+  // read as ordinary description ("your story is set in Skyrim", "it's added drama"), and flagging
+  // them threw away a real answer for a "correction". Only first-person and "has been" claims, an
+  // edit/change/update subject, or a bare "Done." count there.
+  if (options.conversational) {
+    return (
+      new RegExp(`\\b(?:i(?:'ve| have)?|we(?:'ve| have)?)\\s+${adverbs}(?:${completedMutation})\\b`, "iu").test(
+        normalized,
+      ) ||
+      new RegExp(`\\b(?:has been|have been)\\s+${adverbs}(?:${completedMutation})\\b`, "iu").test(normalized) ||
+      new RegExp(
+        `^(?:(?:the )?(?:edit|change|update)s?\\s+)${adverbs}(?:${completedMutation})\\b[^?]*[.!]?$`,
+        "iu",
+      ).test(normalized) ||
+      new RegExp(`^(?:${completedMutation}|done)[.!]*$`, "iu").test(normalized)
+    );
+  }
   return (
     claims(
       new RegExp(
@@ -2677,7 +2697,9 @@ export function auditWorkspaceCompletionClaim(
 ): WorkspaceClaimAudit {
   const auditFrom = options.auditFrom ?? 0;
   const hadPassedClaimAudit = options.hadPassedClaimAudit ?? false;
-  if (!workspaceTextClaimsMutationCompletion(action.visibleText)) {
+  // A reply that ran no commands at all is conversation; see workspaceTextClaimsMutationCompletion.
+  const conversational = results.length === 0 && action.commands.length === 0;
+  if (!workspaceTextClaimsMutationCompletion(action.visibleText, { conversational })) {
     return { issue: null, advanceWatermark: false };
   }
   const verification = resolveWorkspaceMutationVerification(results, auditFrom);
