@@ -238,6 +238,7 @@ try {
       embeddingSpaceId: null,
       summaryWork: null,
       structuredMemory: null,
+      timelineEvents: "[]",
     });
     await memory.initialize(chat.id, { sceneId });
     assert.equal(summaryRequests.length, afterFailure + 1, "a repeated recovery is free");
