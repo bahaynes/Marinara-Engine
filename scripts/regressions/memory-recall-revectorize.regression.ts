@@ -66,7 +66,8 @@ try {
       },
     },
   );
-  assert.deepEqual(countCalls, [64, 1], "provider batches also respect the item-count limit");
+  // custom-mods: configured sources are capped at 8 texts per request (slow CPU endpoints).
+  assert.deepEqual(countCalls, [8, 8, 8, 8, 8, 8, 8, 8, 1], "provider batches also respect the item-count limit");
   const responseAbortController = new AbortController();
   await assert.rejects(
     embedMemoryRecallTexts(["final response"], {
