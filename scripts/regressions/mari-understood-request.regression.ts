@@ -132,12 +132,18 @@ assert.deepEqual(
     "if (runUnderstoodRequest === null || this.latestUnderstoodRequest !== runUnderstoodRequest",
     // persistAssistantMessage: bind the run's OWN record to its message.
     "if ( runUnderstoodRequest !== null && this.latestUnderstoodRequest === runUnderstoodRequest && runUnderstoodRequest.messageId === null",
-    // prompt build: read the chat's record back to Mari as context so she can
-    // explain her own interpretation when asked - inclusion-only, never a gate.
-    "if (understoodRequestRecord !== null && understoodRequestRecord.chatId === chatId",
   ],
   "workspace-agent may only branch on the understood request for record bookkeeping - never to gate a command",
 );
+// prompt build: read the chat's record back to Mari as context so she can
+// explain her own interpretation when asked - inclusion-only, never a gate.
+// It is a ternary now (the block joins the latest user turn), outside the sweep above: pin that it
+// only chooses between the record block and nothing.
+assert.match(
+  workspaceAgent,
+  /const understoodRequestRecordBlock =\s*understoodRequestRecord !== null && understoodRequestRecord\.chatId === chatId\s*\? \[\s*"<mari_understood_request_record>"/u,
+);
+assert.match(workspaceAgent, /"<\/mari_understood_request_record>",\s*\]\.join\("\\n"\)\s*: null;/u);
 for (const file of [
   "packages/server/src/services/professor-mari/workspace-agent.service.ts",
   "packages/server/src/services/mari-db/mari-db.service.ts",
