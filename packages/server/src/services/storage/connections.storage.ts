@@ -265,6 +265,7 @@ export function createConnectionsStorage(db: DB) {
         maxTokensOverride: input.maxTokensOverride ?? null,
         claudeFastMode: String(input.claudeFastMode ?? false),
         treatAsLocalEndpoint: String(input.treatAsLocalEndpoint ?? false),
+        disableNativeTools: String(input.disableNativeTools ?? false),
         createdAt: timestamp,
         updatedAt: timestamp,
       };
@@ -494,6 +495,9 @@ export function createConnectionsStorage(db: DB) {
       if (data.treatAsLocalEndpoint !== undefined) {
         updateFields.treatAsLocalEndpoint = String(data.treatAsLocalEndpoint);
       }
+      if (data.disableNativeTools !== undefined) {
+        updateFields.disableNativeTools = String(data.disableNativeTools);
+      }
       if (effectiveProvider === "decision") {
         updateFields.isDefault = "false";
         updateFields.useForRandom = "false";
@@ -644,6 +648,7 @@ export function createConnectionsStorage(db: DB) {
         maxRequestsPerMinute: source.maxRequestsPerMinute,
         claudeFastMode: source.claudeFastMode,
         treatAsLocalEndpoint: source.treatAsLocalEndpoint,
+        disableNativeTools: source.disableNativeTools,
         createdAt: timestamp,
         updatedAt: timestamp,
       });

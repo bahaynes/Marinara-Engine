@@ -4184,7 +4184,7 @@ export async function generateRoutes(app: FastifyInstance) {
         // A configured Game tool connection must support native tools: generation refuses the
         // turn below when it does not, so any turn that reaches the model has its answer. With
         // no such connection the narrator's own decides, exactly as the tool resolution reads it.
-        const nativeToolsAvailableForTurn = gameToolConnectionId ? true : supportsNativeToolCalls(conn.provider);
+        const nativeToolsAvailableForTurn = gameToolConnectionId ? true : supportsNativeToolCalls(conn);
         const rollDiceToolAttached = isChatToolResolved("roll_dice", {
           enableChatTools: resolveChatToolsEnabled({
             requestBody: input as Record<string, unknown>,
@@ -5752,10 +5752,7 @@ export async function generateRoutes(app: FastifyInstance) {
         }
 
         const gameToolConnection = gameToolConnectionId ? await connections.getWithKey(gameToolConnectionId) : null;
-        if (
-          gameToolConnectionId &&
-          (!gameToolConnection?.model || !supportsNativeToolCalls(gameToolConnection.provider))
-        ) {
+        if (gameToolConnectionId && (!gameToolConnection?.model || !supportsNativeToolCalls(gameToolConnection))) {
           throw new Error(
             "The selected Game tool connection is unavailable or does not support native tools. Choose another tool connection in Chat Settings.",
           );
@@ -5770,7 +5767,7 @@ export async function generateRoutes(app: FastifyInstance) {
           finalizeLorebookWrites,
         } = await resolveGenerationTools({
           requestBody: input as Record<string, unknown>,
-          nativeToolsAvailable: supportsNativeToolCalls((gameToolConnection ?? conn).provider),
+          nativeToolsAvailable: supportsNativeToolCalls(gameToolConnection ?? conn),
           lorebookEmbeddingOptions: { embeddingSource: memoryRecallEmbeddingSource, signal: abortController.signal },
           chatId: input.chatId,
           chatMetadata: chatMeta,
@@ -7873,8 +7870,8 @@ export async function generateRoutes(app: FastifyInstance) {
                       presencePenalty: presencePenalty || undefined,
                       minP: minP || undefined,
                       stop: stopSequences.length ? stopSequences : undefined,
-                      tools: supportsNativeToolCalls(conn.provider) ? responderToolDefs : undefined,
-                      toolChoice: supportsNativeToolCalls(conn.provider)
+                      tools: supportsNativeToolCalls(conn) ? responderToolDefs : undefined,
+                      toolChoice: supportsNativeToolCalls(conn)
                         ? resolveMainGenerationToolChoice({ chatMetadata: chatMeta, enableChatTools, round })
                         : undefined,
                       debugMode: requestDebug,

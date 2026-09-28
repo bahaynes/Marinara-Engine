@@ -123,6 +123,8 @@ export interface APIConnection {
   maxRequestsPerMinute: number | null;
   /** Treat this endpoint as local/custom for Professor Mari tool-protocol fallbacks. */
   treatAsLocalEndpoint: boolean;
+  /** Whether to omit native API tool/function-calling schemas and treat this connection as text-only. */
+  disableNativeTools: boolean;
   /** Folder this connection belongs to (null = root/unfiled). */
   folderId: string | null;
   /** Manual sort order within a folder (lower = higher). 0 = use default sort. */

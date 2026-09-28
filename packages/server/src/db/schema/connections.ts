@@ -109,6 +109,8 @@ export const apiConnections = fileTable("api_connections", {
    * exact model chosen on the connection is what runs.
    */
   claudeFastMode: text("claude_fast_mode").notNull().default("false"),
+  /** When "true", Marinara omits tool schemas and treats this connection as text-only. */
+  disableNativeTools: text("disable_native_tools").notNull().default("false"),
   /** Folder this connection belongs to (null = root/unfiled). */
   folderId: text("folder_id"),
   /** Manual sort order within a folder (lower = higher). 0 = use default sort. */

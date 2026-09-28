@@ -105,6 +105,8 @@ export const createConnectionSchema = z.object({
   maxRequestsPerMinute: z.number().int().min(1).max(600).nullable().default(null),
   treatAsLocalEndpoint: z.boolean().default(false),
   claudeFastMode: z.boolean().default(false),
+  /** When true, Marinara omits tool schemas and treats this connection as text-only. */
+  disableNativeTools: z.boolean().default(false),
 });
 
 export type CreateConnectionInput = z.infer<typeof createConnectionSchema>;

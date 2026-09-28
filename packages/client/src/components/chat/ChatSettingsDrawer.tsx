@@ -9497,17 +9497,16 @@ export function ChatSettingsDrawer({
           <div style={{ order: CHAT_SETTINGS_ORDER.functionCalling }}>
             <FunctionCallingSection
               isGameMode={isGame}
-              narratorProvider={
-                (
-                  chatGenerationConnectionsList as Array<{
-                    id: string;
-                    provider?: string;
-                    isDefault?: boolean | string;
-                  }>
-                ).find((connection) =>
-                  chat.connectionId ? connection.id === chat.connectionId : isConnectionFlagTrue(connection.isDefault),
-                )?.provider
-              }
+              narratorConnection={(
+                chatGenerationConnectionsList as Array<{
+                  id: string;
+                  provider?: string;
+                  isDefault?: boolean | string;
+                  disableNativeTools?: boolean | string;
+                }>
+              ).find((connection) =>
+                chat.connectionId ? connection.id === chat.connectionId : isConnectionFlagTrue(connection.isDefault),
+              )}
               connections={textConnectionsList}
               toolConnectionId={(metadata.gameGmToolConnectionId as string) ?? ""}
               onToolConnectionChange={(gameGmToolConnectionId) =>

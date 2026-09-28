@@ -20,8 +20,15 @@ export interface FunctionToolOption {
 interface FunctionCallingSectionProps {
   /** Game chats get the dice tool regardless of this toggle, so they need the extra context. */
   isGameMode: boolean;
-  narratorProvider?: string;
-  connections: Array<{ id: string; name: string; model?: string; provider?: string }>;
+  /** The chat's resolved narrator connection; undefined for a random pool or an unselected narrator. */
+  narratorConnection?: { provider?: string; disableNativeTools?: boolean | string };
+  connections: Array<{
+    id: string;
+    name: string;
+    model?: string;
+    provider?: string;
+    disableNativeTools?: boolean | string;
+  }>;
   toolConnectionId: string;
   onToolConnectionChange: (id: string | null) => void;
   gameLorebookSearch: boolean;
@@ -59,7 +66,7 @@ interface FunctionCallingSectionProps {
 
 export function FunctionCallingSection({
   isGameMode,
-  narratorProvider,
+  narratorConnection,
   connections,
   toolConnectionId,
   onToolConnectionChange,
@@ -92,13 +99,15 @@ export function FunctionCallingSection({
   onCreateCustomTool,
 }: FunctionCallingSectionProps) {
   const { t: localizeUi } = useUiTranslation();
-  const toolProvider =
+  const targetToolConnection =
     isGameMode && toolConnectionId
-      ? connections.find((connection) => connection.id === toolConnectionId)?.provider
-      : narratorProvider;
+      ? connections.find((connection) => connection.id === toolConnectionId)
+      : narratorConnection;
   // A random-pool choice is resolved by the server at generation time; an
   // unselected narrator must still allow configuring the chat in advance.
-  const nativeToolsAvailable = toolProvider ? supportsNativeToolCalls(toolProvider) : !(isGameMode && toolConnectionId);
+  const nativeToolsAvailable = targetToolConnection
+    ? supportsNativeToolCalls(targetToolConnection)
+    : !(isGameMode && toolConnectionId);
   const loreSearchUnavailable = isGameMode && !gameLorebookSearch;
   const inactiveTools = availableTools.filter(
     (tool) => !activeToolIds.includes(tool.id) && !(loreSearchUnavailable && tool.name === "search_lorebook"),
@@ -132,11 +141,7 @@ export function FunctionCallingSection({
                   </option>
                 )}
                 {connections.map((connection) => (
-                  <option
-                    key={connection.id}
-                    value={connection.id}
-                    disabled={!supportsNativeToolCalls(connection.provider)}
-                  >
+                  <option key={connection.id} value={connection.id} disabled={!supportsNativeToolCalls(connection)}>
                     {connection.name}
                     {connection.model
                       ? localizeUi("ui.chat.chatsettingsdrawer.value1", { value1: connection.model })

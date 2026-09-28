@@ -96,6 +96,7 @@ export type CreateConnectionPayload = {
   maxRequestsPerMinute?: number | null;
   treatAsLocalEndpoint?: boolean;
   claudeFastMode?: boolean;
+  disableNativeTools?: boolean;
 };
 
 export function useCreateConnection() {
