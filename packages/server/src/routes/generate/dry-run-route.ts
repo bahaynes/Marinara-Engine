@@ -16,6 +16,9 @@ import {
   isAgentConfigDeleted,
   isBuiltInAgentRuntimeDisabled,
   normalizeAdvancedMemorySettings,
+  advancedMemoryDecisionDiagnosticsSchema,
+  type DecisionDebugReport,
+  type AdvancedMemoryDecisionDiagnostics,
 } from "@marinara-engine/shared";
 import {
   appendRoleplayPromptTail,
@@ -45,6 +48,9 @@ import {
   latestTurnDecisionId,
   planPromptDecisions,
   promptDecisionCacheKey,
+  answerPromptDecisions,
+  PromptDecisionTurnCache,
+  type PromptDecisionPlan,
 } from "../../services/decision/prompt-decisions.js";
 import {
   DECISION_TIMERS_METADATA_KEY,
@@ -53,7 +59,11 @@ import {
   readDecisionTimers,
 } from "../../services/decision/decision-timers.js";
 import { gameGmPromptDecisionTexts } from "../../services/generation/game-gm-prompt-runtime.js";
-import { DECISION_SETTINGS_KEYS } from "../../services/decision/decision-default.js";
+import {
+  DECISION_SETTINGS_KEYS,
+  resolveDecisionBackend,
+  type DecisionBackend,
+} from "../../services/decision/decision-default.js";
 import { createPromptsStorage } from "../../services/storage/prompts.storage.js";
 import { createCharactersStorage } from "../../services/storage/characters.storage.js";
 import { createAgentsStorage } from "../../services/storage/agents.storage.js";
@@ -84,6 +94,8 @@ import {
   resolveMacrosWithVariableSnapshot,
   resolvePromptIdleDuration,
   resolvePromptLastGenerationType,
+  decodeDeferredPresetConditionals,
+  parsePresetVariableNames,
   resolvePromptMessageMacros,
   setLorebookEntryCounts,
   type AssemblerInput,
@@ -538,6 +550,15 @@ export async function registerDryRunRoute(app: FastifyInstance) {
     const impersonate = body.impersonate === true;
     const streaming = body.streaming === true;
     const returnPrompt = body.returnPrompt === true;
+    if (
+      body.decisionDebug !== undefined &&
+      ((body.decisionDebug !== "inspect" && body.decisionDebug !== "run") || !returnPrompt || streaming)
+    ) {
+      return reply
+        .status(400)
+        .send({ error: "Decision debugging requires inspect or run with returnPrompt and without streaming." });
+    }
+    const decisionDebugMode = body.decisionDebug as "inspect" | "run" | undefined;
     const wrapLastMessage = body.wrapLastMessage === true;
     // Normalize injection flags (support extension legacy-ish aliases).
     const resolvedInjectLorebook = body.injectLorebook === true || body.injectLorebookInjection === true;
@@ -982,6 +1003,26 @@ export async function registerDryRunRoute(app: FastifyInstance) {
 
     const chatChoices: Record<string, string | string[]> =
       requestChoices ?? (isDifferentPresetOverride ? (presetDefaultChoices ?? {}) : chatChoicesFromMeta);
+
+    // This preset's sections, groups and choice blocks are wanted in three
+    // places: decision texts, the deferred-variable claim, and assembly. Read
+    // them once, the way the live route reuses `decisionPresetParts`.
+    const readPresetParts = async (presetId: string) => {
+      const [sections, groups, choiceBlocks] = await Promise.all([
+        presets.listSections(presetId),
+        presets.listGroups(presetId),
+        presets.listChoiceBlocksForPreset(presetId),
+      ]);
+      return { sections, groups, choiceBlocks };
+    };
+    const presetPartsCache = new Map<string, ReturnType<typeof readPresetParts>>();
+    const loadPresetParts = (presetId: string) => {
+      const cached = presetPartsCache.get(presetId);
+      if (cached) return cached;
+      const pending = readPresetParts(presetId);
+      presetPartsCache.set(presetId, pending);
+      return pending;
+    };
     const chatMacroVariables = normalizeChatMacroVariables(chatMeta.macroVariables);
     const promptMacroContext = await buildPromptMacroContext({
       db: app.db,
@@ -1010,9 +1051,8 @@ export async function registerDryRunRoute(app: FastifyInstance) {
     });
     const historyMacroProfilesById = (await resolveCharacterMacroData(app.db, allCharacterIds)).profilesById;
 
-    // Decision statements (#6569). Peek Prompt shows the branches this turn has already
-    // answered and never asks the model itself; what is not answered yet reads as no,
-    // and the preview says so rather than implying the prompt is final.
+    // Normal previews only read live answers. An explicit diagnostic request uses its
+    // own cache; only run mode sends Decision requests, never the main generation.
     const decisionUnanswered = new Set<string>();
     // Statements past the per-turn limit, which generation would not ask either.
     const decisionDropped = new Set<string>();
@@ -1027,10 +1067,71 @@ export async function registerDryRunRoute(app: FastifyInstance) {
     const heldDecisions: HeldDecisions = (kind, key, modifiers) =>
       heldDecision(previewDecisionTimers, previewDecisionTurn, kind, key, modifiers?.every);
     const decisionLocalSetting = await decisionSettings.get(DECISION_SETTINGS_KEYS.localDefault);
-    const decisionConnectionId = (await connections.getDefaultForDecision())?.id ?? null;
+    const decisionConnection = await connections.getDefaultForDecision();
+    const decisionConnectionId = decisionConnection?.id ?? null;
     // The cache key uses the setting as generation does; the report says whether it can serve.
     const decisionModelId = decisionLocalSetting ?? decisionConnectionId;
     const decisionModelSet = decisionModelUsable(decisionLocalSetting, decisionConnectionId);
+    const decisionCacheKey = promptDecisionCacheKey(chatId, latestTurnDecisionId(chatMessages), decisionModelId);
+    const decisionDebug: DecisionDebugReport | undefined = decisionDebugMode
+      ? {
+          mode: decisionDebugMode,
+          createdAt: new Date().toISOString(),
+          turnId: latestTurnDecisionId(chatMessages),
+          model: decisionLocalSetting ?? decisionConnection?.model ?? null,
+          results: [],
+          requests: [],
+        }
+      : undefined;
+    const testCache = decisionDebug ? new PromptDecisionTurnCache(1) : undefined;
+    let testBackend: DecisionBackend | null | undefined;
+    // Includes cold local startup, but cannot leave an abandoned test running forever.
+    const testAbort = decisionDebug ? new AbortController() : undefined;
+    if (testAbort)
+      reply.raw.once("close", () => {
+        if (!reply.raw.writableEnded) testAbort.abort();
+      });
+    const testSignal = testAbort ? AbortSignal.any([testAbort.signal, AbortSignal.timeout(180_000)]) : undefined;
+    const answerPreviewDecisions = async (plan: PromptDecisionPlan) => {
+      if (!decisionDebug) return cachedPromptDecisionAnswers(plan, decisionCacheKey);
+      if (testBackend === undefined && plan.decisions.some((decision) => !decision.held)) {
+        try {
+          testBackend = await resolveDecisionBackend(
+            {
+              getLocalDefault: async () => decisionLocalSetting,
+              getThinkingPreGeneration: async () =>
+                (await decisionSettings.get(DECISION_SETTINGS_KEYS.thinkingPreGeneration)) === "true",
+              getDefaultConnection: async () => decisionConnection,
+              getConnectionWithKey: (id) => connections.getWithKey(id),
+              inspection: decisionDebug,
+            },
+            testSignal,
+          );
+        } catch (error) {
+          logger.warn(error, "[decision] Could not prepare the selected model for inspection");
+          testBackend = null;
+        }
+      }
+      return answerPromptDecisions({
+        plan,
+        backend: testBackend ?? null,
+        inspection: decisionDebug,
+        cache: testCache,
+        cacheKey: decisionCacheKey,
+        chatId,
+        // An explicit test can wait for reasoning without changing the live pre-reply policy.
+        afterReply: decisionDebugMode === "run",
+        messages: chatMessages.map((message: any) => ({
+          role: message.role,
+          name:
+            message.role === "user"
+              ? personaName
+              : (historyMacroProfilesById.get(message.characterId)?.name ?? "Narrator"),
+          content: typeof message.content === "string" ? message.content : "",
+        })),
+        // Timers are read above, but test results never advance or save them.
+      });
+    };
     {
       const texts = collectTurnDecisionTexts({
         // The same sources generation plans from: preset sections only outside
@@ -1038,11 +1139,7 @@ export async function registerDryRunRoute(app: FastifyInstance) {
         preset:
           // Custom prompt parts replace the preset's sections with their own text (below).
           !promptParts && effectivePresetId && effectivePreset && chatMode !== "conversation" && chatMode !== "game"
-            ? await Promise.all([
-                presets.listSections(effectivePresetId),
-                presets.listGroups(effectivePresetId),
-                presets.listChoiceBlocksForPreset(effectivePresetId),
-              ]).then(([sections, groups, choiceBlocks]) => ({ sections, groups, choiceBlocks, choices: chatChoices }))
+            ? { ...(await loadPresetParts(effectivePresetId)), choices: chatChoices }
             : undefined,
         ctx: promptMacroContext,
         extra: [
@@ -1088,12 +1185,7 @@ export async function registerDryRunRoute(app: FastifyInstance) {
       decisionSlotsUsed = plan.decisions.filter((decision) => !decision.held).length;
       // Always an object, so answers for activating lorebook entries merge into it.
       promptMacroContext.decisions = {
-        ...(plan.decisions.length > 0
-          ? cachedPromptDecisionAnswers(
-              plan,
-              promptDecisionCacheKey(chatId, latestTurnDecisionId(chatMessages), decisionModelId),
-            )
-          : {}),
+        ...(plan.decisions.length > 0 ? await answerPreviewDecisions(plan) : {}),
         unanswered: decisionUnanswered,
       };
     }
@@ -1104,15 +1196,22 @@ export async function registerDryRunRoute(app: FastifyInstance) {
       // Spent as generation spends it, so the preview drops what generation would.
       limit: Math.max(0, decisionLimit - decisionSlotsUsed),
       freeKeys: new Set(decisionPlanKeys),
-      answer: async (plan) =>
-        cachedPromptDecisionAnswers(
-          plan,
-          promptDecisionCacheKey(chatId, latestTurnDecisionId(chatMessages), decisionModelId),
-        ),
+      answer: answerPreviewDecisions,
       onUnanswered: (statement) => decisionUnanswered.add(statement),
       onDropped: (statement) => decisionDropped.add(statement),
       held: heldDecisions,
     });
+    // Same claim as the live route: preset variables outrank chat variables but
+    // their values arrive with the assembler, after history is resolved.
+    // `!promptParts`: custom prompt parts replace the preset's sections and never
+    // reach the assembler, so nothing would release a claimed name there.
+    if (!promptParts && effectivePresetId && effectivePreset && chatMode !== "conversation" && chatMode !== "game") {
+      const presetVariableNames = new Set<string>(parsePresetVariableNames(effectivePreset.variableValues));
+      for (const choiceBlock of (await loadPresetParts(effectivePresetId)).choiceBlocks) {
+        presetVariableNames.add(choiceBlock.variableName);
+      }
+      if (presetVariableNames.size > 0) promptMacroContext.deferredPresetVariableNames = presetVariableNames;
+    }
     const resolveHistoryMessageMacros = <T extends { content: string; characterId?: string | null }>(
       messages: T[],
     ): T[] => resolvePromptMessageMacros(messages, promptMacroContext, historyMacroProfilesById);
@@ -1525,11 +1624,7 @@ export async function registerDryRunRoute(app: FastifyInstance) {
     } else if (effectivePresetId && effectivePreset && chatMode !== "conversation" && chatMode !== "game") {
       const preset = effectivePreset;
       wrapFormat = normalizePromptWrapFormat(preset.wrapFormat);
-      const [sections, groups, choiceBlocks] = await Promise.all([
-        presets.listSections(effectivePresetId),
-        presets.listGroups(effectivePresetId),
-        presets.listChoiceBlocksForPreset(effectivePresetId),
-      ]);
+      const { sections, groups, choiceBlocks } = await loadPresetParts(effectivePresetId);
 
       const eligibleTypes = buildRuntimeAgentSectionEligibleTypes({
         enableAgents: dryRunChatEnableAgents,
@@ -1636,6 +1731,10 @@ export async function registerDryRunRoute(app: FastifyInstance) {
 
       const assembled = await assemblePrompt(assemblerInput);
       Object.assign(promptMacroContext.variables, assembled.macroVariables);
+      // Values are in hand; deferred names resolve preset-first from here on,
+      // and conditionals encoded during history resolution are settled now.
+      delete promptMacroContext.deferredPresetVariableNames;
+      decodeDeferredPresetConditionals(mappedMessages, promptMacroContext);
       promptMacroContext.agentData = {
         ...promptMacroContext.agentData,
         ...assembled.macroAgentData,
@@ -1963,6 +2062,13 @@ export async function registerDryRunRoute(app: FastifyInstance) {
     // Mirror the live route's provider-boundary macro guard so Peek Prompt is
     // both accurate and incapable of exposing late raw identity macros (#3704).
     finalMessages = resolveHistoryMessageMacros(finalMessages);
+    // Blocks deferred for a pending preset variable are settled here as well:
+    // the history array decoded above is a copy taken before the assembler
+    // merge. Gated to the modes that can claim a name, so a Conversation
+    // relocation token its own decode deliberately preserved is never consumed.
+    if (chatMode !== "conversation" && chatMode !== "game") {
+      decodeDeferredPresetConditionals(finalMessages, promptMacroContext);
+    }
 
     if (chatMode === "roleplay") {
       const target = promptTargetCharacterId ?? (allCharacterIds.length === 1 ? allCharacterIds[0]! : null);
@@ -2167,8 +2273,34 @@ export async function registerDryRunRoute(app: FastifyInstance) {
 
     // Prompt preview mode: return the exact prompt shape that would be sent.
     if (returnPrompt) {
+      if (decisionDebug && advancedMemoryService && advancedMemorySettings.decisionEnabled) {
+        // These are historical observations, not proof that a saved prompt can be reused today.
+        let recall: AdvancedMemoryDecisionDiagnostics | undefined;
+        for (const message of [...allChatMessages].reverse()) {
+          const saved = advancedMemoryDecisionDiagnosticsSchema.safeParse(
+            parseExtra(parseExtra(message.extra).advancedMemoryReceipt).decisionRecall,
+          );
+          if (saved.success) {
+            recall = saved.data;
+            break;
+          }
+        }
+        const sceneCheck = advancedMemoryDecisionDiagnosticsSchema.safeParse(
+          parseExtra(chatMeta.advancedMemoryState).decisionSceneCheck,
+        );
+        decisionDebug.advancedMemory = {
+          ...(recall ? { recall } : {}),
+          ...(sceneCheck.success ? { sceneCheck: sceneCheck.data } : {}),
+        };
+      }
+      if (decisionDebug)
+        for (const statement of decisionDropped) {
+          if (!decisionDebug.results.some((row) => row.statement === statement))
+            decisionDebug.results.push({ statement, kind: "noul", status: "dropped" });
+        }
       return reply.send({
         prompt: {
+          ...(decisionDebug ? { decisionDebug } : {}),
           messages: providerMessages.map((message) => ({
             role: message.role,
             content: message.content,

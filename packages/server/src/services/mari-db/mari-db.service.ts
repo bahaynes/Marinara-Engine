@@ -69,6 +69,8 @@ import { computePersonalExtensionHash } from "../extensions/personal-extension-h
 import { HomeWidgetCatalogConflictError, replaceHomeWidgetCatalog } from "../home-widget-catalog.service.js";
 import { createMariWherePredicate } from "./mari-where-expression.js";
 import { runMariTransformSandbox } from "./mari-transform-sandbox.js";
+import { reloadFeatureSettingsIfTouched } from "../features/feature-settings.js";
+import { createAppSettingsStorage } from "../storage/app-settings.storage.js";
 import { encryptCustomToolWebhookUrl, ENCRYPTED_WEBHOOK_PREFIX } from "../../utils/custom-tool-webhook.js";
 
 type Row = Record<string, unknown>;
@@ -2185,6 +2187,7 @@ function summarizeLorebookRow(row: Row): Row {
     scanDepth: row.scanDepth,
     tokenBudget: row.tokenBudget,
     vectorQueryDepth: row.vectorQueryDepth,
+    vectorIncludeAssistant: row.vectorIncludeAssistant === "true",
     vectorScoreThreshold: row.vectorScoreThreshold,
     vectorMaxResults: row.vectorMaxResults,
     createdAt: row.createdAt,
@@ -3093,6 +3096,13 @@ export class MariDbService {
         "excludeFromVectorization",
       ) || changed;
     changed =
+      assignBooleanTextField(
+        target,
+        source,
+        ["vectorIncludeAssistant", "vector_include_assistant"],
+        "vectorIncludeAssistant",
+      ) || changed;
+    changed =
       assignBoundedNumberField(
         target,
         source,
@@ -3620,6 +3630,7 @@ export class MariDbService {
             "maxRecursionDepth",
             "excludeFromVectorization",
             "vectorQueryDepth",
+            "vectorIncludeAssistant",
             "vectorScoreThreshold",
             "vectorMaxResults",
             "scope",
@@ -3644,6 +3655,7 @@ export class MariDbService {
           maxRecursionDepth: 3,
           excludeFromVectorization: "false",
           vectorQueryDepth: 10,
+          vectorIncludeAssistant: "false",
           vectorScoreThreshold: 0.3,
           vectorMaxResults: 10,
           scope: { mode: "all", chatIds: [] },
@@ -3705,6 +3717,7 @@ export class MariDbService {
             "maxRecursionDepth",
             "excludeFromVectorization",
             "vectorQueryDepth",
+            "vectorIncludeAssistant",
             "vectorScoreThreshold",
             "vectorMaxResults",
             "scope",
@@ -3714,7 +3727,7 @@ export class MariDbService {
         this.assignLorebookActionFields(patch, data);
         if (Object.keys(patch).length <= 1) {
           throw new Error(
-            "lorebook.update needs a patch field such as name, description, category, tags, enabled, global, scanDepth, tokenBudget, entryLimit, recursiveScanning, excludeFromVectorization, vectorQueryDepth, vectorScoreThreshold, or vectorMaxResults",
+            "lorebook.update needs a patch field such as name, description, category, tags, enabled, global, scanDepth, tokenBudget, entryLimit, recursiveScanning, excludeFromVectorization, vectorQueryDepth, vectorIncludeAssistant, vectorScoreThreshold, or vectorMaxResults",
           );
         }
         return this.executeMutation(
@@ -6281,6 +6294,7 @@ export class MariDbService {
           maxRecursionDepth: 3,
           excludeFromVectorization: "false",
           vectorQueryDepth: 10,
+          vectorIncludeAssistant: "false",
           vectorScoreThreshold: 0.3,
           vectorMaxResults: 10,
           scope: { mode: "all", chatIds: [] },
@@ -8390,6 +8404,8 @@ export class MariDbService {
       );
     }
     await flushDB();
+    // A Settings > Features row written here bypasses app-settings storage; refresh its cache.
+    await reloadFeatureSettingsIfTouched(plan.changes, createAppSettingsStorage(this.db));
     return journalPath;
   }
 
@@ -8493,6 +8509,7 @@ export class MariDbService {
       );
     }
     await flushDB();
+    await reloadFeatureSettingsIfTouched(changes, createAppSettingsStorage(this.db));
   }
 
   private async writeJournal(operationId: string, plan: Plan): Promise<string> {

@@ -137,6 +137,7 @@ import {
   HardDrive,
   LifeBuoy,
   SlidersHorizontal,
+  ToggleRight,
 } from "lucide-react";
 import {
   useChat,
@@ -169,6 +170,7 @@ import { TrackerCardColorSettings } from "./settings/TrackerCardColorSettings";
 import { PromptOverridesEditor } from "./settings/PromptOverridesEditor";
 import { BackgroundPicker } from "./settings/BackgroundPicker";
 import { RequestTimeoutSettings } from "./settings/RequestTimeoutSettings";
+import { FEATURE_SWITCHES_CONTROL_ID, FeatureSwitchesSettings } from "./settings/FeatureSwitchesSettings";
 import { CustomGenerationParametersSettings } from "./settings/CustomGenerationParametersSettings";
 import { ExternalExtensionsSettings, PersonalExtensionsSettings } from "./settings/PersonalExtensionsSettings";
 import { usePersonalExtensionPolicy, useSetExternalExtensionsEnabled } from "../../hooks/use-personal-extensions";
@@ -278,6 +280,7 @@ type SettingsSectionId =
   | "profile-marinara"
   | "sillytavern-import"
   | "admin-access"
+  | "features"
   | "updates"
   | "support-diagnostics"
   | "request-timeouts"
@@ -508,6 +511,13 @@ const SETTINGS_SECTIONS: readonly SettingsSectionMeta[] = [
     label: "Admin Access",
     description: "Admin authorization for privileged actions.",
     aliases: ["admin", "secret", "access", "authorization"],
+  },
+  {
+    id: "features",
+    tab: "advanced",
+    label: "Features",
+    description: "Optional server behaviours, all off by default.",
+    aliases: ["features", "switches", "optional", "provider retry", "lorebook groups"],
   },
   {
     id: "updates",
@@ -4079,6 +4089,8 @@ function OverallGenerationSettings() {
 
 function ImageGenerationSettings() {
   const { t: localizeUi } = useUiTranslation();
+  const autoSaveToGalleries = useUIStore((s) => s.autoSaveGeneratedImagesToGalleries);
+  const setAutoSaveToGalleries = useUIStore((s) => s.setAutoSaveGeneratedImagesToGalleries);
   const imageBackgroundWidth = useUIStore((s) => s.imageBackgroundWidth);
   const imageBackgroundHeight = useUIStore((s) => s.imageBackgroundHeight);
   const setImageBackgroundDimensions = useUIStore((s) => s.setImageBackgroundDimensions);
@@ -4108,6 +4120,12 @@ function ImageGenerationSettings() {
       {...getSettingsSectionAnchorProps("image-generation")}
     >
       <div className="flex flex-col gap-2.5">
+        <ToggleSetting
+          label={localizeUi("settings.controls.autoSaveGeneratedImagesToGalleries.label")}
+          help={localizeUi("settings.controls.autoSaveGeneratedImagesToGalleries.help")}
+          checked={autoSaveToGalleries}
+          onChange={setAutoSaveToGalleries}
+        />
         <ImageDimensionRow
           controlId="image-background-size"
           label={localizeUi("settings.controls.backgroundGeneration.label")}
@@ -7204,6 +7222,7 @@ function ImportSettings() {
     return () => window.clearInterval(timer);
   }, [profileImportBusy]);
 
+  const profileImportInputRef = useRef<HTMLInputElement>(null);
   const handleProfileImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -7460,12 +7479,11 @@ function ImportSettings() {
         {...getSettingsSectionAnchorProps("profile-marinara")}
       >
         <div className="flex flex-col gap-2.5">
-          <label
-            className={cn(
-              SETTINGS_PRIMARY_BUTTON_CLASS,
-              "w-full cursor-pointer gap-2",
-              profileImportBusy && "pointer-events-none opacity-75",
-            )}
+          <button
+            type="button"
+            onClick={() => profileImportInputRef.current?.click()}
+            disabled={profileImportBusy}
+            className={cn(SETTINGS_PRIMARY_BUTTON_CLASS, "w-full gap-2")}
           >
             {profileImportBusy ? <Loader2 size="1rem" className="animate-spin" /> : <Download size="1rem" />}
             {profileImportBusy
@@ -7473,14 +7491,17 @@ function ImportSettings() {
                 ? localizeUi("ui.panels.importsettings.scanningProfile")
                 : localizeUi("ui.panels.importsettings.importingProfile")
               : localizeUi("ui.panels.importsettings.importProfileJsonZip")}
-            <input
-              type="file"
-              accept=".json,.zip,application/json,application/zip"
-              onChange={handleProfileImport}
-              disabled={profileImportBusy}
-              className="hidden"
-            />
-          </label>
+          </button>
+          <input
+            ref={profileImportInputRef}
+            type="file"
+            accept=".json,.zip,application/json,application/zip"
+            onChange={handleProfileImport}
+            disabled={profileImportBusy}
+            className="hidden"
+            tabIndex={-1}
+            aria-hidden="true"
+          />
 
           {profileImportProgress && (
             <div
@@ -8122,36 +8143,40 @@ function AdvancedSettings() {
       }>("/professor-mari/workspace/status", { signal: requestTimeoutSignal(5_000) })
       .then((status) => status.latestUnderstoodRequest ?? null)
       .catch(() => undefined);
+    const report = formatSupportDiagnostics({
+      clientRuntime: getClientRuntimeDiagnostics(),
+      mariActingOn,
+      // Distinguish "the server never answered" (frozen host) from ordinary
+      // missing fields so support reports carry the signal (#5657): the
+      // formatter renders every server telemetry line as unreachable.
+      serverUnreachable: isRequestTimeoutError(health.error),
+      version: health.data?.version ?? APP_VERSION,
+      build: health.data?.build ?? APP_VERSION,
+      commit: health.data?.commit ?? null,
+      serverOs: health.data?.serverOs ?? "",
+      serverMemory: health.data?.memory,
+      wakeLock: health.data?.wakeLock ?? null,
+      lastFreeze: health.data?.lastFreeze ?? null,
+      // undefined (fetch failed) stays undefined so the report says
+      // Unavailable instead of asserting a fate it never observed.
+      previousSession: health.data?.previousSession,
+      uncleanExitCount: health.data?.uncleanExitCount,
+      // The server's own GPU and local model slots. Useful on its own for
+      // "my local model won't load" reports, whether or not the user has
+      // ever touched an activation question.
+      sidecars: health.data?.sidecars,
+      clientOs: resolveClientOs(navigator.userAgent, navigator.platform, navigator.maxTouchPoints),
+      browser: navigator.userAgent,
+      gpu: detectBrowserGpu(),
+      connectionName: activeConnection?.name ?? null,
+      connectionProvider: activeConnection?.provider ?? null,
+      model: activeConnection?.model ?? null,
+    });
+    // Fenced so Discord and GitHub render the report as a code block (#6668). Discord only knows
+    // ``` fences, so a backtick run inside the report (a connection name, Mari's phrase) is split
+    // with a zero-width space instead of lengthening the fence.
     const copied = await copyToClipboard(
-      formatSupportDiagnostics({
-        clientRuntime: getClientRuntimeDiagnostics(),
-        mariActingOn,
-        // Distinguish "the server never answered" (frozen host) from ordinary
-        // missing fields so support reports carry the signal (#5657): the
-        // formatter renders every server telemetry line as unreachable.
-        serverUnreachable: isRequestTimeoutError(health.error),
-        version: health.data?.version ?? APP_VERSION,
-        build: health.data?.build ?? APP_VERSION,
-        commit: health.data?.commit ?? null,
-        serverOs: health.data?.serverOs ?? "",
-        serverMemory: health.data?.memory,
-        wakeLock: health.data?.wakeLock ?? null,
-        lastFreeze: health.data?.lastFreeze ?? null,
-        // undefined (fetch failed) stays undefined so the report says
-        // Unavailable instead of asserting a fate it never observed.
-        previousSession: health.data?.previousSession,
-        uncleanExitCount: health.data?.uncleanExitCount,
-        // The server's own GPU and local model slots. Useful on its own for
-        // "my local model won't load" reports, whether or not the user has
-        // ever touched an activation question.
-        sidecars: health.data?.sidecars,
-        clientOs: resolveClientOs(navigator.userAgent, navigator.platform, navigator.maxTouchPoints),
-        browser: navigator.userAgent,
-        gpu: detectBrowserGpu(),
-        connectionName: activeConnection?.name ?? null,
-        connectionProvider: activeConnection?.provider ?? null,
-        model: activeConnection?.model ?? null,
-      }),
+      `\`\`\`\n${report.replace(/``+/gu, (run) => run.split("").join("\u200b"))}\n\`\`\``,
     );
     if (copied) {
       toast.success(localizeUi("ui.panels.advancedsettings.supportDiagnosticsCopied"));
@@ -8394,6 +8419,15 @@ function AdvancedSettings() {
             </p>
           </SearchableSettingTarget>
         </div>
+      </SettingsSection>
+
+      <SettingsSection
+        title={localizeUi("settings.sections.features.title")}
+        description={localizeUi("settings.sections.features.description")}
+        icon={<ToggleRight size="0.875rem" />}
+        {...getSettingsSectionAnchorProps("features")}
+      >
+        <FeatureSwitchesSettings anchorId={getSettingsControlAnchorId(FEATURE_SWITCHES_CONTROL_ID)} />
       </SettingsSection>
 
       <SettingsSection

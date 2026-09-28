@@ -339,6 +339,7 @@ type AgentInjectionReviewRequest = {
 
 type IllustratorPromptReviewRequest = {
   chatId: string;
+  illustratorMessageRange?: [string, string];
   subjectOnly?: boolean;
   item: ImagePromptReviewItem;
   resultData: Record<string, unknown>;
@@ -799,6 +800,7 @@ export const ChatArea = memo(function ChatArea() {
       if (!override?.prompt.trim()) return;
       setIllustratorPromptReviewSubmitting(true);
       const success = await retryAgents(illustratorPromptReview.chatId, ["illustrator"], {
+        illustratorMessageRange: illustratorPromptReview.illustratorMessageRange,
         illustratorPromptReviewOverride: {
           resultData: illustratorPromptReview.resultData,
           ...(illustratorPromptReview.subjectOnly ? { subjectOnly: true } : {}),
@@ -819,13 +821,14 @@ export const ChatArea = memo(function ChatArea() {
   }, [illustratorPromptReviewSubmitting]);
 
   const handleIllustrate = useCallback(
-    (prompt?: string) => {
+    (prompt?: string, messageRange?: [string, string]) => {
       if (!activeChatId) return;
       const resultData = { prompt, characters: [] };
       if (prompt && useUIStore.getState().reviewImagePromptsBeforeSend) {
         setIllustratorPromptReview({
           chatId: activeChatId,
           subjectOnly: true,
+          illustratorMessageRange: messageRange,
           resultData,
           item: {
             id: "roleplay-scene-illustration",
@@ -838,6 +841,7 @@ export const ChatArea = memo(function ChatArea() {
       }
       return retryAgents(activeChatId, ["illustrator"], {
         illustratorRetryTargets: ["illustration"],
+        illustratorMessageRange: messageRange,
         ...(prompt ? { illustratorPromptReviewOverride: { prompt, subjectOnly: true, resultData } } : {}),
       }).then(() => undefined);
     },
@@ -2234,7 +2238,7 @@ export const ChatArea = memo(function ChatArea() {
     (messageId?: string) => {
       if (!activeChatId) return;
       peekPrompt.mutate(messageId ? { chatId: activeChatId, messageId } : activeChatId, {
-        onSuccess: (data) => setPeekPromptData(data),
+        onSuccess: (data) => setPeekPromptData({ ...data, chatId: activeChatId }),
         onError: (error) => {
           const message =
             error instanceof ApiError
@@ -2879,6 +2883,18 @@ export const ChatArea = memo(function ChatArea() {
   // ── /goto command: paginate older pages until target message is loaded, then scroll to it
   useEffect(() => {
     if (!gotoRequest || gotoRequest.chatId !== activeChatId) return;
+    // A message jump may switch chats while this surface still has the prior
+    // chat detail cached. Wait until the selected chat's own detail is loaded
+    // before choosing the game-specific behavior.
+    if (!chatDetailFetched || !chat || chat.id !== activeChatId) return;
+    if (chat.mode === "game") {
+      // The Game surface shows one narration beat at a time and has no
+      // per-message anchors, so paging the whole history in would only end in
+      // a silent no-op. Open the game and say where earlier turns live.
+      toast.info(localizeUi("chatInsights.gotoUnavailableInGame"));
+      useChatStore.getState().clearGotoRequest();
+      return;
+    }
     if (!messages) return;
 
     const targetNumber = gotoRequest.messageNumber;
@@ -2937,6 +2953,8 @@ export const ChatArea = memo(function ChatArea() {
     isFetchingNextPage,
     fetchNextPage,
     localizeUi,
+    chat,
+    chatDetailFetched,
   ]);
 
   // ═══════════════════════════════════════════════

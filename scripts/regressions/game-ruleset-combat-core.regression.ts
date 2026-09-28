@@ -57,8 +57,53 @@ import {
 } from "../../packages/shared/src/index.js";
 
 const read = (path: string) => readFileSync(fileURLToPath(new URL(path, import.meta.url)), "utf8");
-const fiveEText = read("../../docs/development/ruleset-5e-2014.example.json");
-const emberText = read("../../docs/examples/rulesets/ember-roads.json");
+/** 1.45's numbers a condition changes, its check effects and the levels of a track, which every gate
+ *  this lane proves predates too. */
+const withoutConditionNumbers = (doc: Record<string, any>) => {
+  delete doc.combat.levels;
+  const older = (effect: string) => !effect.startsWith("own-checks-");
+  for (const entry of doc.combat.conditions ?? []) {
+    delete entry.modifiers;
+    entry.effects = (entry.effects ?? []).filter(older);
+    if (Array.isArray(entry.whileSourceInSight)) entry.whileSourceInSight = entry.whileSourceInSight.filter(older);
+  }
+};
+/** The reference less 1.43's contests and the checks they read, which every gate this lane proves
+ *  predates, and less 1.45's keys. */
+const fiveEText = (() => {
+  const doc = JSON.parse(read("../../docs/development/ruleset-5e-2014.example.json"));
+  delete doc.combat.checks;
+  delete doc.combat.contests;
+  for (const catalog of doc.catalogs ?? []) for (const entry of catalog.entries ?? []) delete entry.creature?.checks;
+  withoutConditionNumbers(doc);
+  return JSON.stringify(doc);
+})();
+/** The example less the sheet keys 1.37 added (a track always shown, a summary list's columns),
+ *  1.38's modifier off the sheet, 1.39's list sum, 1.40's box track, 1.41's untrained rule and
+ *  1.42's live state: every gate this lane proves is older, so it is proven on a file that trips
+ *  nothing newer. */
+const emberText = (() => {
+  const doc = JSON.parse(read("../../docs/examples/rulesets/ember-roads.json"));
+  for (const track of doc.sheet.live.tracks) delete track.alwaysShow;
+  for (const list of doc.gm.sheetSummary?.lists ?? []) delete list.columns;
+  delete doc.resolution.adjust;
+  doc.sheet.derived = doc.sheet.derived.filter((entry: { id: string }) => !["burden", "burdened"].includes(entry.id));
+  doc.sheet.live.tracks = doc.sheet.live.tracks.filter((track: { id: string }) => track.id !== "strain");
+  for (const skill of doc.sheet.skills) delete skill.untrained;
+  // And 1.42's live Stance, the table that follows it and the camp step that settles it.
+  doc.sheet.derived = doc.sheet.derived.filter((entry: { id: string }) => entry.id !== "stance_brawn");
+  delete doc.sheet.live.states;
+  for (const rest of doc.rests)
+    rest.restore = rest.restore.filter((step: { state?: string }) => step.state === undefined);
+  // And 1.43's contests and the checks they read.
+  delete doc.combat.checks;
+  delete doc.combat.contests;
+  withoutConditionNumbers(doc);
+  // And 1.49's items block, with the catalog written in it.
+  delete doc.items;
+  doc.catalogs = doc.catalogs.filter((catalog: { holds?: string }) => catalog.holds !== "items");
+  return JSON.stringify(doc);
+})();
 
 /** One of the shipped examples, optionally edited first. */
 const variant = (text: string, edit: (doc: Record<string, any>) => void = () => {}): Record<string, any> => {
@@ -201,6 +246,35 @@ function firstOf<T extends RulesetCombatEvent["type"]>(events: RulesetCombatEven
     /two different tracks/,
   );
   assert.match(refusal(withCombat((combat) => (combat.dying.condition = "dead"))), /Unknown condition "dead"/);
+  // A death-save track counts to the rules' own number, with room to count, on every sheet: a top
+  // the sheet works out, a top with no room, or a hidden track would each let one roll settle it.
+  const withSuccessesTrack = (edit: (track: Record<string, any>) => void) =>
+    variant(fiveEText, (doc) =>
+      edit(doc.sheet.live.tracks.find((entry: Record<string, any>) => entry.id === "death_save_successes")),
+    );
+  assert.match(
+    refusal(withSuccessesTrack((track) => (track.max = { const: 2 }))),
+    /"death_save_successes" counts death saves, so its max is a number rather than the sheet's/,
+  );
+  assert.match(
+    refusal(withSuccessesTrack((track) => (track.max = track.min))),
+    /"death_save_successes" counts death saves, so its max is at least 1 and above its min/,
+  );
+  // Room above a floor below zero is not enough: a top of 0 is reached by the very first roll.
+  assert.match(
+    refusal(
+      withSuccessesTrack((track) => {
+        track.min = -1;
+        track.max = 0;
+        track.default = -1;
+      }),
+    ),
+    /"death_save_successes" counts death saves, so its max is at least 1 and above its min/,
+  );
+  assert.match(
+    refusal(withSuccessesTrack((track) => (track.hideWhen = { field: "level", equals: 1 }))),
+    /"death_save_successes" counts death saves, so it cannot be hidden/,
+  );
   assert.match(
     refusal(withCombat((combat) => (combat.threat.tiers[0].health = [12, 3]))),
     /lowest is above the highest/,
@@ -210,7 +284,7 @@ function firstOf<T extends RulesetCombatEvent["type"]>(events: RulesetCombatEven
     /Duplicate damage type "Fire"/,
   );
   assert.match(refusal(withCombat((combat) => (combat.standard = ["dodge", "dodge"]))), /Duplicate standard action/);
-  assert.match(refusal(withCombat((combat) => (combat.kind = "grid-tactics"))), /Invalid literal value/);
+  assert.match(refusal(withCombat((combat) => (combat.kind = "grid-tactics"))), /Invalid enum value/);
   assert.match(refusal(withCombat((combat) => (combat.reach = 5))), /Unrecognized key/);
 
   // A pool that counts up cannot be what a fight takes away.
@@ -257,7 +331,7 @@ function firstOf<T extends RulesetCombatEvent["type"]>(events: RulesetCombatEven
       const catalog = (doc.catalogs as Array<Record<string, any>>).find((entry) => entry.entries?.length)!;
       catalog.entries[0].mechanics = { ...catalog.entries[0].mechanics, reaction: { on: "harmed", cancels: true } };
     });
-    assert.match(refusal(badMoment), /Only an "aimed" reaction cancels/);
+    assert.match(refusal(badMoment), /Only an "aimed" or "used" reaction cancels/);
   }
   assert.match(issues({ budget: "swing" }), /Unknown budget "swing"/);
   assert.match(
@@ -1217,6 +1291,22 @@ const labels = (definition: RulesetDefinition, state: RulesetEncounterState, id:
   assert.equal(firstOf(healed.events, "spend").pool, "slots_1");
 }
 
+// ── A death track's top is read off the track, not assumed ──
+{
+  // Two successes, because this variant's successes track stops at two.
+  const shorter = parsedOrThrow(
+    variant(fiveEText, (doc) => {
+      doc.sheet.live.tracks.find((entry: Record<string, any>) => entry.id === "death_save_successes").max = 2;
+    }),
+    "5e with a shorter death track",
+  );
+  let state = fight(shorter, [fighter({ pools: { hp: { value: 0 } } }), wizard(), rot()], 10, 9, 18);
+  let last = endTurn(shorter, state, "rot", 12);
+  state = endTurn(shorter, endTurn(shorter, last.state, "brenna").state, "corwin").state;
+  last = endTurn(shorter, state, "rot", 14);
+  assert.equal(eventsOf(last.events, "dying").at(-1)!.result, "stable", "two of the track's two are enough");
+}
+
 // ── Three successes make her stable, and a blow while stable starts the count again ──
 {
   let state = fight(fiveE, [fighter({ pools: { hp: { value: 0 } } }), wizard(), rot()], 10, 9, 18);
@@ -1640,8 +1730,10 @@ const labels = (definition: RulesetDefinition, state: RulesetEncounterState, id:
       );
     }
     for (const catalog of doc.catalogs ?? []) {
+      // An entry that names the moment it waits for is later again (1.33).
       catalog.entries = (catalog.entries ?? []).filter(
-        (entry: Record<string, any>) => entry.mechanics?.kind !== "rider",
+        (entry: Record<string, any>) =>
+          entry.mechanics?.kind !== "rider" && typeof entry.mechanics?.reaction !== "object",
       );
       for (const entry of catalog.entries) {
         for (const key of ["plus", "free", "gives", "standard", "rider"]) delete entry.mechanics?.[key];
@@ -2241,7 +2333,10 @@ const labels = (definition: RulesetDefinition, state: RulesetEncounterState, id:
   const feats = fiveE.catalogs!.find((catalog) => catalog.id === "feats")!.entries!;
   const featRows = (ids: string[], list: string) =>
     ids.flatMap((id) =>
-      rowsFromCatalogEntry("feats", feats.find((entry) => entry.id === id)!)
+      rowsFromCatalogEntry(
+        "feats",
+        feats.find((entry) => entry.id === id)!,
+      )
         .filter((row) => row.list === list)
         .map((row) => row.row),
     );
@@ -2937,6 +3032,10 @@ const labels = (definition: RulesetDefinition, state: RulesetEncounterState, id:
     // And the entries, inline or in the catalog file the install already holds.
     const inline = variant(emberText, (doc) => {
       doc.catalogs = (doc.catalogs ?? []).filter((catalog: Record<string, any>) => catalog.holds !== "creatures");
+      // An entry that names the moment it waits for is later again (1.33).
+      doc.catalogs[0].entries = doc.catalogs[0].entries.filter(
+        (entry: Record<string, any>) => typeof entry.mechanics?.reaction !== "object",
+      );
       doc.catalogs[0].entries[0].mechanics = { kind: "utility", free: true, gives: [{ budget: "act", count: 1 }] };
     });
     assert.match(getCapabilityPackageInstallIssue(manifest(28), inline) ?? "", economyIssue);
@@ -3043,12 +3142,20 @@ console.info("game ruleset combat core regressions passed.");
   assert.equal(who(stopped.state, "corwin").budgets.reaction, 0, "and answering cost the reaction");
 
   // Letting it go by instead: the swing lands, and being hurt is its own moment.
-  const through = act(fiveE, aimed.state, {
-    actorId: "corwin",
-    optionId: RULESET_PASS_OPTION,
-    targetIds: [],
-    window: window.id,
-  }, 18, 5, 4, 6);
+  const through = act(
+    fiveE,
+    aimed.state,
+    {
+      actorId: "corwin",
+      optionId: RULESET_PASS_OPTION,
+      targetIds: [],
+      window: window.id,
+    },
+    18,
+    5,
+    4,
+    6,
+  );
   assert.equal(firstOf(through.events, "attack").outcome, "hit", "the held swing resolves after the asking");
   const hurt = through.state.window;
   assert.ok(hurt, "and being hurt opens a moment of its own");
@@ -3060,12 +3167,26 @@ console.info("game ruleset combat core regressions passed.");
   );
 
   // It is aimed back at whoever did it, without anybody picking.
-  const back = act(fiveE, through.state, {
-    actorId: "corwin",
-    optionId: idFor(through.state, "corwin", "Sear"),
-    targetIds: [],
-    window: hurt.id,
-  }, 3, 5, 5, 5, 5, 5, 5, 5, 5, 5);
+  const back = act(
+    fiveE,
+    through.state,
+    {
+      actorId: "corwin",
+      optionId: idFor(through.state, "corwin", "Sear"),
+      targetIds: [],
+      window: hurt.id,
+    },
+    3,
+    5,
+    5,
+    5,
+    5,
+    5,
+    5,
+    5,
+    5,
+    5,
+  );
   assert.equal(firstOf(back.events, "damage").targetId, "snag", "the answer lands on whoever hurt them");
   assert.equal(back.state.window, undefined);
   // One window at a time: what the answer itself deals opens no further moment.
@@ -3180,7 +3301,12 @@ console.info("game ruleset combat core regressions passed.");
 
     // Both let the blow through, so being hurt opens a moment for both of them.
     const pass = (from: typeof lash.state, who: string, ...faces: number[]) =>
-      act(fiveE, from, { actorId: who, optionId: RULESET_PASS_OPTION, targetIds: [], window: from.window!.id }, ...faces);
+      act(
+        fiveE,
+        from,
+        { actorId: who, optionId: RULESET_PASS_OPTION, targetIds: [], window: from.window!.id },
+        ...faces,
+      );
     const landed = pass(pass(lash.state, "wren").state, "corwin", 18, 3, 18, 3);
     assert.equal(landed.state.window?.trigger.kind, "harmed");
     assert.deepEqual(landed.state.window?.waiting, ["wren", "corwin"], "both were hurt, and both are asked");
@@ -3190,7 +3316,12 @@ console.info("game ruleset combat core regressions passed.");
     const felled = act(
       fiveE,
       landed.state,
-      { actorId: "wren", optionId: idFor(landed.state, "wren", "Sear"), targetIds: [], window: landed.state.window!.id },
+      {
+        actorId: "wren",
+        optionId: idFor(landed.state, "wren", "Sear"),
+        targetIds: [],
+        window: landed.state.window!.id,
+      },
       1,
       10,
       10,

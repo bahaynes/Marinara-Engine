@@ -107,6 +107,14 @@ export const createConnectionSchema = z.object({
   claudeFastMode: z.boolean().default(false),
   /** When true, Marinara omits tool schemas and treats this connection as text-only. */
   disableNativeTools: z.boolean().default(false),
+  /**
+   * NanoGPT only: a management token with the `usage:read` scope, used solely to
+   * read subscription quotas for the usage widget. It cannot authenticate
+   * inference endpoints, so it is never used in place of the API key.
+   */
+  managementToken: z.string().default(""),
+  /** NanoGPT only: show the subscription usage widget in the connection editor. */
+  showUsageWidget: z.boolean().default(false),
 });
 
 export type CreateConnectionInput = z.infer<typeof createConnectionSchema>;

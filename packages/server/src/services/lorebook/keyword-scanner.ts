@@ -16,6 +16,7 @@ import { LIMITS, testPrimaryKeys, testSecondaryKeys } from "@marinara-engine/sha
 import { logger } from "../../lib/logger.js";
 import { calibrateLorebookSimilarity } from "./embeddings.js";
 import { vmRegexExecutor } from "./regex-timeout.js";
+import { createSeededRandom } from "./seeded-random.js";
 
 /** Compute cosine similarity between two vectors. Returns 0 for empty/mismatched vectors. */
 function cosineSimilarity(a: number[], b: number[]): number {
@@ -382,7 +383,21 @@ function pickWeightedGroupEntry(entries: ActivatedEntry[], random: () => number)
   return entries[entries.length - 1] ?? null;
 }
 
-function applyGroupSelection(entries: ActivatedEntry[], random: () => number): ActivatedEntry[] {
+/**
+ * A repeatable random source for one inclusion group. The same seed, group and candidate entries always give the
+ * same winner, so the prompt does not change between turns when nothing about the group changed (a new random winner
+ * every turn rewrites the lore near the top of the prompt and breaks prompt caching). It still varies across chats and
+ * whenever the set of activated candidates changes.
+ */
+function seededGroupRandom(seed: string, group: string, entries: ActivatedEntry[]): () => number {
+  const key = `${seed}|${group}|${entries
+    .map((entry) => entry.entry.id)
+    .sort()
+    .join(",")}`;
+  return createSeededRandom(key);
+}
+
+function applyGroupSelection(entries: ActivatedEntry[], random: () => number, groupSeed?: string): ActivatedEntry[] {
   const grouped = new Map<string, ActivatedEntry[]>();
   const ungrouped: ActivatedEntry[] = [];
 
@@ -399,9 +414,17 @@ function applyGroupSelection(entries: ActivatedEntry[], random: () => number): A
 
   const result: ActivatedEntry[] = [...ungrouped];
 
-  for (const [, groupEntries] of grouped) {
+  for (const [group, groupEntries] of grouped) {
     const stickyEntries = groupEntries.filter((entry) => entry.sticky);
-    const selected = pickWeightedGroupEntry(stickyEntries.length > 0 ? stickyEntries : groupEntries, random);
+    const pool = stickyEntries.length > 0 ? stickyEntries : groupEntries;
+    // A seeded roll must map to the same entry whatever order the candidates activated in, so seeded picks use id order.
+    const candidates = groupSeed
+      ? [...pool].sort((a, b) => (a.entry.id < b.entry.id ? -1 : a.entry.id > b.entry.id ? 1 : 0))
+      : pool;
+    const selected = pickWeightedGroupEntry(
+      candidates,
+      groupSeed ? seededGroupRandom(groupSeed, group, candidates) : random,
+    );
     if (selected) result.push(selected);
   }
 
@@ -420,7 +443,7 @@ export interface ScanOptions {
   /** Pre-computed embedding of the chat context for semantic matching fallback. */
   chatEmbedding?: number[] | null;
   /** Per-lorebook chat context embeddings for semantic matching. */
-  semanticEmbeddingsByLorebookId?: ReadonlyMap<string, number[] | null>;
+  semanticEmbeddingsByLorebookId?: ReadonlyMap<string, number[] | number[][] | null>;
   /** Provider/model/profile identity used to produce semantic query vectors. */
   semanticEmbeddingSpaceId?: string | null;
   /** Cosine similarity threshold for semantic matching (0-1, default 0.3). */
@@ -462,6 +485,13 @@ export interface ScanOptions {
   pendingDecisions?: Set<string>;
   /** Random source for probability gates; injectable for deterministic tests. */
   random?: () => number;
+  /**
+   * Optional seed for inclusion-group winners (normally the chat id). When set, a group with the same activated
+   * candidates picks the same entry on every turn instead of re-rolling, which keeps the prompt prefix stable for
+   * provider prompt caching. It also wins over an injected `random` (which still drives probability gates), so the
+   * Active Context preview picks the same group winner as generation. Unset keeps the per-generation re-roll.
+   */
+  groupSeed?: string;
 }
 
 /**
@@ -478,7 +508,7 @@ export function scanForActivatedEntries(
     gameState = null,
     timingStates = new Map(),
     chatEmbedding = null,
-    semanticEmbeddingsByLorebookId = new Map<string, number[] | null>(),
+    semanticEmbeddingsByLorebookId = new Map<string, number[] | number[][] | null>(),
     semanticEmbeddingSpaceId = null,
     semanticThreshold = 0.3,
     semanticSimilarityBaseline = 0,
@@ -669,12 +699,14 @@ export function scanForActivatedEntries(
         );
         continue;
       }
-      if (entry.embedding.length !== queryEmbedding.length) {
+      const queryVectors = (
+        Array.isArray(queryEmbedding[0]) ? (queryEmbedding as number[][]) : [queryEmbedding as number[]]
+      ).filter((vector) => vector.length === entry.embedding!.length);
+      if (queryVectors.length === 0) {
         logger.debug(
-          "[lorebook-vectors] Rejected entry %s: stored dimension %d differs from query dimension %d",
+          "[lorebook-vectors] Rejected entry %s: no query matches stored dimension %d",
           entry.id,
           entry.embedding.length,
-          queryEmbedding.length,
         );
         continue;
       }
@@ -682,7 +714,7 @@ export function scanForActivatedEntries(
       if (!passesActivationGate(entry, timingState, filterContext, gameState, ignoreTiming)) continue;
 
       const threshold = semanticThresholdByLorebookId.get(entry.lorebookId) ?? semanticThreshold;
-      const rawSimilarity = cosineSimilarity(queryEmbedding, entry.embedding);
+      const rawSimilarity = Math.max(...queryVectors.map((vector) => cosineSimilarity(vector, entry.embedding!)));
       const similarity = calibrateLorebookSimilarity(rawSimilarity, semanticSimilarityBaseline);
       logger.debug(
         "[lorebook-vectors] Scored entry %s: raw=%d calibrated=%d baseline=%d threshold=%d accepted=%s",
@@ -752,7 +784,7 @@ export function scanForActivatedEntries(
   }
 
   // Apply group selection
-  const afterGroups = applyGroupSelection(activated, random);
+  const afterGroups = applyGroupSelection(activated, random, options.groupSeed);
 
   // Sort by injection order (lower = higher priority)
   afterGroups.sort((a, b) => a.injectionOrder - b.injectionOrder);

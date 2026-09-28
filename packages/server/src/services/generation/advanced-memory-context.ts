@@ -1,6 +1,7 @@
 import {
   estimateTextTokens,
   sliceTextToTokenBudget,
+  advancedMemoryDecisionDiagnosticsSchema,
   type AdvancedMemorySettings,
   type PreparedAdvancedMemory,
 } from "@marinara-engine/shared";
@@ -35,6 +36,7 @@ const memorySnapshotSchema = z.object({
     recalledMessages: z.string().nullable(),
     recalledRecordIds: z.array(z.string()),
     receipt: z.object({
+      decisionRecall: advancedMemoryDecisionDiagnosticsSchema.optional(),
       sourceEndMessageId: z.string().nullable().optional(),
       sourceFingerprint: z.string(),
       policyRevision: z.string(),
@@ -198,6 +200,8 @@ export async function prepareAdvancedMemoryContext(
       }
       prepared.receipt.recalledMessageIds = [];
       prepared.receipt.recalledSceneIds = [];
+      if (prepared.receipt.decisionRecall)
+        for (const result of prepared.receipt.decisionRecall.results) result.selected = false;
       prepared.recalledMessages = null;
       prepared.recalledScenes = null;
       prepared.recalledRecordIds = [];

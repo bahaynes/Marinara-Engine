@@ -947,7 +947,8 @@ export class OpenAIProvider extends BaseLLMProvider {
       this.hasExplicitReasoningDisable(options.reasoningEffort) &&
       !isGlm53MandatoryReasoningModel(options.model)
     ) {
-      body.reasoning_effort = "none";
+      // NanoGPT Kimi K3 always reasons; use its lightest supported effort for JSON agents requesting "none".
+      body.reasoning_effort = /(?:^|\/)kimi-k3(?:$|[-:])/iu.test(options.model) ? "low" : "none";
       return;
     }
 
@@ -2449,7 +2450,7 @@ export class OpenAIProvider extends BaseLLMProvider {
               const resp = parsed.response as Record<string, unknown> | undefined;
               const error = resp?.error as Record<string, unknown> | undefined;
               const msg = (error?.message as string) ?? "unknown error";
-              logger.error(new Error(msg), "[OpenAI Responses] Stream ended with response.failed");
+              // Thrown, not logged: the caller writes the one line for this failure.
               throw new Error(`OpenAI Responses stream failed: ${msg}`);
             }
             case "response.incomplete": {
@@ -2764,7 +2765,7 @@ export class OpenAIProvider extends BaseLLMProvider {
               const resp = parsed.response as Record<string, unknown> | undefined;
               const error = resp?.error as Record<string, unknown> | undefined;
               const msg = (error?.message as string) ?? "unknown error";
-              logger.error(new Error(msg), "[OpenAI Responses] chatCompleteResponses stream failed");
+              // Thrown, not logged: the caller writes the one line for this failure.
               throw new Error(`OpenAI Responses stream failed: ${msg}`);
             }
             case "response.incomplete": {

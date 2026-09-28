@@ -1086,6 +1086,52 @@ Use the existing startup-readiness declaration independently when the world must
 be prepared before the opening turn. Declare API 1.18 as the package minimum;
 older hosts cannot interpret this setup declaration.
 
+### Capability API 1.50: Professor Mari actions
+
+A package holding the new `mari-actions` permission can offer named actions to Professor Mari. It
+registers one service under its own id; Mari's `package_service` tool lists every offered action and
+runs one when the user asks for it.
+
+```ts
+export async function activate({ api }) {
+  api.registerService("mari-actions:my-package", {
+    list: () => [
+      { name: "add-idea", summary: "Give a Creator an idea for a post.", inputs: { accountId: "The Creator.", text: "The idea." } },
+    ],
+    run: async (name, input, { signal }) => {
+      const parsed = schemas[name]?.safeParse(input);
+      if (!parsed?.success) return { ok: false, status: 400, error: "Invalid input." };
+      return { ok: true, value: await doIt(name, parsed.data, signal) };
+    },
+  });
+}
+```
+
+Rules worth knowing:
+
+- The key must be `mari-actions:<package-id>` for the registering package. Registration throws without
+  the permission or under another package's id, so an action Mari runs always belongs to the package it
+  names.
+- `list()` returns `{ name, summary?, inputs? }` entries. Names are 1 to 80 letters, digits, `.`, `_` or
+  `-`; other entries are not shown. `summary` and `inputs` are what Mari reads, so write them in plain
+  words. Only the first 50 actions can be seen or run, Mari sees at most 40 inputs per action, input
+  names are cut at 80 characters and each text at 300 characters.
+  `list()` must answer within 5 seconds, or the package's actions are left out.
+- `run(name, input, { signal })` is called only with a listed name and a plain JSON object of at most 64,000
+  characters. The input comes from a model: validate it against your own schema before doing anything.
+  Answer `{ ok: true, value }` or `{ ok: false, status?, error }`; Mari sees the first 2,000 characters
+  of the error text. `signal` aborts when the user stops Mari or after 5 minutes; the Engine stops
+  waiting at that point, so stop your work too.
+- The Engine elides data URLs in `value` before Mari reads it, and truncates long answers. Return ids
+  and short text, not files.
+- Listing is read-only. Every run counts as a change for Mari's Permissions Mode: Plan refuses it,
+  Manual holds it for the user's Accept. The Engine cannot preview or undo a package action, so no
+  Keep/Restore card is shown; offer an undo action of your own when a change is hard to take back.
+  Because of this, Plan mode also refuses actions that only read.
+- Deactivating or removing the package removes its actions.
+
+`mari-actions` is refused on a manifest that declares a `capabilityApi` older than 1.50.
+
 ### Capability API 1.36: package achievements
 
 A package holding the new `achievements` permission can add badges to the Home **Achievements** panel,
@@ -1132,6 +1178,71 @@ Rules worth knowing:
 
 `api.registerAchievements` and `api.runtime.achievements` only exist on an Engine this new, so a
 package that uses them declares `capabilityApi` 1.36.
+
+### Capability API 1.35: agent Home widgets
+
+An agent package can offer up to three cards for the Home widget grid. The Engine never places them on
+its own: the user adds, hides, restores, and reorders them in the **Widget Manager**, where they are
+grouped under the agent. The Engine owns the grid, the frame, and the layout; the package owns what is
+inside the card.
+
+Declare the `home-widget` slot and the widget definitions together:
+
+```json
+{
+  "schemaVersion": 2,
+  "capabilityApi": { "major": 1, "minor": 35 },
+  "kind": ["agent"],
+  "permissions": ["ui"],
+  "entrypoints": { "client": "client.js" },
+  "contributions": {
+    "slots": ["home-widget"],
+    "homeWidgets": [
+      {
+        "id": "latest",
+        "label": "Latest Posts",
+        "description": "The newest posts from the feed.",
+        "size": "large",
+        "iconPath": "art/widget.png",
+        "accent": "violet",
+        "surface": "solid",
+        "header": "banner"
+      }
+    ]
+  }
+}
+```
+
+- `id` is lower-case kebab case, at most 64 characters, and unique within the package.
+- `label` (1–80 characters) and `description` (up to 200) are the Widget Manager text. A locale pack can
+  override them through `localizations.<locale>.homeWidgets.<id>.label` and `.description`.
+- `size` is `compact` or `large`. A large widget takes more room in the grid.
+- `icon` is one of the Engine's icon names (`activity`, `bell`, `calendar`, `chart`, `circle`, `clock`,
+  `file`, `flame`, `heart`, `image`, `list`, `message`, `sparkles`, `star`, `zap`). `iconPath` is package
+  art (`gif`, `jpg`, `jpeg`, `png`, `webp`) and must be listed in `files[]`.
+- `accent`, `surface`, and `header` pick from the Engine's presentation presets.
+
+The install is refused when the package is not an `agent` with the `ui` permission and a client
+entrypoint, when the slot and `homeWidgets` are not declared together, when two widgets share an id, or
+when `capabilityApi` is older than 1.35.
+
+The Engine mounts the package's client element with `view="widget"`. On top of the usual
+`packageId`, `packageVersion`, and `localization`, `capabilityProps` carries:
+
+- `widgetId`, `widgetLabel`, `widgetDescription`, `widgetIcon`, `widgetIconPath`, `widgetAccent`,
+  `widgetSurface`, and `widgetHeader`: the definition of the card being drawn, so one bundle can draw
+  every widget it declares.
+- `active`: `true` only while Home is showing and the card is visible. Pause polling and animation when
+  it is `false`.
+- `onOpenNoodle()`: opens the package's own Home browser tab. Despite the name, it works for any package
+  that also declares the `home-browser-tab` slot. Without that tab, it and `onOpenPost` do nothing.
+- `onOpenPost(id)`: opens the package's own Home browser tab at one item. `id` is a string of up to 128
+  characters; anything else is ignored. The tab's `view="browser"` element then receives
+  `focusPostId: id`. It should call `onFocusPostHandled()` once it has shown the item, so the focus does
+  not replay. Switching to any other tab drops a pending focus.
+
+A widget is a small view of the agent, not a second copy of it. Keep it light, and send the user to the
+browser tab for anything larger.
 
 ### Capability API 1.34: a creature written in the ruleset's own terms
 
