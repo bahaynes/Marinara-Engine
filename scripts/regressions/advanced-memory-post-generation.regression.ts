@@ -1122,7 +1122,7 @@ try {
   // The model's own window, not the cap, bounds a follow-up before it is sent.
   mainInputTokens = 40;
   mainFollowupInputTokens = undefined;
-  await chats.patchMetadata(followupChat.id, { advancedMemory: { ...followupSettings, maxContextTokens: 1_500 } });
+  await chats.patchMetadata(followupChat.id, { advancedMemory: { ...followupSettings, maxContextTokens: 3_000 } });
   mainFirstReplyPadding = "The guard circles slowly. ".repeat(3000); // ~19,500 tokens: past the 16,384 window.
   const oversizedBefore = calls.length;
   const oversizedFollowup = await generateFollowup();
@@ -1132,7 +1132,7 @@ try {
     "a follow-up past the model's own window still fails clearly",
   );
   assert.equal(sentFollowups(oversizedBefore), 0, "the oversized follow-up is never sent");
-  mainFirstReplyPadding = "The guard circles slowly. ".repeat(400); // ~2,600 tokens: past the cap, inside the window.
+  mainFirstReplyPadding = "The guard circles slowly. ".repeat(600); // ~3,900 tokens: past the cap, inside the window.
   const roomyBefore = calls.length;
   const roomyFollowup = await generateFollowup();
   assert.equal(roomyFollowup.statusCode, 200, roomyFollowup.body);
@@ -1159,7 +1159,7 @@ try {
   });
   const generateWithToolRounds = async (repeats: number, maxToolRounds?: string) => {
     const reserveChat = await createFollowupChat("Follow-up tool reserve", reserveConnection.id);
-    await chats.patchMetadata(reserveChat.id, { advancedMemory: { ...followupSettings, maxContextTokens: 1_500 } });
+    await chats.patchMetadata(reserveChat.id, { advancedMemory: { ...followupSettings, maxContextTokens: 3_000 } });
     mainFirstReplyPadding = reservePadding.repeat(repeats);
     const previousMaxToolRounds = process.env.MAX_TOOL_ROUNDS;
     if (maxToolRounds) process.env.MAX_TOOL_ROUNDS = maxToolRounds;

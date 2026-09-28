@@ -90,6 +90,8 @@ try {
     enableAgents: false,
     enableTools: false,
     gameSystemPrompt: "GM_INSTRUCTIONS_MARKER",
+    // The classic layout: game lore after the GM instructions in the system prompt, not the tail.
+    gameLoreInTail: false,
     gameLorebookKeeperEnabled: true,
     gameLorebookKeeperLorebookId: books[2]!.id,
     // Chat-bound books also explicitly attached must still appear only once.

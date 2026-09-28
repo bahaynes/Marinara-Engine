@@ -2388,7 +2388,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
         contextMessageLimit > 0 &&
         chatMessages.length > contextMessageLimit
       ) {
-        if (chatMeta.gameLoreInTail !== false) {
+        if (chatMode === "game" && chatMeta.gameLoreInTail !== false) {
           // Game prompt caching: hold the window head steady until the cache has lapsed anyway.
           const lastReply = [...chatMessages].reverse().find((m) => m.role === "assistant");
           const ttlMs = (conn.anthropicExtendedCacheTtl === "true" ? 60 : 5) * 60_000;

@@ -742,7 +742,8 @@ try {
     assert.ok(events.some((event) => event.type === "suggestions"));
   }
 
-  // The connection's own reasoning setting reaches a pi run; classic keeps forcing it off.
+  // The connection's own reasoning setting reaches a pi run. custom-mods: classic honors an explicit
+  // level too, and only forces reasoning off when the connection sets none.
   {
     mode = "auto";
     defaultParameters = JSON.stringify({ reasoningEffort: "medium" });
@@ -757,7 +758,7 @@ try {
     );
     await classic.done;
     defaultParameters = null;
-    assert.equal(requests[0]!.options.reasoningEffort, "none");
+    assert.equal(requests[0]!.options.reasoningEffort, "medium");
     assert.equal(requests[0]!.options.enableThinking, undefined);
   }
 
@@ -1456,14 +1457,16 @@ try {
       "only pi's own <cwd> line comes after workspace_context",
     );
     const history = requests[0]!.messages.filter((message) => message.role !== "system");
+    // custom-mods: the volatile turn context rides on the latest user turn, after the stable prefix.
     assert.deepEqual(
-      history.map((message) => [message.role, message.content]),
+      history.map((message) => [message.role, message.content.replace(/\n\n<turn_context>[\s\S]*$/u, "")]),
       [
         ["user", "Earlier question"],
         ["assistant", "Earlier answer"],
         ["user", "Do the thing."],
       ],
     );
+    assert.match(history.at(-1)!.content, /\n\n<turn_context>\n[\s\S]*<\/turn_context>$/u);
     assert.deepEqual(runtimeSeen, ["pi"]);
 
     // #8375: without native tool calls, the text tool block also stays before the per-turn lines, even when a

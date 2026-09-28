@@ -5944,8 +5944,8 @@ assert.match(
 );
 assert.match(
   cyoaChoicesSource,
-  /extra: \{ cyoaChoices: \[\] \}[\s\S]{0,900}if \(impersonated\)[\s\S]{0,160}connectionId: null/u,
-  "selecting a CYOA prompt must consume it permanently and follow impersonation with a character reply",
+  /extra: \{ cyoaChoices: \[\] \}[\s\S]{0,900}if \(action === "impersonate"\)[\s\S]{0,500}buildCyoaChoiceSubmissionPayload/u,
+  "selecting a CYOA prompt must consume it permanently and submit impersonation",
 );
 assert.match(
   spriteOverlaySource,
