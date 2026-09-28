@@ -130,6 +130,8 @@ export const createConnectionSchema = z.object({
   managementToken: z.string().default(""),
   /** NanoGPT only: show the subscription usage widget in the connection editor. */
   showUsageWidget: z.boolean().default(false),
+  /** When true, Marinara omits tool schemas and treats this connection as text-only. */
+  disableNativeTools: z.boolean().default(false),
 });
 
 export type CreateConnectionInput = z.infer<typeof createConnectionSchema>;

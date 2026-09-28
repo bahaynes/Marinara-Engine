@@ -54,6 +54,7 @@ export type ConnectionTransferRow = {
   comfyuiWorkflow?: unknown;
   treatAsLocalEndpoint?: unknown;
   claudeFastMode?: unknown;
+  disableNativeTools?: unknown;
 };
 
 export type SafeConnectionExport = {
@@ -98,6 +99,7 @@ export type SafeConnectionExport = {
   comfyuiWorkflow: string | null;
   treatAsLocalEndpoint: boolean;
   claudeFastMode: boolean;
+  disableNativeTools: boolean;
 };
 
 export type ConnectionImportPayload = {
@@ -191,6 +193,7 @@ export function normalizeImportedConnectionEntry(value: unknown): ConnectionImpo
       maxRequestsPerMinute: asNullableBoundedPositiveInteger(value.maxRequestsPerMinute, 600),
       treatAsLocalEndpoint: asBoolean(value.treatAsLocalEndpoint),
       claudeFastMode: asBoolean(value.claudeFastMode),
+      disableNativeTools: asBoolean(value.disableNativeTools),
     },
     defaultParameters,
     hasDefaultParameters: Object.prototype.hasOwnProperty.call(value, "defaultParameters"),
@@ -249,6 +252,7 @@ function serializeConnectionForExport(connection: ConnectionTransferRow): SafeCo
     comfyuiWorkflow: asNullableString(connection.comfyuiWorkflow),
     treatAsLocalEndpoint: asBoolean(connection.treatAsLocalEndpoint),
     claudeFastMode: asBoolean(connection.claudeFastMode),
+    disableNativeTools: asBoolean(connection.disableNativeTools),
   };
 }
 
