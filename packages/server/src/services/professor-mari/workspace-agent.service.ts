@@ -4320,11 +4320,9 @@ export class ProfessorMariWorkspaceService {
       `dataDir: ${DATA_DIR}`,
       `serverUrl: ${getServerProtocol()}://127.0.0.1:${getPort()}`,
       `connection: ${connection.name || connection.id} / ${connection.provider} / ${connection.model}`,
-      `currentTime: ${new Date().toISOString()}`,
       // Plain words, not a field name: she repeats context lines to the user ("embeddingModelConfigured: true").
       `Embedding model: ${embeddingModelConfigured ? "configured" : "none"}`,
       `permissionsMode: ${permissionsMode}`,
-      `decisionAuthoring: ${JSON.stringify(decisionContext)}`,
       `shellSandboxAvailable: ${shellSandboxStatus.available}`,
       ...(!shellSandboxStatus.available
         ? [
@@ -4406,6 +4404,19 @@ export class ProfessorMariWorkspaceService {
       messages.push({ role: "system", content: handoffContextPrompt, contextKind: "injection" });
     }
     if (continuityPrompt) messages.push({ role: "system", content: continuityPrompt, contextKind: "injection" });
+    // custom-mods: values that change every turn go last. chatCompleteWorkspace merges every system
+    // message into one block ahead of the history, so a timestamp inside <workspace_context> made the
+    // rest of the ~13k-token system prompt uncacheable from one user message to the next.
+    messages.push({
+      role: "system",
+      content: [
+        `<turn_context>`,
+        `currentTime: ${new Date().toISOString()}`,
+        `decisionAuthoring: ${JSON.stringify(decisionContext)}`,
+        `</turn_context>`,
+      ].join("\n"),
+      contextKind: "prompt",
+    });
     logger.debug(
       "Professor Mari prompt: %d messages, %d prompt chars, %d history chars, %d injection chars, %d tools",
       messages.length,
