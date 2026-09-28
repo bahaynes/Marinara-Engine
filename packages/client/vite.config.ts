@@ -47,6 +47,9 @@ function manualChunks(id: string) {
   // rather than weight on GameSurface's budget.
   if (id.endsWith("/components/game/GameInventory.tsx") || id.endsWith("/components/game/RulesetItemPicker.tsx"))
     return "game-inventory";
+  // custom-mods combat rules (D&D 5.5e, tactical grid, Triage) live in shared; unassigned, Rollup
+  // folds them into game-tag-parser along with the rest of shared.
+  if (/\/packages\/shared\/dist\/features\/(?:dnd-combat|dnd-tactical|triage)\//u.test(id)) return "game-combat-rules";
   if (!id.includes("/node_modules/")) return undefined;
   // Ignore checkout names, but keep pnpm peer suffixes so React and its consumers stay together.
   // Removing those suffixes splits eager React imports across chunks and creates startup cycles.
