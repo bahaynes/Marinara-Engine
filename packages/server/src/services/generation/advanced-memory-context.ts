@@ -124,8 +124,14 @@ export async function prepareAdvancedMemoryContext(
     input.maxContext ?? Infinity,
   );
   // History is sized as if the reply were larger by the tool reserve; the real reply
-  // allowance is returned unchanged, so the reserve stays free for tool follow-ups.
-  const packingMaxTokens = maxTokens + advancedMemoryToolRoundReserve(input.settings.maxContextTokens, input.tools);
+  // allowance is returned unchanged, so the reserve stays free for tool follow-ups. Size it
+  // from the window actually packed: a cap above the model's window must not inflate it.
+  const packingMaxTokens =
+    maxTokens +
+    advancedMemoryToolRoundReserve(
+      Math.min(input.settings.maxContextTokens, input.maxContext ?? Infinity),
+      input.tools,
+    );
   const sourceIds = new Set(input.sourceMessages.map((message) => message.id));
   const fixed = input.toProviderMessages(
     resolveAdvancedMemoryPrompt(

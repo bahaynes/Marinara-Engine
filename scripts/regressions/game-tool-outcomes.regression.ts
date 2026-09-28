@@ -462,7 +462,8 @@ try {
     await chats.patchMetadata(talk.id, {
       enableAgents: false,
       enableTools: true,
-      activeToolIds: ["update_game_state"],
+      // update_game_state is not offered outside Game Mode; another tool keeps the loop running.
+      activeToolIds: ["update_game_state", "roll_dice"],
     });
     await chats.createMessage({ chatId: talk.id, role: "user", content: "Keep calling tools." });
     const talked = await app.inject({ method: "POST", url: "/api/generate/", payload: { chatId: talk.id } });

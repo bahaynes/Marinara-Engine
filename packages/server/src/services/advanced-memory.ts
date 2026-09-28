@@ -2736,6 +2736,7 @@ export function createAdvancedMemoryService(db: DB, { includeExcerptsInStatus = 
         content,
         title: "Recollection",
         timeline: null,
+        timelineEvents: [],
         enabled: saved?.enabled ?? true,
         manualOverride: false,
         sourceFingerprint: fingerprint(ctx, source, [characterId]),
@@ -6461,7 +6462,9 @@ export function createAdvancedMemoryService(db: DB, { includeExcerptsInStatus = 
               (record.content ||
                 record.kind === "recollection" ||
                 (record.status === "open" &&
-                  !allRecords.some((item) => item.sceneId === record.sceneId && item.content && item.kind === "scene"))),
+                  !allRecords.some(
+                    (item) => item.sceneId === record.sceneId && item.content && item.kind === "scene",
+                  ))),
           ),
           ctx.messages,
         )
