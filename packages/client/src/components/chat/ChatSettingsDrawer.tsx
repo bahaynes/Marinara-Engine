@@ -2405,6 +2405,8 @@ export function ChatSettingsDrawer({
       // update_about_me is Conversation-only (enforced server-side); hide the
       // toggle in other modes so it doesn't look available where it can't run.
       if (t.name === "update_about_me" && !isConversation) continue;
+      // update_game_state only writes Game state; the server refuses it in other modes.
+      if (t.name === "update_game_state" && !isGame) continue;
       tools.push({ id: t.name, name: t.name, description: t.description });
     }
     if (customTools) {
@@ -2415,7 +2417,7 @@ export function ChatSettingsDrawer({
       }
     }
     return tools;
-  }, [customToolCapabilities, customTools, isConversation]);
+  }, [customToolCapabilities, customTools, isConversation, isGame]);
 
   // ── Helpers ──
   const characters = useMemo(
