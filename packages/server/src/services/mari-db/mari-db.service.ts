@@ -117,7 +117,8 @@ type ParsedMutationRequest = {
     | "theme-set-active"
     | "character-move-folder"
     | "preset-section-delete"
-    | "preset-group-delete";
+    | "preset-group-delete"
+    | "batch";
   table: string | "all";
   id?: string;
   characterId?: string;
@@ -138,6 +139,8 @@ type ParsedMutationRequest = {
   reason: string | null;
   generatedIds?: string[];
   relatedInserts?: Array<{ table: string; row: Row }>;
+  /** kind "batch": insert/patch/delete requests planned together as one reviewable change. */
+  operations?: ParsedMutationRequest[];
 };
 type PendingRecord = MariDbPendingApproval & {
   plan: Plan;
@@ -905,6 +908,99 @@ function presetDataFromFlags(flags: Map<string, string | boolean>): Row {
   return data;
 }
 
+// custom-mods: a page of lorebook reads stays under the 24k read bound, which would otherwise elide
+// the whole items array; the caller continues from nextOffset / remainingIds.
+const LOREBOOK_READ_PAGE_BUDGET = 20_000;
+const LOREBOOK_BATCH_MAX_OPERATIONS = 200;
+const LOREBOOK_ENTRY_CREATE_FIELDS = [
+  "name",
+  "content",
+  "description",
+  "tag",
+  "keys",
+  "secondaryKeys",
+  "enabled",
+  "constant",
+  "order",
+  "position",
+  "outletName",
+  "depth",
+  "role",
+  "group",
+  "selective",
+  "selectiveLogic",
+  "matchWholeWords",
+  "caseSensitive",
+  "useRegex",
+  "probability",
+  "scanDepth",
+  "sticky",
+  "cooldown",
+  "delay",
+  "ephemeral",
+  "groupWeight",
+  "preventRecursion",
+  "excludeRecursion",
+  "delayUntilRecursion",
+  "excludeFromVectorization",
+  "decisionStatement",
+  "decisionMode",
+  "locked",
+  "characterFilterMode",
+  "characterFilterIds",
+  "characterTagFilterMode",
+  "characterTagFilters",
+  "generationTriggerFilterMode",
+  "generationTriggerFilters",
+  "additionalMatchingSources",
+  "folderId",
+];
+const LOREBOOK_ENTRY_UPDATE_FIELDS = [
+  "name",
+  "content",
+  "description",
+  "tag",
+  "keys",
+  "secondaryKeys",
+  "enabled",
+  "enable",
+  "disable",
+  "constant",
+  "order",
+  "position",
+  "outletName",
+  "depth",
+  "role",
+  "group",
+  "selective",
+  "selectiveLogic",
+  "matchWholeWords",
+  "caseSensitive",
+  "useRegex",
+  "probability",
+  "scanDepth",
+  "sticky",
+  "cooldown",
+  "delay",
+  "ephemeral",
+  "groupWeight",
+  "preventRecursion",
+  "excludeRecursion",
+  "delayUntilRecursion",
+  "excludeFromVectorization",
+  "decisionStatement",
+  "decisionMode",
+  "locked",
+  "characterFilterMode",
+  "characterFilterIds",
+  "characterTagFilterMode",
+  "characterTagFilters",
+  "generationTriggerFilterMode",
+  "generationTriggerFilters",
+  "additionalMatchingSources",
+  "folderId",
+];
+
 function normalizeAppDataActionName(action: string): string {
   let key = action
     .trim()
@@ -934,6 +1030,11 @@ function normalizeAppDataActionName(action: string): string {
     "lorebook.entry.remove": "lorebook.deleteentry",
     "lorebook.entries.remove": "lorebook.deleteentry",
     "lorebook.removeentry": "lorebook.deleteentry",
+    "lorebook.entries.batch": "lorebook.batch",
+    "lorebook.entries.bulk": "lorebook.batch",
+    "lorebook.bulk": "lorebook.batch",
+    "lorebook.entries.getmany": "lorebook.getentries",
+    "lorebook.getmanyentries": "lorebook.getentries",
     "theme.set": "theme.setactive",
     "theme.activate": "theme.setactive",
     "promptpreset.list": "preset.list",
@@ -3453,6 +3554,31 @@ export class MariDbService {
     }
   }
 
+  /** One lorebook entry row for insertion, from app_data arguments (lorebook.addEntry and lorebook.batch). */
+  private async buildLorebookEntryInsert(args: Row, lorebookId: string): Promise<{ id: string; row: Row }> {
+    const data = actionDataWithTopLevel(args, ["data", "entry", "row"], LOREBOOK_ENTRY_CREATE_FIELDS);
+    const timestamp = now();
+    const id = firstString(args, ["entryId", "id"]) ?? newId();
+    const row = buildLorebookEntryCreateRow(data, lorebookId, id, timestamp);
+    this.assignLorebookEntryActionFields(row, data);
+    await this.assignEntryFolderId(row, data, lorebookId);
+    return { id, row };
+  }
+
+  /** A lorebook entry patch from app_data arguments (lorebook.updateEntry and lorebook.batch). */
+  private async buildLorebookEntryPatch(args: Row, lorebookId: string): Promise<Row> {
+    const data = actionDataWithTopLevel(args, ["patch", "data", "entry"], LOREBOOK_ENTRY_UPDATE_FIELDS);
+    const patch: Row = { updatedAt: now() };
+    this.assignLorebookEntryActionFields(patch, data);
+    await this.assignEntryFolderId(patch, data, lorebookId);
+    if (Object.keys(patch).length <= 1) {
+      throw new Error(
+        "lorebook.updateEntry needs entryId plus a patch field such as name, content, keys, description, enabled, constant, or order",
+      );
+    }
+    return patch;
+  }
+
   private async executeLorebookAction(
     sub: string,
     args: Row,
@@ -3485,16 +3611,130 @@ export class MariDbService {
         };
       }
       case "entries": {
+        // custom-mods: paged by size as well as count. The read bound elides a whole oversized field,
+        // so an unpaged list silently lost every entry past ~40 of a large lorebook.
         const lorebookId = requiredString(args, ["lorebookId", "id"], "lorebook id");
         const entryId = firstString(args, ["entryId"]);
         const limit = normalizeLimit(firstNumber(args, ["limit"]), 100, 2000);
+        const offset = normalizeOffset(firstNumber(args, ["offset"]));
         const entries = (await this.rawRows("lorebook_entries"))
           .filter((entry) => entry.lorebookId === lorebookId)
           .filter((entry) => !entryId || entry.id === entryId)
-          .sort((a, b) => Number(a.order ?? 100) - Number(b.order ?? 100))
-          .slice(0, limit)
-          .map(summarizeLorebookEntryRow);
-        return { ok: true, mode: "read", command: context.command, output: entries };
+          .sort((a, b) => Number(a.order ?? 100) - Number(b.order ?? 100));
+        const items: Row[] = [];
+        let size = 0;
+        for (const entry of entries.slice(offset, offset + limit)) {
+          const summary = summarizeLorebookEntryRow(entry);
+          const length = prettyLength(summary);
+          if (items.length > 0 && size + length > LOREBOOK_READ_PAGE_BUDGET) break;
+          items.push(summary);
+          size += length;
+        }
+        const nextOffset = offset + items.length < entries.length ? offset + items.length : null;
+        return {
+          ok: true,
+          mode: "read",
+          command: context.command,
+          output: { items, total: entries.length, offset, nextOffset },
+        };
+      }
+      case "getentries": {
+        const entryIds = [...new Set(firstStringList(args, ["entryIds", "ids"]) ?? [])];
+        if (entryIds.length === 0) throw new Error("lorebook.getEntries needs entryIds: a list of lorebook entry ids");
+        const lorebookId = firstString(args, ["lorebookId"]);
+        const items: Row[] = [];
+        const missingIds: string[] = [];
+        let size = 0;
+        let index = 0;
+        for (; index < entryIds.length; index += 1) {
+          const id = entryIds[index]!;
+          const row = await this.getRawById(getMeta("lorebook_entries"), id);
+          if (!row || (lorebookId && row.lorebookId !== lorebookId)) {
+            missingIds.push(id);
+            continue;
+          }
+          const parsed = parseRow("lorebook_entries", row);
+          const length = prettyLength(parsed);
+          if (items.length > 0 && size + length > LOREBOOK_READ_PAGE_BUDGET) break;
+          items.push(parsed);
+          size += length;
+        }
+        return {
+          ok: true,
+          mode: "read",
+          command: context.command,
+          output: { items, missingIds, remainingIds: entryIds.slice(index) },
+        };
+      }
+      case "batch": {
+        const lorebookId = requiredString(args, ["lorebookId"], "lorebook id");
+        if (!(await this.getRawById(getMeta("lorebooks"), lorebookId))) {
+          throw new Error(`Lorebook ${lorebookId} not found`);
+        }
+        const records = (key: string): Row[] => {
+          const value = args[key];
+          if (value === undefined) return [];
+          if (!Array.isArray(value) || value.some((item) => !item || typeof item !== "object" || Array.isArray(item)))
+            throw new Error(`lorebook.batch ${key} must be a list of entry objects`);
+          return value as Row[];
+        };
+        const adds = records("add");
+        const updates = records("update");
+        const deletes = [...new Set(firstStringList(args, ["delete"]) ?? [])];
+        const count = adds.length + updates.length + deletes.length;
+        if (count === 0) throw new Error("lorebook.batch needs at least one of add, update, or delete");
+        if (count > LOREBOOK_BATCH_MAX_OPERATIONS)
+          throw new Error(`lorebook.batch takes at most ${LOREBOOK_BATCH_MAX_OPERATIONS} operations per call`);
+        // Deletes and patches plan by id alone, so the lorebook scope is enforced here.
+        const requireOwnEntry = async (entryId: string) => {
+          const row = await this.getRawById(getMeta("lorebook_entries"), entryId);
+          if (!row || row.lorebookId !== lorebookId)
+            throw new Error(`Lorebook entry ${entryId} not found in lorebook ${lorebookId}`);
+        };
+        const reason = firstString(args, ["reason"]) ?? null;
+        const operations: ParsedMutationRequest[] = [];
+        for (const add of adds) {
+          const { id, row } = await this.buildLorebookEntryInsert(add, lorebookId);
+          operations.push({ kind: "insert", table: "lorebook_entries", id, row, apply: true, cascade: false, reason });
+        }
+        for (const update of updates) {
+          const entryId = requiredString(update, ["entryId", "id"], "lorebook.batch update entryId");
+          await requireOwnEntry(entryId);
+          const patch = await this.buildLorebookEntryPatch(update, lorebookId);
+          operations.push({
+            kind: "patch",
+            table: "lorebook_entries",
+            id: entryId,
+            patch,
+            apply: true,
+            cascade: false,
+            reason,
+          });
+        }
+        for (const entryId of deletes) {
+          await requireOwnEntry(entryId);
+          operations.push({
+            kind: "delete",
+            table: "lorebook_entries",
+            id: entryId,
+            apply: true,
+            cascade: false,
+            reason,
+          });
+        }
+        return this.executeMutation(
+          {
+            kind: "batch",
+            table: "lorebook_entries",
+            operations,
+            apply: firstBoolean(args, ["apply"]) === true,
+            cascade: false,
+            reason,
+            cwd: context.cwd,
+          },
+          context.command,
+          context.sessionId,
+        );
       }
       case "getentry": {
         const entryId = requiredString(args, ["entryId", "id"], "lorebook entry id");
@@ -3750,58 +3990,7 @@ export class MariDbService {
         const lorebookId = requiredString(args, ["lorebookId"], "lorebook id");
         const lorebookExists = await this.getRawById(getMeta("lorebooks"), lorebookId);
         if (!lorebookExists) throw new Error(`Lorebook ${lorebookId} not found`);
-        const data = actionDataWithTopLevel(
-          args,
-          ["data", "entry", "row"],
-          [
-            "name",
-            "content",
-            "description",
-            "tag",
-            "keys",
-            "secondaryKeys",
-            "enabled",
-            "constant",
-            "order",
-            "position",
-            "outletName",
-            "depth",
-            "role",
-            "group",
-            "selective",
-            "selectiveLogic",
-            "matchWholeWords",
-            "caseSensitive",
-            "useRegex",
-            "probability",
-            "scanDepth",
-            "sticky",
-            "cooldown",
-            "delay",
-            "ephemeral",
-            "groupWeight",
-            "preventRecursion",
-            "excludeRecursion",
-            "delayUntilRecursion",
-            "excludeFromVectorization",
-            "decisionStatement",
-            "decisionMode",
-            "locked",
-            "characterFilterMode",
-            "characterFilterIds",
-            "characterTagFilterMode",
-            "characterTagFilters",
-            "generationTriggerFilterMode",
-            "generationTriggerFilters",
-            "additionalMatchingSources",
-            "folderId",
-          ],
-        );
-        const timestamp = now();
-        const id = firstString(args, ["entryId", "id"]) ?? newId();
-        const row = buildLorebookEntryCreateRow(data, lorebookId, id, timestamp);
-        this.assignLorebookEntryActionFields(row, data);
-        await this.assignEntryFolderId(row, data, lorebookId);
+        const { id, row } = await this.buildLorebookEntryInsert(args, lorebookId);
         return this.executeMutation(
           {
             kind: "insert",
@@ -3821,63 +4010,7 @@ export class MariDbService {
         const entryId = requiredString(args, ["entryId", "id"], "lorebook entry id");
         const entryExists = await this.getRawById(getMeta("lorebook_entries"), entryId);
         if (!entryExists) throw new Error(`Lorebook entry ${entryId} not found`);
-        const data = actionDataWithTopLevel(
-          args,
-          ["patch", "data", "entry"],
-          [
-            "name",
-            "content",
-            "description",
-            "tag",
-            "keys",
-            "secondaryKeys",
-            "enabled",
-            "enable",
-            "disable",
-            "constant",
-            "order",
-            "position",
-            "outletName",
-            "depth",
-            "role",
-            "group",
-            "selective",
-            "selectiveLogic",
-            "matchWholeWords",
-            "caseSensitive",
-            "useRegex",
-            "probability",
-            "scanDepth",
-            "sticky",
-            "cooldown",
-            "delay",
-            "ephemeral",
-            "groupWeight",
-            "preventRecursion",
-            "excludeRecursion",
-            "delayUntilRecursion",
-            "excludeFromVectorization",
-            "decisionStatement",
-            "decisionMode",
-            "locked",
-            "characterFilterMode",
-            "characterFilterIds",
-            "characterTagFilterMode",
-            "characterTagFilters",
-            "generationTriggerFilterMode",
-            "generationTriggerFilters",
-            "additionalMatchingSources",
-            "folderId",
-          ],
-        );
-        const patch: Row = { updatedAt: now() };
-        this.assignLorebookEntryActionFields(patch, data);
-        await this.assignEntryFolderId(patch, data, String(entryExists.lorebookId));
-        if (Object.keys(patch).length <= 1) {
-          throw new Error(
-            "lorebook.updateEntry needs entryId plus a patch field such as name, content, keys, description, enabled, constant, or order",
-          );
-        }
+        const patch = await this.buildLorebookEntryPatch(args, String(entryExists.lorebookId));
         return this.executeMutation(
           {
             kind: "patch",
@@ -7372,6 +7505,7 @@ export class MariDbService {
     else if (request.kind === "character-move-folder") changes = await this.planCharacterMoveFolder(request, timestamp);
     else if (request.kind === "preset-section-delete") changes = await this.planPresetSectionDelete(request, timestamp);
     else if (request.kind === "preset-group-delete") changes = await this.planPresetGroupDelete(request, timestamp);
+    else if (request.kind === "batch") changes = await this.planBatch(request, timestamp, issues, allocateId);
     else changes = await this.planTransform(request, timestamp, allocateId);
 
     // systemKey identifies Engine-owned presets. Apply this after every planner so raw writes and
@@ -7931,6 +8065,33 @@ export class MariDbService {
       if (this.reviewLocks.get(id) === tail) this.reviewLocks.delete(id);
     });
     return run;
+  }
+
+  /**
+   * custom-mods: plans several insert/patch/delete requests as ONE change, so a bulk edit is one
+   * Keep/Restore card and one journal instead of a model round trip per row. Each operation goes
+   * through its normal planner; every planner reads the pre-batch state, so a row may appear once.
+   */
+  private async planBatch(
+    request: ParsedMutationRequest,
+    timestamp: string,
+    issues: MariDbValidationIssue[],
+    allocateId: () => string,
+  ): Promise<PlanChange[]> {
+    const changes: PlanChange[] = [];
+    for (const operation of request.operations ?? []) {
+      if (operation.kind === "insert") changes.push(...(await this.planInsert(operation, timestamp, allocateId)));
+      else if (operation.kind === "patch") changes.push(...(await this.planPatch(operation, timestamp)));
+      else if (operation.kind === "delete") changes.push(...(await this.planDelete(operation, issues)));
+      else throw new Error(`A batch cannot contain a ${operation.kind} operation`);
+    }
+    const seen = new Set<string>();
+    for (const change of changes) {
+      const key = `${change.table}:${change.id}`;
+      if (seen.has(key)) throw new Error(`A batch may change each row once; ${key} appears more than once`);
+      seen.add(key);
+    }
+    return changes;
   }
 
   private async planDelete(request: ParsedMutationRequest, issues: MariDbValidationIssue[]): Promise<PlanChange[]> {
