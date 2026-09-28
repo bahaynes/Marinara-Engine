@@ -18,6 +18,7 @@ import {
 } from "./documentation-tools.js";
 import { type MariPermissionsMode } from "@marinara-engine/shared";
 import type { MariWorkspaceActionResult, MariDependencyTarget, MariWorkspaceTraceItem } from "@marinara-engine/shared";
+import { runCacheCompare } from "../mari-db/cache-compare.js";
 import { getMariDbService, normalizeAppDataActionName, probeAppDataCall } from "../mari-db/mari-db.service.js";
 import { collectArgumentNotes } from "../mari-db/tool-error.js";
 import { mariWorkspaceSessionId } from "./mari-session.js";
@@ -126,6 +127,8 @@ const SKILL_BY_ACTION_PREFIX: ReadonlyArray<readonly [string, string]> = [
   ["personalextension.", "builtin-extensions"],
   ["homewidget.", "builtin-home-widgets"],
   ["chat.diagnose", "builtin-repair"],
+  ["chat.cachereport", "builtin-cache-check"],
+  ["chat.cachecompare", "builtin-cache-check"],
   ["chat.updatemessage", "builtin-repair"],
 ];
 
@@ -1133,6 +1136,10 @@ export class WorkspaceCommands {
       typeof args.action === "string" ? args.action : typeof args.type === "string" ? args.type : "unknown";
     if (action === "decision.get" || action === "decision.record") {
       return { output: stringifyOutput(await executeMariDecisionAction(action, args.data)) };
+    }
+    // fork: read-only prompt comparison; it needs the app to assemble the prompt through dryRun.
+    if (action.toLowerCase() === "chat.cachecompare") {
+      return { output: stringifyOutput(await runCacheCompare(this.app, args)) };
     }
     const sessionId = this.runSessionId();
     let skillsSeen = this.skillsSeenBySession.get(sessionId);

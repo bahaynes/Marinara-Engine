@@ -104,6 +104,7 @@ try {
   assert.deepEqual(
     fresh.skills.map((skill) => skill.id),
     [
+      "builtin-cache-check",
       "builtin-characters",
       "builtin-decisions",
       "builtin-extensions",
@@ -142,6 +143,7 @@ try {
   assert.deepEqual(
     merged.skills.map((skill) => `${skill.origin}:${skill.id}`),
     [
+      "builtin:builtin-cache-check",
       "builtin:builtin-characters",
       "builtin:builtin-decisions",
       "builtin:builtin-extensions",
@@ -288,10 +290,11 @@ try {
   // open-issues test caught that moving card guidance into the characters handbook had dropped the
   // permanent "updates are patches / read it back before claiming" rule (14,424 → 14,594). Raised
   // (+1,100) for staging's Game Mode ruleset-sheet bullet (#8063), which has no handbook yet
-  // (14,594 → 15,714); moving it into one is the next diet candidate.
+  // (14,594 → 15,714); moving it into one is the next diet candidate. Raised (+850) on custom-mods
+  // for fork lorebook batch / getEntries bullets (15,850 → 16,700).
   assert.ok(
-    knowledge.length < 15_850,
-    `the permanent prompt grew (${knowledge.length} >= 15850); move guidance into a skill, or lower this cap when one moves out`,
+    knowledge.length < 16_700,
+    `the permanent prompt grew (${knowledge.length} >= 16700); move guidance into a skill, or lower this cap when one moves out`,
   );
 
   // A handbook is not carried into the next turn: it would be cut mid-sentence and crowd out the

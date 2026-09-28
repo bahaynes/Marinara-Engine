@@ -376,6 +376,8 @@ export const PROFESSOR_MARI_APP_DATA_ACTIONS = [
   "chat.messages",
   "chat.search",
   "chat.diagnose",
+  "chat.cacheReport",
+  "chat.cacheCompare",
   "chat.updateMessage",
   "character.list",
   "character.get",
@@ -399,6 +401,8 @@ export const PROFESSOR_MARI_APP_DATA_ACTIONS = [
   "lorebook.get",
   "lorebook.entries",
   "lorebook.getEntry",
+  "lorebook.getEntries",
+  "lorebook.batch",
   "lorebook.search",
   "lorebook.testScan",
   "lorebook.create",
@@ -901,9 +905,11 @@ export function workspaceCommandKnowledgePrompt() {
 - Updates are patches: send only the changed fields and keep every other field as it was. Read the entity back. Claim completion only when every requested value matches.
 - New creates: use \`apply:true\` immediately for \`character.create\`, \`persona.create\`, \`lorebook.create\`, \`lorebook.addEntry\`, \`agent.create\`, \`preset.create\`, and \`theme.create\` when the user asked you to create it. The result's \`readBack\` confirms persistence; read back only when you need the created ids or content for the next step.
 - Lorebooks: read skill \`builtin-lorebook\` with \`skill.get\` BEFORE you create a book or entries, change an activation field, or explain why an entry fires too often or never. Only \`position\` \`0\` (or negative), \`1\`, \`2\` and \`7\` inject; any other number silently injects nothing — and a text edit leaves the stored vector describing the old text until the user re-vectorizes. Then save the entries with the book in one \`lorebook.create\` (on a small output limit, the first entries, then one \`lorebook.addEntry\` per reply), read with \`lorebook.entries\` (follow \`nextOffset\`) and \`lorebook.getEntry\`, write updates with \`apply:true\`, and diagnose activation with \`lorebook.testScan\`.
+- Reading many lorebook entries in full: \`lorebook.getEntries\` with \`entryIds\` (a list) reads them in one call and returns \`{ items, missingIds, remainingIds }\`; call it again with \`remainingIds\` if that is not empty.
+- Lorebook bulk changes: when a request adds, rewrites, or deletes more than one entry, do it in ONE \`lorebook.batch\` call, never an entry-at-a-time loop: \`{ lorebookId, add: [entry objects], update: [{ entryId, ...changed fields }], delete: [entryIds], apply: true }\` (up to 200 operations). It is one change with one change card, and it refuses entries from other lorebooks. Merging entries into a new one is a single batch that adds the merged entry and deletes (or updates with \`enabled: false\`) the originals.
 - Lorebook folders are two things: \`lorebook.folder.*\` (with \`lorebookId\`; \`parentFolderId\` only for a nested folder) organizes entries inside one book, while \`lorebook.libraryFolder.*\` is the main Lorebooks panel.
 - Reply diagnosis and repair: read skill \`builtin-repair\` with \`skill.get\` before you diagnose a bad reply (cut off, empty, a character who forgets or ignores their card) or fix one. Never present a hand-written "corrected" reply as text: \`chat.updateMessage\` is the only repair path and it adds a swipe. The skill has the diagnose-first order, the finding codes and the repair rules.
-- Deleting a lorebook entry: use \`lorebook.deleteEntry\` with the entry's \`entryId\` and \`apply:true\` — it removes that one entry and shows a change card. NEVER delete a lorebook entry with a raw \`mari db delete\`: its \`--where\` selector can match and permanently remove far more rows than you intend. If a raw \`mari db delete\` is ever unavoidable, dry-run it first (omit \`--apply\`) and confirm the exact affected-row count before applying.
+- Deleting a lorebook entry: use \`lorebook.deleteEntry\` (or \`lorebook.batch\` \`delete\` for several) with the entry's \`entryId\` and \`apply:true\` — it removes that one entry and shows a change card. NEVER delete a lorebook entry with a raw \`mari db delete\`: its \`--where\` selector can match and permanently remove far more rows than you intend. If a raw \`mari db delete\` is ever unavoidable, dry-run it first (omit \`--apply\`) and confirm the exact affected-row count before applying.
 - Interactive onboarding (a card's persona template plus questions the player answers when a Roleplay chat starts) is a procedure with validation rules, not a plain field edit: call \`skill.get\` with top-level \`id: "builtin-onboarding"\` BEFORE you write or change one, and follow it. Read it with \`character.onboarding.get\` (\`characterId\`; also returns its problems and a sample persona), write it with \`character.onboarding.update\` (\`characterId\`, \`onboarding\`, \`reason\`, \`apply\`). User-facing reference: \`docs_read docs/characters/interactive-onboarding.md\`.
 - Game Mode ruleset sheets (a character's or persona's sheet for an installed ruleset, under Stats > Ruleset sheets): read with \`persona.rulesetSheet.get\` or \`character.rulesetSheet.get\` (\`personaId\`/\`characterId\`; without \`rulesetId\` it lists the stored sheets and installed rulesets, with it the sheet's \`build\`, worked-out \`values\` and the \`layout\` of ids and bounds). Write with \`persona.rulesetSheet.update\` or \`character.rulesetSheet.update\` (\`rulesetId\`, \`patch\`, \`reason\`, \`apply\`). \`patch\` merges into the build by the ruleset's own ids: \`abilities\` {id: score}, \`skills\`/\`saves\` {id: tier id}, \`bonuses\` {id: number}, \`fields\` {id: value}, with \`null\` clearing a value back to its default; \`lists\` {listId: {update: [{index, cells}], remove: [index], add: [row]}} or {set: [rows]} to replace a list. A missing sheet starts blank. Calculated values and live state (current hit points, spent slots) are not written here. The server refuses any id or value the ruleset does not allow and lists every problem: fix them and resend.
 - Prompt presets: read skill \`builtin-presets\` with \`skill.get\` BEFORE you create a preset, change a section, group, marker or choice block, or explain what a preset sends to the prompt. \`preset.update\` with \`data.sections\` replaces \`sectionOrder\` unless you send the complete order.
@@ -1604,6 +1610,8 @@ function parseTextualWorkspaceCommandCalls(content: string): WorkspaceCommandCal
 // text passes through here in parseAssistantWorkspaceAction; command arguments and debug logs stay raw.
 const INTERNAL_NAME_WORDS: Record<string, string> = {
   "chat.diagnose": "the chat checkup",
+  "chat.cachereport": "the cache check",
+  "chat.cachecompare": "the cache check",
   "agent.list": "your installed agents",
   "chat.updatemessage": "a reply repair",
   docs_search: "the docs",
@@ -1946,6 +1954,102 @@ ${output}
 // Slice 70: a record she read whole (a card, an entry, a section) is kept whole enough to work from next turn;
 // at 1,000 chars a card was cut mid-description, so "make her more real" read the same card again.
 const CONTINUITY_RECORD_READ_RE = /\.(get|getentry|getsection|getgroup|getchoiceblock)$/i;
+// custom-mods: within one reply every command result used to stay verbatim in every later model
+// call, so a long task re-sent all of them each round (a 190-entry lorebook edit ran to ~2M prompt
+// tokens). Past a high-water mark, older results are shortened in one burst down to a low-water
+// mark. A result is shortened at most once, so the provider's cached prefix stays valid up to it.
+// The high mark fits three full lorebook read pages, so paging reads are not cut mid-task.
+export const WORKSPACE_RESULT_HIGH_WATER_CHARS = 80_000;
+export const WORKSPACE_RESULT_LOW_WATER_CHARS = 40_000;
+const WORKSPACE_RESULT_KEEP_CHARS = 600;
+const WORKSPACE_RESULT_KEEP_FAILURE_CHARS = 2_000;
+
+export type WorkspaceResultRecord = {
+  message: ChatMessage;
+  results: WorkspaceCommandResult[];
+  compacted: boolean;
+};
+
+function resultIsWrite(result: WorkspaceCommandResult): boolean {
+  return isMutatingWorkspaceCommand({ id: result.id, name: result.name, arguments: result.input });
+}
+
+/** A write's lasting facts: status, review id, counts and affected rows; its preview has been seen. */
+function writeDigest(stdout: string): string | null {
+  try {
+    const parsed = JSON.parse(stdout) as Record<string, unknown>;
+    if (!isRecord(parsed) || !isRecord(parsed.summary)) return null;
+    const summary = parsed.summary;
+    const preview = Array.isArray(summary.preview) ? summary.preview : [];
+    return JSON.stringify({
+      ok: parsed.ok,
+      mode: parsed.mode,
+      status: parsed.status,
+      approval: isRecord(parsed.approval) ? { id: parsed.approval.id, status: parsed.approval.status } : undefined,
+      readBack: isRecord(parsed.readBack) ? { status: parsed.readBack.status } : undefined,
+      summary: {
+        insertedRows: summary.insertedRows,
+        updatedRows: summary.updatedRows,
+        replacedRows: summary.replacedRows,
+        deletedRows: summary.deletedRows,
+        affected: preview
+          .filter(isRecord)
+          .map((change) => `${String(change.action)} ${String(change.table)}:${String(change.id)}`),
+      },
+    });
+  } catch {
+    return null;
+  }
+}
+
+function compactCommandResultOutput(result: WorkspaceCommandResult): string {
+  if (!result.success) return compactTraceText(result.output, WORKSPACE_RESULT_KEEP_FAILURE_CHARS);
+  const marker = "\nstdout:\n";
+  const split = result.output.indexOf(marker);
+  const header = split >= 0 ? result.output.slice(0, split + marker.length) : "";
+  const stdout = split >= 0 ? result.output.slice(split + marker.length) : result.output;
+  const digest = resultIsWrite(result) ? writeDigest(stdout) : null;
+  const body = digest ?? compactTraceText(stdout, WORKSPACE_RESULT_KEEP_CHARS);
+  const removed = stdout.length - body.length;
+  if (removed <= 0) return result.output;
+  return `${header}${body}\n[Earlier result shortened by ${removed} characters to save context. Run this command again with the same input if you need the full output.]`;
+}
+
+function formatCompactedCommandResultsForPrompt(results: WorkspaceCommandResult[]): string {
+  return formatCommandResultForPrompt(
+    results.map((result) => ({ ...result, output: compactCommandResultOutput(result) })),
+  );
+}
+
+/**
+ * Shortens older command-result messages of the current reply in place once their full text passes
+ * highWaterChars, until it is at or below lowWaterChars. The newest result is never touched, a
+ * shortened message never changes again, and successful writes go before reads.
+ */
+export function compactWorkspaceResultHistory(
+  records: WorkspaceResultRecord[],
+  limits: { highWaterChars: number; lowWaterChars: number } = {
+    highWaterChars: WORKSPACE_RESULT_HIGH_WATER_CHARS,
+    lowWaterChars: WORKSPACE_RESULT_LOW_WATER_CHARS,
+  },
+): { shortened: number; beforeChars: number; afterChars: number } | null {
+  const fullChars = () =>
+    records.reduce((total, record) => total + (record.compacted ? 0 : String(record.message.content).length), 0);
+  const beforeChars = fullChars();
+  if (beforeChars <= limits.highWaterChars) return null;
+  const candidates = records.slice(0, -1).filter((record) => !record.compacted);
+  const writesOnly = (record: WorkspaceResultRecord) =>
+    record.results.length > 0 && record.results.every((result) => result.success && resultIsWrite(result));
+  const ordered = [...candidates.filter(writesOnly), ...candidates.filter((record) => !writesOnly(record))];
+  let shortened = 0;
+  for (const record of ordered) {
+    if (fullChars() <= limits.lowWaterChars) break;
+    record.message.content = formatCompactedCommandResultsForPrompt(record.results);
+    record.compacted = true;
+    shortened += 1;
+  }
+  return shortened ? { shortened, beforeChars, afterChars: fullChars() } : null;
+}
 
 function formatContinuityResult(result: WorkspaceCommandResult, index: number): string {
   const input = JSON.stringify(compactTraceValue(result.input, 600));
@@ -2034,16 +2138,34 @@ export function chunkText(value: string, chunkSize = 1200): string[] {
   return chunks;
 }
 
-function mapUsage(usage: LLMUsage | undefined): {
+type MariUsageTotals = {
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
-} {
-  if (!usage) return { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+  /** custom-mods: provider-reported cache reads / writes, so a reply's total separates cheap cache
+   * reads from full-price input. Kept in the usage record only: the context-budget meter adds
+   * tokensCachedPrompt to promptTokens, which double-counts providers whose prompt includes cache. */
+  cachedPromptTokens: number;
+  cacheWritePromptTokens: number;
+};
+
+function mapUsage(usage: LLMUsage | undefined): MariUsageTotals {
   return {
-    promptTokens: usage.promptTokens,
-    completionTokens: usage.completionTokens,
-    totalTokens: usage.totalTokens,
+    promptTokens: usage?.promptTokens ?? 0,
+    completionTokens: usage?.completionTokens ?? 0,
+    totalTokens: usage?.totalTokens ?? 0,
+    cachedPromptTokens: usage?.cachedPromptTokens ?? 0,
+    cacheWritePromptTokens: usage?.cacheWritePromptTokens ?? 0,
+  };
+}
+
+function addUsage(total: MariUsageTotals, usage: MariUsageTotals): MariUsageTotals {
+  return {
+    promptTokens: total.promptTokens + usage.promptTokens,
+    completionTokens: total.completionTokens + usage.completionTokens,
+    totalTokens: total.totalTokens + usage.totalTokens,
+    cachedPromptTokens: total.cachedPromptTokens + usage.cachedPromptTokens,
+    cacheWritePromptTokens: total.cacheWritePromptTokens + usage.cacheWritePromptTokens,
   };
 }
 
@@ -2179,7 +2301,7 @@ export function appDataActionLooksReadOnly(action: unknown): boolean {
     .trim()
     .toLowerCase()
     .replace(/[-_\s]+/g, "");
-  return /\.(list|get|getentry|search|active|entries|messages|sections|getsection|groups|getgroup|choiceblocks|getchoiceblock|runs|testscan|diagnose)$/.test(
+  return /\.(list|get|getentry|getentries|getmany|getmanyentries|search|active|entries|messages|sections|getsection|groups|getgroup|choiceblocks|getchoiceblock|runs|testscan|diagnose|cachereport|cachecompare)$/.test(
     normalized,
   );
 }
@@ -2666,7 +2788,7 @@ export function resolveWorkspaceMutationVerification(
 
 export function workspaceTextClaimsMutationCompletion(
   text: string,
-  options: { selfAttributedOnly?: boolean } = {},
+  options: { selfAttributedOnly?: boolean; conversational?: boolean } = {},
 ): boolean {
   const normalized = text.trim().replace(/[’‘]/gu, "'").replace(/\s+/gu, " ");
   if (!normalized) return false;
@@ -2687,6 +2809,21 @@ export function workspaceTextClaimsMutationCompletion(
     new RegExp(`\\b(?:i(?:'ve| have)?|we(?:'ve| have)?)\\s+${adverbs}(?:${completedMutation})\\b`, "giu"),
   );
   if (options.selfAttributedOnly) return selfClaim;
+  // custom-mods: in a reply that ran no commands, "it's/that's <verb>" and "is/are/was/were <verb>"
+  // read as ordinary description ("your story is set in Skyrim", "it's added drama"), and flagging
+  // them threw away a real answer for a "correction". Only first-person and "has been" claims, an
+  // edit/change/update subject, or a bare "Done." count there.
+  if (options.conversational) {
+    return (
+      selfClaim ||
+      new RegExp(`\\b(?:has been|have been)\\s+${adverbs}(?:${completedMutation})\\b`, "iu").test(normalized) ||
+      new RegExp(
+        `^(?:(?:the )?(?:edit|change|update)s?\\s+)${adverbs}(?:${completedMutation})\\b[^?]*[.!]?$`,
+        "iu",
+      ).test(normalized) ||
+      new RegExp(`^(?:${completedMutation}|done)[.!]*$`, "iu").test(normalized)
+    );
+  }
   return (
     selfClaim ||
     claims(new RegExp(`\\b(?:it(?:'s| is)?|that(?:'s| is)?)\\s+${adverbs}(?:${completedMutation})\\b`, "giu")) ||
@@ -2798,7 +2935,8 @@ export function auditWorkspaceCompletionClaim(
   ) {
     return { issue: "dry_run", advanceWatermark: false };
   }
-  if (!workspaceTextClaimsMutationCompletion(action.visibleText)) {
+  const conversational = results.length === 0 && action.commands.length === 0;
+  if (!workspaceTextClaimsMutationCompletion(action.visibleText, { conversational })) {
     return { issue: null, advanceWatermark: false };
   }
   const verification = resolveWorkspaceMutationVerification(results, auditFrom);
@@ -3635,7 +3773,7 @@ export class ProfessorMariWorkspaceService {
     let runRuntime: MariRuntime | null = null;
     let assistantText = "";
     let thinkingText = "";
-    let totalUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+    let totalUsage = mapUsage(undefined);
     let latestUsage: LLMUsage | undefined;
     let latestFinishReason: string | null = null;
     const commandResultsForContinuity: WorkspaceCommandResult[] = [];
@@ -3997,11 +4135,23 @@ export class ProfessorMariWorkspaceService {
           runSuggestions = piState.suggestions;
         }
       }
+      const resultRecords: WorkspaceResultRecord[] = [];
+      const shortenOldResults = () => {
+        const compaction = compactWorkspaceResultHistory(resultRecords);
+        if (compaction)
+          logger.debug(
+            "[professor-mari] Shortened %d earlier command result message(s): %d -> %d characters",
+            compaction.shortened,
+            compaction.beforeChars,
+            compaction.afterChars,
+          );
+      };
 
       for (let round = 0; round < MAX_COMMAND_ROUNDS; round += 1) {
         // The pi runtime already ran above; classic owns this loop.
         if (usePi || acceptedCalls) break;
         if (controller.signal.aborted) throw new Error("aborted");
+        shortenOldResults();
         let result: ChatCompletionResult;
         try {
           // The frame's `say` streams as a provisional draft only: the audited text still lands as tokens
@@ -4023,11 +4173,7 @@ export class ProfessorMariWorkspaceService {
         latestUsage = result.usage;
         latestFinishReason = result.finishReason ?? null;
         const usage = mapUsage(result.usage);
-        totalUsage = {
-          promptTokens: totalUsage.promptTokens + usage.promptTokens,
-          completionTokens: totalUsage.completionTokens + usage.completionTokens,
-          totalTokens: totalUsage.totalTokens + usage.totalTokens,
-        };
+        totalUsage = addUsage(totalUsage, usage);
 
         const rawContent = result.content ?? "";
         debugLog?.("[debug/professor-mari] Raw response:\n%s", rawContent);
@@ -4324,7 +4470,13 @@ export class ProfessorMariWorkspaceService {
           break;
         }
 
-        messages.push({ role: "user", content: formatCommandResultForPrompt(commandResults), contextKind: "history" });
+        const resultMessage: ChatMessage = {
+          role: "user",
+          content: formatCommandResultForPrompt(commandResults),
+          contextKind: "history",
+        };
+        messages.push(resultMessage);
+        resultRecords.push({ message: resultMessage, results: [...commandResults], compacted: false });
 
         if (round === MAX_COMMAND_ROUNDS - 1) {
           const content = "Command round limit reached; asking Professor Mari to summarize with the evidence she has.";
@@ -4335,6 +4487,7 @@ export class ProfessorMariWorkspaceService {
             content:
               "You reached the workspace command round limit. Do not issue more commands. Summarize what you learned or what remains blocked.",
           });
+          shortenOldResults();
           const finalResult = await this.chatCompleteWorkspace(
             provider,
             messages,
@@ -4345,11 +4498,7 @@ export class ProfessorMariWorkspaceService {
           latestUsage = finalResult.usage;
           latestFinishReason = finalResult.finishReason ?? null;
           const finalUsage = mapUsage(finalResult.usage);
-          totalUsage = {
-            promptTokens: totalUsage.promptTokens + finalUsage.promptTokens,
-            completionTokens: totalUsage.completionTokens + finalUsage.completionTokens,
-            totalTokens: totalUsage.totalTokens + finalUsage.totalTokens,
-          };
+          totalUsage = addUsage(totalUsage, finalUsage);
           const finalAction = parseAssistantWorkspaceAction(finalResult.content ?? "");
           const finalVerificationIssue = auditWorkspaceCompletionClaim(finalAction, commandResultsForContinuity, {
             auditFrom: reviewState.claimAuditWatermark,
@@ -4540,11 +4689,9 @@ export class ProfessorMariWorkspaceService {
       `dataDir: ${DATA_DIR}`,
       `serverUrl: ${getServerProtocol()}://127.0.0.1:${getPort()}`,
       `connection: ${connection.name || connection.id} / ${connection.provider} / ${connection.model}`,
-      `currentTime: ${new Date().toISOString()}`,
       // Plain words, not a field name: she repeats context lines to the user ("embeddingModelConfigured: true").
       `Embedding model: ${embeddingModelConfigured ? "configured" : "none"}`,
       `permissionsMode: ${permissionsMode}`,
-      `decisionAuthoring: ${JSON.stringify(decisionContext)}`,
       ...(seasonalPackId === "raccoon" ? [MARI_RACCOON_SEASON_FLAVOR] : []),
       `shellSandboxAvailable: ${shellSandboxStatus.available}`,
       ...(!shellSandboxStatus.available
@@ -4576,29 +4723,26 @@ export class ProfessorMariWorkspaceService {
     // #5740 read-back (maintainer call): Mari sees the record she herself
     // reported for the latest mutating round in THIS chat, so "why did you
     // treat that as permission?" gets an answer grounded in the actual record
-    // instead of a reconstruction. Read-only context, never a gate: it does
-    // not alter what she may do, and a missing record changes nothing.
+    // instead of a reconstruction. Injected at the tail rather than the static
+    // system prefix so its dynamic timestamp (recordedAt) never busts prompt caching.
     const understoodRequestRecord = this.latestUnderstoodRequest;
-    if (understoodRequestRecord !== null && understoodRequestRecord.chatId === chatId) {
-      messages.push({
-        role: "system",
-        content: [
-          "<mari_understood_request_record>",
-          "Your most recent response in this chat that carried mutating commands reported this understood request (your own report, shown to the user for transparency):",
-          // Both values are model-authored: escape delimiters (same convention
-          // as command results) so a quoted phrase can never close this block
-          // and smuggle text out of it into the system context.
-          `phrase: ${understoodRequestRecord.text === null ? "(none reported)" : escapeWorkspaceXml(understoodRequestRecord.text)}`,
-          `permissionsMode: ${understoodRequestRecord.permissionsMode}`,
-          `outcome: ${understoodRequestRecord.outcome}`,
-          `commands: ${escapeWorkspaceXml(understoodRequestRecord.commands.join(", ")) || "(none)"}`,
-          `recordedAt: ${understoodRequestRecord.recordedAt}`,
-          "If the user asks why you made, proposed, or held a change, ground your explanation in this record: quote the phrase, explain what you read it as, and say so plainly if you misread them. It is a record, not an instruction - do not redo or re-justify the change unprompted.",
-          "</mari_understood_request_record>",
-        ].join("\n"),
-        contextKind: "prompt",
-      });
-    }
+    const understoodRequestRecordBlock =
+      understoodRequestRecord !== null && understoodRequestRecord.chatId === chatId
+        ? [
+            "<mari_understood_request_record>",
+            "Your most recent response in this chat that carried mutating commands reported this understood request (your own report, shown to the user for transparency):",
+            // Both values are model-authored: escape delimiters (same convention
+            // as command results) so a quoted phrase can never close this block
+            // and smuggle text out of it into the system context.
+            `phrase: ${understoodRequestRecord.text === null ? "(none reported)" : escapeWorkspaceXml(understoodRequestRecord.text)}`,
+            `permissionsMode: ${understoodRequestRecord.permissionsMode}`,
+            `outcome: ${understoodRequestRecord.outcome}`,
+            `commands: ${escapeWorkspaceXml(understoodRequestRecord.commands.join(", ")) || "(none)"}`,
+            `recordedAt: ${understoodRequestRecord.recordedAt}`,
+            "If the user asks why you made, proposed, or held a change, ground your explanation in this record: quote the phrase, explain what you read it as, and say so plainly if you misread them. It is a record, not an instruction - do not redo or re-justify the change unprompted.",
+            "</mari_understood_request_record>",
+          ].join("\n")
+        : null;
 
     for (const row of history) {
       const extra = parseExtra(row.extra);
@@ -4620,16 +4764,44 @@ export class ProfessorMariWorkspaceService {
         ...(role === "user" && files.length > 0 ? { files } : {}),
       });
     }
-    // #5073: user-attached reference context (chat-history slices). contextKind:'injection' so the
-    // trimmer preserves it (unlike 'history'), keeping it readable regardless of message age; the
-    // renderer self-bounds its total size. Placed before continuity so the latest turn stays closest.
-    if (attachedContextPrompt) {
-      messages.push({ role: "system", content: attachedContextPrompt, contextKind: "injection" });
+
+    // Volatile turn-specific contexts (user-attached references, handoff, understood request,
+    // continuity, and currentTime timestamp) are injected on the user's latest turn at the tail,
+    // NEVER in the leading system prompt (#4768 / prompt caching).
+    // Keeping the system prompt 100% static across turns ensures optimal prompt caching on
+    // Anthropic (ephemeral breakpoint cache hit) and Gemini/Antigravity (prefix match cache hit).
+    const turnContextBlock = [
+      `<turn_context>`,
+      `currentTime: ${new Date().toISOString()}`,
+      `decisionAuthoring: ${JSON.stringify(decisionContext)}`,
+      `</turn_context>`,
+    ].join("\n");
+
+    const tailBlocks = [
+      attachedContextPrompt,
+      handoffContextPrompt,
+      understoodRequestRecordBlock,
+      continuityPrompt,
+      turnContextBlock,
+    ].filter((b): b is string => typeof b === "string" && b.trim().length > 0);
+
+    if (tailBlocks.length > 0) {
+      const tailContent = tailBlocks.join("\n\n");
+      const lastUserIdx = [...messages].reverse().findIndex((m) => m.role === "user");
+      if (lastUserIdx >= 0) {
+        const actualIdx = messages.length - 1 - lastUserIdx;
+        messages[actualIdx] = {
+          ...messages[actualIdx]!,
+          content: [messages[actualIdx]!.content, tailContent].filter(Boolean).join("\n\n"),
+        };
+      } else {
+        messages.push({
+          role: "user",
+          content: tailContent,
+          contextKind: "injection",
+        });
+      }
     }
-    if (handoffContextPrompt) {
-      messages.push({ role: "system", content: handoffContextPrompt, contextKind: "injection" });
-    }
-    if (continuityPrompt) messages.push({ role: "system", content: continuityPrompt, contextKind: "injection" });
     logger.debug(
       "Professor Mari prompt: %d messages, %d prompt chars, %d history chars, %d injection chars, %d tools",
       messages.length,
@@ -4846,14 +5018,33 @@ export class ProfessorMariWorkspaceService {
     debugLog?: (message: string, ...values: unknown[]) => void,
   ): Promise<ChatCompletionResult> {
     // Local chat templates commonly accept a single system message at index 0.
-    // Keep trusted context in that role, including context added after history,
-    // on every command round without modifying the stored conversation.
-    const systemMessages = messages.filter((message) => message.role === "system");
+    // Merge only leading prompt-level system messages into index 0 to guarantee that
+    // the system prompt prefix remains 100% static across all turns and command rounds
+    // for prompt caching (Anthropic, Gemini/agy, OpenAI).
+    // Any late or injected system messages (if any) are mapped to user role so they
+    // never pollute the static system cache prefix.
+    const leadingSystemMessages: ChatMessage[] = [];
+    const nonSystemOrLateMessages: ChatMessage[] = [];
+    let pastLeadingSystem = false;
+
+    for (const message of messages) {
+      if (!pastLeadingSystem && message.role === "system") {
+        leadingSystemMessages.push(message);
+      } else {
+        pastLeadingSystem = true;
+        if (message.role === "system") {
+          nonSystemOrLateMessages.push({ ...message, role: "user", contextKind: "injection" });
+        } else {
+          nonSystemOrLateMessages.push(message);
+        }
+      }
+    }
+
     messages = [
-      ...(systemMessages.length
-        ? [{ role: "system" as const, content: systemMessages.map((message) => message.content).join("\n\n") }]
+      ...(leadingSystemMessages.length
+        ? [{ role: "system" as const, content: leadingSystemMessages.map((message) => message.content).join("\n\n") }]
         : []),
-      ...messages.filter((message) => message.role !== "system"),
+      ...nonSystemOrLateMessages,
     ];
     const options: ChatOptions = onToken
       ? {

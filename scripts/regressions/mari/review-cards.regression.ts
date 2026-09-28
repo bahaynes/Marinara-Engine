@@ -131,9 +131,13 @@ try {
           .filter((review) => isMariReviewVisibleInChat(review.sessionId, chatId))
           .map((review) => review.id),
       );
-    assert.deepEqual(visibleIn("chat-a"), new Set([inA, fromCli]), "chat A shows its card and the CLI one");
-    assert.deepEqual(visibleIn("chat-b"), new Set([inB, fromCli]), "chat B shows its card and the CLI one");
-    assert.deepEqual(visibleIn("chat-new"), new Set([fromCli]), "a new chat starts without other chats' cards");
+    assert.deepEqual(visibleIn("chat-a"), new Set([inA]), "chat A shows its card, not the CLI one");
+    assert.deepEqual(visibleIn("chat-b"), new Set([inB]), "chat B shows its card, not the CLI one");
+    assert.deepEqual(visibleIn("chat-new"), new Set(), "a new chat starts without other chats' or CLI cards");
+    assert.ok(
+      isMariReviewVisibleInChat("professor-mari-workspace", "chat-new"),
+      "a chatless workspace card still shows",
+    );
 
     assert.equal(await mari.keepReviewsForChat("chat-a"), 1, "deleting chat A keeps its one review");
     assert.deepEqual(pendingIds(), new Set([inB, fromCli]), "only chat A's card went");
