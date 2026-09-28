@@ -4820,7 +4820,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
         // A configured Game tool connection must support native tools: generation refuses the
         // turn below when it does not, so any turn that reaches the model has its answer. With
         // no such connection the narrator's own decides, exactly as the tool resolution reads it.
-        const nativeToolsAvailableForTurn = gameToolConnectionId ? true : supportsNativeToolCalls(conn.provider);
+        const nativeToolsAvailableForTurn = gameToolConnectionId ? true : supportsNativeToolCalls(conn);
         const rollDiceToolAttached = isChatToolResolved("roll_dice", {
           enableChatTools: resolveChatToolsEnabled({
             requestBody: input as Record<string, unknown>,
@@ -6740,10 +6740,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
         }
 
         const gameToolConnection = gameToolConnectionId ? await connections.getWithKey(gameToolConnectionId) : null;
-        if (
-          gameToolConnectionId &&
-          (!gameToolConnection?.model || !supportsNativeToolCalls(gameToolConnection.provider))
-        ) {
+        if (gameToolConnectionId && (!gameToolConnection?.model || !supportsNativeToolCalls(gameToolConnection))) {
           throw new Error(
             "The selected Game tool connection is unavailable or does not support native tools. Choose another tool connection in Chat Settings.",
           );
@@ -6758,7 +6755,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
           finalizeLorebookWrites,
         } = await resolveGenerationTools({
           requestBody: input as Record<string, unknown>,
-          nativeToolsAvailable: supportsNativeToolCalls((gameToolConnection ?? conn).provider),
+          nativeToolsAvailable: supportsNativeToolCalls(gameToolConnection ?? conn),
           lorebookEmbeddingOptions: { embeddingSource: memoryRecallEmbeddingSource, signal: generationSignal },
           chatId: input.chatId,
           chatMetadata: chatMeta,
@@ -8924,7 +8921,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                 ? Math.min(getMaxToolRounds(), GAME_TURN_MAX_TOOL_ROUNDS)
                 : getMaxToolRounds();
             let loopMessages: ChatMessage[] = [...initialProviderMessages];
-            const loopTools = supportsNativeToolCalls(conn.provider) ? responderToolDefs : undefined;
+            const loopTools = supportsNativeToolCalls(conn) ? responderToolDefs : undefined;
             let rollRequestAbort: AbortController | null = null;
             // Length of the outgoing prompt when cutting its stream at a roll lost its usage. It stays
             // set while each later round is also cut at a roll without usage, since those rounds add
@@ -8988,7 +8985,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                       minP: minP || undefined,
                       stop: stopSequences.length ? stopSequences : undefined,
                       tools: loopTools,
-                      toolChoice: supportsNativeToolCalls(conn.provider)
+                      toolChoice: supportsNativeToolCalls(conn)
                         ? resolveMainGenerationToolChoice({ chatMetadata: chatMeta, enableChatTools, round })
                         : undefined,
                       debugMode: requestDebug,
