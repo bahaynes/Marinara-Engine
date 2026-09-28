@@ -742,6 +742,21 @@ try {
     ),
     new Set(["Elena", "Smuggler tunnels", "Secret ledger", "Docks ledger"]),
   );
+  const withChatTools = {
+    ...args,
+    chatMetadata: { ...args.chatMetadata, enableTools: true, activeToolIds: ["update_game_state", "roll_dice"] },
+  } as ResolveGenerationToolsArgs;
+  const gameTools = await resolveGenerationTools(withChatTools);
+  assert.ok(gameTools.chatResolvedToolNames.has("update_game_state"), "Game Mode keeps the game-state tool");
+  const roleplayTools = await resolveGenerationTools({
+    ...withChatTools,
+    agentContext: { ...args.agentContext, chatMode: "roleplay" },
+  });
+  assert.ok(roleplayTools.chatResolvedToolNames.has("roll_dice"));
+  assert.ok(
+    !roleplayTools.chatResolvedToolNames.has("update_game_state"),
+    "a tool that always refuses outside Game Mode is never offered there",
+  );
 } finally {
   Math.random = originalRandom;
   OpenAIProvider.prototype.chatComplete = originalPlanner;
