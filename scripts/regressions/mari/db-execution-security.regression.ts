@@ -481,9 +481,36 @@ try {
       assert.equal(result.ok, false, `${argv.join(" ")} is refused: ${JSON.stringify(result)}`);
       assert.match(
         JSON.stringify(result.validation),
-        /cannot change Models, Connections or the speech server settings/u,
+        /cannot change Models, Connections or the speech server settings|can edit a connection's/u,
       );
     }
+    // A connection's workflow and prompt instructions name no address or key, so those edits apply; the same
+    // patch carrying an address or a key column is refused whole.
+    const workflowOnly = await mari.executeCli({
+      argv: [
+        "db",
+        "patch",
+        "api_connections",
+        "stored-model",
+        "--json",
+        JSON.stringify({ comfyuiWorkflow: "{}" }),
+        "--apply",
+      ],
+    });
+    assert.equal(workflowOnly.ok, true, `a workflow-only edit applies: ${JSON.stringify(workflowOnly)}`);
+    const mixed = await mari.executeCli({
+      argv: [
+        "db",
+        "patch",
+        "api_connections",
+        "stored-model",
+        "--json",
+        JSON.stringify({ comfyuiWorkflow: "{}", baseUrl: elsewhereHost }),
+        "--apply",
+      ],
+    });
+    assert.equal(mixed.ok, false, "a workflow edit that also moves the address is refused");
+    assert.equal((await db.select().from(apiConnections))[0]?.comfyuiWorkflow, "{}", "the workflow edit stayed");
     assert.deepEqual(
       (await db.select().from(apiConnections)).map((row) => [row.id, row.baseUrl, row.apiKeyEncrypted]),
       [["stored-model", storedHost, "stored-ciphertext"]],
