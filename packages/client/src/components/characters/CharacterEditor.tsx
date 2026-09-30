@@ -66,6 +66,7 @@ import { CardFieldWand } from "./CardFieldWand";
 import { CharacterGreetingWand } from "./CharacterGreetingWand";
 import { useCardFieldGeneration } from "../../hooks/use-card-field-generation";
 import { ONBOARDING_FIELD_COPY } from "./onboarding-field-copy";
+import { RpgProficienciesEditor } from "./RpgProficienciesEditor";
 import { CharacterScheduleEditorModal } from "../chat/CharacterScheduleEditorModal";
 import { useUIStore } from "../../stores/ui.store";
 import { lorebookKeys, useLorebook, useUpdateLorebook } from "../../hooks/use-lorebooks";
@@ -6470,6 +6471,8 @@ function StatsTab({
               ))}
             </div>
           </div>
+
+          <RpgProficienciesEditor value={stats.proficiencies} onChange={(proficiencies) => update({ proficiencies })} />
         </>
       )}
 
