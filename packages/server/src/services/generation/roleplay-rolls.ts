@@ -1,11 +1,12 @@
 import { parseDiceNotation, type RPGStatsConfig } from "@marinara-engine/shared";
 import { normalizeCharacterLookupName } from "../game/name-normalization.js";
+import { resolveSheetSkillMap } from "../game/skill-check-resolution.service.js";
 import { attributeModifier, getGoverningAttribute, mapSheetAttributesToRPG } from "../game/skill-check.service.js";
 
 /** Resolve a participant's assigned attribute or skill without guessing another character or stat. */
 export function prepareRoleplayRoll(
   args: Record<string, unknown>,
-  characters: readonly { id: string; name: string; rpgStats?: RPGStatsConfig }[],
+  characters: readonly { id: string; name: string; description?: string; rpgStats?: RPGStatsConfig }[],
   fallbackCharacterId: string | null,
 ): Record<string, unknown> {
   if (args.character !== undefined && typeof args.character !== "string")
@@ -49,6 +50,13 @@ export function prepareRoleplayRoll(
         ? mapSheetAttributesToRPG(stats.attributes)[canonical as keyof ReturnType<typeof mapSheetAttributesToRPG>]
         : undefined);
     if (typeof score === "number" && Number.isFinite(score)) bonus = attributeModifier(score);
+  }
+  // Proficiency (doubled for expertise) comes from the same sheet reader Game Mode uses.
+  if (skillName) {
+    const skills = resolveSheetSkillMap(stats, character.description);
+    const key = skillName.toLowerCase();
+    const proficiency = Number(skills?.[key.replace(/[^a-z0-9]+/g, "_")] ?? skills?.[key] ?? 0);
+    if (Number.isFinite(proficiency)) bonus += proficiency;
   }
   const modifier = parsed.modifier + bonus;
   const notation = bonus ? `${parsed.dice}${modifier > 0 ? "+" : ""}${modifier || ""}` : parsed.notation;
