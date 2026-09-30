@@ -133,7 +133,11 @@ export interface RPGStatsConfig {
   hp: { value: number; max: number };
   /** HP-like bars such as HP, MP, EP, Sanity, etc. */
   pools?: RPGStatPool[];
+  /** Trained skills, keyed by skill id. Read only by skill-check math, never written into prompts. */
+  proficiencies?: Record<string, RPGSkillProficiency>;
 }
+
+export type RPGSkillProficiency = "proficient" | "expertise";
 
 /** A character-profile default for a text-valued Character Tracker field. */
 export interface CharacterTrackerCustomFieldDefault {

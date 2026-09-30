@@ -1,6 +1,7 @@
 import {
   formatRpgStatsForPrompt,
   nameToXmlTag,
+  normalizeRpgProficiencies,
   normalizeRpgStatPools,
   resolveMacros,
   templateReferencesAnyMacro,
@@ -67,11 +68,13 @@ export function normalizeCharacterRpgStats(value: unknown): RPGStatsConfig | und
         .map((attribute) => ({ name: attribute.name.trim(), value: attribute.value }))
     : [];
   const hpPool = pools[0] ?? { value: 100, max: 100 };
+  const proficiencies = normalizeRpgProficiencies(raw.proficiencies);
   return {
     enabled: true,
     attributes,
     hp: { value: hpPool.value, max: hpPool.max },
     pools,
+    ...(proficiencies ? { proficiencies } : {}),
   };
 }
 

@@ -38,6 +38,7 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import {
+  formatRpgStatsForPrompt,
   formatSkillCheckResultSummary,
   isEngineRollableSkillCheckTag,
   parseSkillCheckTagBody,
@@ -996,6 +997,43 @@ try {
   const strongTag = parseSkillCheckTagBody(tagBodies(strongRoll.content)[0]!);
   // Vesper: INT 20 (+5) + Arcana proficiency at level 5 (+3) = +8, beats Sable's +7.
   assert.equal(strongTag?.resolvedResult?.modifier, 8, "the player candidate is still in the running, not excluded");
+
+  // ── 17. Structured rpgStats.proficiencies win over the description line ──
+  //
+  // A description line is sent to the model every turn; the structured field never is.
+  // It must score the same (expertise doubled) and take precedence when both exist,
+  // and it must never appear in the stats text written into prompts.
+  const structuredPersona = await characters.createPersona("Ilse Morrow", "Proficiencies: Athletics", undefined, {
+    personaStats: JSON.stringify({
+      rpgStats: {
+        enabled: true,
+        attributes: [{ name: "LEVEL", value: 5 }],
+        proficiencies: { arcana: "proficient", "Sleight of Hand": "expertise", stealth: "bogus" },
+      },
+    }),
+  });
+  assert.ok(structuredPersona?.id, "precondition — the chat needs a persona to be identified by");
+  const structuredContext = await loadSkillCheckModifierContext(
+    db,
+    await newGameChat("structured proficiencies", structuredPersona.id, []),
+  );
+  assert.equal(structuredContext.skills?.arcana, 3, "structured proficient uses the level's bonus");
+  assert.equal(structuredContext.skills?.sleight_of_hand, 6, "structured expertise doubles, keyed by skill id");
+  assert.equal(structuredContext.skills?.stealth, undefined, "an unknown training level is dropped");
+  assert.equal(
+    structuredContext.skills?.athletics,
+    undefined,
+    "the description line is ignored once structured data exists",
+  );
+  assert.ok(
+    !formatRpgStatsForPrompt({
+      enabled: true,
+      attributes: [],
+      hp: { value: 1, max: 1 },
+      proficiencies: { arcana: "expertise" },
+    }).includes("arcana"),
+    "proficiencies stay out of prompt text",
+  );
 
   console.log("gm-skill-check-resolution regression passed");
 } finally {

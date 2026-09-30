@@ -58,6 +58,7 @@ import {
   type SpriteInfo,
 } from "../../hooks/use-characters";
 import { ConvoProfileFields } from "./ConvoProfileFields";
+import { RpgProficienciesEditor } from "./RpgProficienciesEditor";
 import { CharacterScheduleEditorModal } from "../chat/CharacterScheduleEditorModal";
 import { useUIStore } from "../../stores/ui.store";
 import { lorebookKeys, useLorebook, useUpdateLorebook } from "../../hooks/use-lorebooks";
@@ -5277,6 +5278,8 @@ function StatsTab({
               ))}
             </div>
           </div>
+
+          <RpgProficienciesEditor value={stats.proficiencies} onChange={(proficiencies) => update({ proficiencies })} />
         </>
       )}
 

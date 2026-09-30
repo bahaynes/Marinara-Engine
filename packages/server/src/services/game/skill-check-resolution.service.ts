@@ -51,6 +51,8 @@ import {
   type RulesetValueRef,
   type SkillCheckResult,
   type SkillCheckTag,
+  proficiencyBonusForLevel,
+  rpgProficiencySkillMap,
 } from "@marinara-engine/shared";
 import type { DB } from "../../db/connection.js";
 import { logger } from "../../lib/logger.js";
@@ -232,7 +234,7 @@ function deriveProficiencySkillMap(descriptionText: string | undefined, level: n
   const profListText = profMatch?.[1];
   if (!profListText) return null;
 
-  const profBonus = Math.floor((Math.max(1, level) - 1) / 4) + 2;
+  const profBonus = proficiencyBonusForLevel(level);
   const skillMap: Record<string, number> = {};
   for (const part of profListText.split(/[,;]/)) {
     // An "(Expertise)" annotation doubles this entry's bonus before the
@@ -249,6 +251,18 @@ function deriveProficiencySkillMap(descriptionText: string | undefined, level: n
     }
   }
   return skillMap;
+}
+
+/**
+ * A sheet's trained-skill bonuses: structured `rpgStats.proficiencies` first, then the legacy
+ * `Proficiencies:` description line. The structured field stays out of prompts, which is why it wins.
+ */
+export function resolveSheetSkillMap(
+  rpgStats: { attributes?: ReadonlyArray<{ name: string; value: number }>; proficiencies?: unknown } | undefined,
+  descriptionText: string | undefined,
+): Record<string, number> | null {
+  const level = findLevelFromAttributes(rpgStats?.attributes);
+  return rpgProficiencySkillMap(rpgStats?.proficiencies, level) ?? deriveProficiencySkillMap(descriptionText, level);
 }
 
 /**
@@ -390,17 +404,20 @@ export async function loadSkillCheckModifierContext(
     try {
       const persona = await createCharactersStorage(db).getPersona(personaId);
       if (persona) {
-        if (!rawSheetAttributes || rawSheetAttributes.length === 0) {
-          const pStats =
-            typeof persona.personaStats === "string"
+        const pStats =
+          typeof persona.personaStats === "string"
+            ? persona.personaStats.trim()
               ? JSON.parse(persona.personaStats)
-              : (persona.personaStats as Record<string, unknown> | undefined);
-          if (Array.isArray(pStats?.rpgStats?.attributes)) {
-            rawSheetAttributes = pStats.rpgStats.attributes;
-          }
+              : undefined
+            : (persona.personaStats as Record<string, unknown> | undefined);
+        if ((!rawSheetAttributes || rawSheetAttributes.length === 0) && Array.isArray(pStats?.rpgStats?.attributes)) {
+          rawSheetAttributes = pStats.rpgStats.attributes;
         }
-        if (!resolvedSkills && persona.description) {
-          resolvedSkills = deriveProficiencySkillMap(persona.description, findLevelFromAttributes(rawSheetAttributes));
+        if (!resolvedSkills) {
+          resolvedSkills = resolveSheetSkillMap(
+            { attributes: rawSheetAttributes, proficiencies: pStats?.rpgStats?.proficiencies },
+            persona.description,
+          );
         }
       }
     } catch (err) {
@@ -415,14 +432,11 @@ export async function loadSkillCheckModifierContext(
     partyCandidates = [
       { sheetAttributes, skills: resolvedSkills },
       ...cards.map((card) => {
-        const cardRpgStats = card.rpgStats as { attributes?: Array<{ name: string; value: number }> } | undefined;
-        const cardAttributes = cardRpgStats?.attributes;
+        const cardRpgStats = card.rpgStats as
+          { attributes?: Array<{ name: string; value: number }>; proficiencies?: unknown } | undefined;
         return {
-          sheetAttributes: mapSheetAttributesToRPG(cardAttributes),
-          skills: deriveProficiencySkillMap(
-            readTrimmedString(card.description),
-            findLevelFromAttributes(cardAttributes),
-          ),
+          sheetAttributes: mapSheetAttributesToRPG(cardRpgStats?.attributes),
+          skills: resolveSheetSkillMap(cardRpgStats, readTrimmedString(card.description)),
         };
       }),
     ];
