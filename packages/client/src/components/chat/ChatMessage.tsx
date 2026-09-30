@@ -36,7 +36,7 @@ import { useReducedAmbientEffects } from "../../hooks/use-reduced-ambient-effect
 import { PendingTypingDots } from "./PendingTypingDots";
 import { ChatImagePreview } from "./ChatImagePreview";
 import { recordClientRuntimeEvent } from "../../lib/client-runtime-diagnostics";
-import { isDiceRollResult, readRoleplayDiceRolls } from "../../lib/dice-roll-result";
+import { isDiceRollResult, latestFailedRoleplayRollIndex, readRoleplayDiceRolls } from "../../lib/dice-roll-result";
 import { DiceMessageContent, diceRollReplacesMessageContent } from "./ConversationMessageShared";
 import {
   User,
@@ -3018,6 +3018,13 @@ export const ChatMessage = memo(function ChatMessage({
       .map((command) => ({ ...command, offset: Math.min(command.offset - paragraphStart, text.length) }));
   }, [isRoleplay, isUser, fullText, extra, visualNovel, activeVnParagraphIndex, vnParagraphs, text.length]);
 
+  // Only the latest reply's last missed roll can be rerolled; older replies already have later turns built on them.
+  const rerollableRollIndex = useMemo(
+    () =>
+      isRoleplay && !isUser && isLastAssistantMessage && !isStreaming ? latestFailedRoleplayRollIndex(extra) : null,
+    [isRoleplay, isUser, isLastAssistantMessage, isStreaming, extra],
+  );
+
   const renderInlineRoleplayCommand = useCallback(
     (command: (typeof inlineRoleplayCommands)[number]) =>
       command.kind === "whisper" ? (
@@ -3041,6 +3048,9 @@ export const ChatMessage = memo(function ChatMessage({
           key={`roll-${message.id}-${message.activeSwipeIndex}-${command.index}`}
           result={command.result}
           createdAt={message.createdAt}
+          rerollTarget={
+            command.index === rerollableRollIndex ? { chatId: message.chatId, messageId: message.id } : undefined
+          }
         />
       ),
     [
@@ -3052,6 +3062,7 @@ export const ChatMessage = memo(function ChatMessage({
       extra,
       isStreaming,
       isUser,
+      rerollableRollIndex,
     ],
   );
 

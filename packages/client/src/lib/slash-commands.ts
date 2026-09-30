@@ -704,25 +704,16 @@ const COMMANDS: SlashCommand[] = [
           }
         }
 
-        if (!targetCheck) {
-          return { handled: true, feedback: "No failed skill check found on the latest turn to reroll." };
-        }
-
-        const res = await api.post<{
-          success: boolean;
-          swipeIndex: number;
-          result: import("@marinara-engine/shared").SkillCheckResult;
-          inspirationRemaining: number;
-        }>("/game/inspiration-reroll", {
+        // Roleplay rolls leave no tags; the server finds their failed roll in the message's records.
+        const res = await api.post<{ inspirationRemaining: number }>("/game/inspiration-reroll", {
           chatId: ctx.chatId,
           messageId: latestAssistant.id,
-          skill: targetCheck.skill,
-          dc: targetCheck.dc,
+          ...(targetCheck ? { skill: targetCheck.skill, dc: targetCheck.dc } : {}),
         });
 
         ctx.invalidate();
         toast.success(
-          `Rerolled ${targetCheck.skill}! (${res.inspirationRemaining}/${MAX_INSPIRATION_CAP} Inspiration left)`,
+          `Rerolled ${targetCheck?.skill ?? "the failed roll"}! (${res.inspirationRemaining}/${MAX_INSPIRATION_CAP} Inspiration left)`,
         );
         return { handled: true };
       } catch (err: any) {
