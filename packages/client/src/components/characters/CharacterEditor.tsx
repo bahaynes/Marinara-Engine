@@ -82,6 +82,7 @@ import {
 import { ConvoProfileFields } from "./ConvoProfileFields";
 import { CharacterGreetingWand } from "./CharacterGreetingWand";
 import { ONBOARDING_FIELD_COPY } from "./onboarding-field-copy";
+import { RpgProficienciesEditor } from "./RpgProficienciesEditor";
 import { CharacterScheduleEditorModal } from "../chat/CharacterScheduleEditorModal";
 import { useUIStore } from "../../stores/ui.store";
 import { lorebookKeys, useLorebook, useUpdateLorebook } from "../../hooks/use-lorebooks";
