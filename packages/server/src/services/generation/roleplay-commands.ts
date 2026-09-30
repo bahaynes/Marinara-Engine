@@ -867,7 +867,7 @@ export function buildRoleplayCommandsReminder(args: {
   if (enabled("roll")) {
     const skillsList =
       args.activeSkills && args.activeSkills.length > 0
-        ? ` Available skills for checks: ${args.activeSkills.map((s) => `${s.name} (${s.ability.toUpperCase()})`).join(", ")}.`
+        ? ` Available skills for checks: ${args.activeSkills.map((s) => s.name).join(", ")}.`
         : "";
     lines.push(
       // A chat played by a ruleset rolls its checks off the character sheets (the ruleset block below),
