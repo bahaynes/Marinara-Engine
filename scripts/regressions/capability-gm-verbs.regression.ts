@@ -837,6 +837,8 @@ assert.deepEqual(
 // `nextMeta` (`withActiveGameMapMeta(freshMeta, nextMap)`, setting `gameMap`/`gameMaps`/
 // `activeGameMapId`). Both squat nothing — `game` and `active` are already owned prefixes — so the
 // count is bumped rather than widening a walk for two one-off variable payloads.
+// One fewer since: generate.routes.ts's Inspiration award wrote a `nextMeta` variable; it now goes through
+// inspiration.service.ts's applyInspirationAward, whose literal `{ ...meta, gameInspiration }` the sweep reads.
 // The other half of the boundary — a read off a parameter inside a helper — has no count
 // to pin, which is why sub-source 7 exists rather than a seventh sweep. The docs state both limits.
 // The Video Run Interval claim (agent-cadence.ts claimAutomaticVideoRun) adds one audited updater write: it
@@ -844,7 +846,7 @@ assert.deepEqual(
 // the already reserved `last` namespace (staging's own count was 22 before it).
 assert.equal(
   unreadableWriteCalls,
-  23,
+  24,
   `chat-metadata writes this sweep cannot read statically changed: expected 22, found ${unreadableWriteCalls}. ` +
     "This count is a boundary marker, not a budget, so do not simply edit the number to match. Read the " +
     "call this added by hand — the sites are listed below — and decide what it writes: if it commits a key " +
