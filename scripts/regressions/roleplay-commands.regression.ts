@@ -758,6 +758,29 @@ assert.throws(
 );
 assert.throws(() => dice({ notation: "1d20+9007199254740971", attribute: "STR" }), /numeric range/u);
 
+// Skill checks add proficiency like Game Mode: structured rpgStats first, description line as fallback.
+const trained = (rpgStats: Partial<RPGStatsConfig>, description?: string, skill = "Athletics") =>
+  prepareRoleplayRoll(
+    { notation: "d20", skill },
+    [
+      {
+        id: "t",
+        name: "T",
+        description,
+        rpgStats: { ...diceCharacters[0]!.rpgStats!, ...rpgStats },
+      },
+    ],
+    "t",
+  ).notation;
+assert.equal(trained({}), "d20+1", "untrained Athletics is STR only");
+assert.equal(trained({ proficiencies: { athletics: "proficient" } }), "d20+3", "level 1 proficiency adds +2");
+assert.equal(
+  trained({ proficiencies: { sleight_of_hand: "expertise" } }, undefined, "Sleight of Hand"),
+  "d20+3",
+  "expertise doubles, on a multi-word skill (DEX 8 is -1)",
+);
+assert.equal(trained({}, "Proficiencies: Athletics"), "d20+3", "the legacy description line still counts");
+
 // The native tool and text command reach the same real roller. Fix only the
 // random face, so the production path must supply every modifier and the DC.
 const executeRoll = async (args: Record<string, unknown>) => {

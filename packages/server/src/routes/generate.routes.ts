@@ -4040,6 +4040,7 @@ export async function generateRoutes(app: FastifyInstance) {
               {
                 id: identity.id,
                 name: identity.name,
+                description: identity.description,
                 rpgStats: normalizeCharacterRpgStats(parseExtra(identity.personaStats).rpgStats),
               },
             ]
