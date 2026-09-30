@@ -2673,6 +2673,9 @@ export function useGenerate() {
                   useChatStore.getState().setNarrationSaved(params.chatId, true);
                 }
               }
+              // A text-rewrite hold sends no tokens, so the durable impersonated
+              // turn is the only success signal (CYOA chains the reply off it).
+              if (params.impersonate && savedMessage.role === "user") receivedContent = true;
               await qc.cancelQueries({ queryKey: chatKeys.messages(params.chatId), exact: true });
               persistedMessages.set(savedMessage.id, savedMessage);
               if (savedMessage.role === "assistant" && keepStreamLiveThroughPostProcessing) {
