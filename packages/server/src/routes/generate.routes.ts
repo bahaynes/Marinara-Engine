@@ -365,6 +365,7 @@ import {
   prepareRoleplayRoll,
   withRoleplayRollSchema,
 } from "../services/generation/roleplay-rolls.js";
+import { applyInspirationAward } from "../services/game/inspiration.service.js";
 import {
   appendRoleplayMessageNotes,
   appendRoleplayPromptTail,
@@ -967,8 +968,6 @@ import {
 } from "../services/game/map-position.service.js";
 import { applyAllSegmentEdits } from "../services/game/segment-edits.js";
 import {
-  DEFAULT_STARTING_INSPIRATION,
-  MAX_INSPIRATION_CAP,
   getActiveGameSkills,
   parseInspirationAwards,
   type CharacterData,
@@ -9199,6 +9198,17 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
             resolvedToolNames: chatResolvedToolNames,
           });
           const roleplayActivity: RoleplayCommandActivity[] = [];
+          const announceInspirationAward = async (amount: number) => {
+            try {
+              const next = await applyInspirationAward(chats, input.chatId, amount);
+              if (next === null) return;
+              chatMeta.gameInspiration = next;
+              sendSseEvent(reply, { type: "game_inspiration_update", data: { gameInspiration: next, delta: amount } });
+              logger.info("[generate/inspiration] chatId=%s awarded=%d newTotal=%d", input.chatId, amount, next);
+            } catch (err) {
+              logger.warn(err, "[generate/inspiration] Failed to apply inspiration award");
+            }
+          };
           const roleplayInlinePrefixes = new Map<RoleplayCommandActivity, string>();
           // The reply text before each command, so a reply split at scene breaks keeps it with its part.
           const roleplayActivityPlaces = new Map<RoleplayCommandActivity, string>();
@@ -9885,6 +9895,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
           let roleplayHadCommands = false;
           let replyHtmlArtifacts = 0;
           const currentRoleplayMedia: RoleplayCommand[] = [];
+          let roleplayInspirationAwards = 0;
           if (chatMode === "roleplay" && !input.impersonate) {
             const parsed = parseRoleplayCommands(fullResponse);
             roleplayHadCommands = parsed.content !== fullResponse;
@@ -9959,6 +9970,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
               }
               roleplayActivity.push(activity);
               roleplayActivityPlaces.set(activity, parsed.content.slice(0, parsed.positions.get(activity)));
+              if (command.type === "inspire") roleplayInspirationAwards++;
               if (
                 command.type === "illustrate" ||
                 command.type === "video" ||
@@ -9969,6 +9981,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
               )
                 currentRoleplayMedia.push(command);
             }
+            if (roleplayInspirationAwards > 0) await announceInspirationAward(roleplayInspirationAwards);
           }
           let parsedCommands: CharacterCommand[] = [];
           // Parallel to parsedCommands: per-command character attribution for merged
@@ -12033,34 +12046,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
               }
 
               const awardedInspiration = parseInspirationAwards(fullResponse);
-              if (awardedInspiration > 0) {
-                try {
-                  const freshChat = await chats.getById(input.chatId);
-                  const freshMeta = freshChat ? (parseExtra(freshChat.metadata) as Record<string, unknown>) : chatMeta;
-                  const currentInspiration =
-                    typeof freshMeta.gameInspiration === "number"
-                      ? freshMeta.gameInspiration
-                      : DEFAULT_STARTING_INSPIRATION;
-                  const newInspiration = Math.min(MAX_INSPIRATION_CAP, currentInspiration + awardedInspiration);
-                  if (newInspiration !== currentInspiration) {
-                    const nextMeta = { ...freshMeta, gameInspiration: newInspiration };
-                    await chats.updateMetadata(input.chatId, nextMeta);
-                    chatMeta.gameInspiration = newInspiration;
-                    sendSseEvent(reply, {
-                      type: "game_inspiration_update",
-                      data: { gameInspiration: newInspiration, delta: awardedInspiration },
-                    });
-                    logger.info(
-                      "[generate/game/inspiration] chatId=%s awarded=%d newTotal=%d",
-                      input.chatId,
-                      awardedInspiration,
-                      newInspiration,
-                    );
-                  }
-                } catch (err) {
-                  logger.warn(err, "[generate/game/inspiration] Failed to apply inspiration award");
-                }
-              }
+              if (awardedInspiration > 0) await announceInspirationAward(awardedInspiration);
             }
 
             // Evict cachedPrompt from older messages to save storage (keep last 2 assistant msgs).
