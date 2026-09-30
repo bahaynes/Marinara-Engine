@@ -41,3 +41,19 @@ export function readRoleplayDiceRolls(text: string, extra: Record<string, unknow
     })
     .sort((a, b) => a.offset - b.offset || a.index - b.index);
 }
+
+/** The activity index of the last roll that missed its DC — the one an Inspiration reroll targets. */
+export function latestFailedRoleplayRollIndex(extra: Record<string, unknown>): number | null {
+  const activity = getRoleplayCommandActivity(extra);
+  for (let index = activity.length - 1; index >= 0; index--) {
+    const item = activity[index]!;
+    if (item.command.type !== "roll" || item.error || item.deleted || typeof item.result !== "string") continue;
+    try {
+      const roll: unknown = JSON.parse(item.result);
+      if (isDiceRollResult(roll) && roll.dc !== undefined && roll.total < roll.dc) return index;
+    } catch {
+      /* An unreadable record draws no card either. */
+    }
+  }
+  return null;
+}

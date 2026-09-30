@@ -28,7 +28,11 @@ import { prepareRoleplayRoll } from "../../packages/server/src/services/generati
 import { prepareRoleplayInterruption } from "../../packages/server/src/services/generation/roleplay-interrupt.js";
 import type { RPGStatsConfig } from "../../packages/shared/src/types/character.js";
 import { buildCommittedTrackerContextBlock } from "../../packages/server/src/services/generation/committed-tracker-context.js";
-import { isDiceRollResult, readRoleplayDiceRolls } from "../../packages/client/src/lib/dice-roll-result.js";
+import {
+  isDiceRollResult,
+  latestFailedRoleplayRollIndex,
+  readRoleplayDiceRolls,
+} from "../../packages/client/src/lib/dice-roll-result.js";
 import { executeToolCalls } from "../../packages/server/src/services/tools/tool-executor.js";
 import { parseRollDiceToolResult } from "../../packages/server/src/services/game/dice.service.js";
 import {
@@ -888,6 +892,11 @@ const rerollExtra = {
   diceRollResults: [JSON.parse(missed), JSON.parse(madeIt)],
 };
 const failedRoll = findLatestFailedRoleplayRoll(rerollExtra);
+assert.equal(
+  latestFailedRoleplayRollIndex(rerollExtra),
+  failedRoll?.index,
+  "the card button targets the roll the server rerolls",
+);
 assert.equal(failedRoll?.index, 1, "a later roll that met its DC is skipped");
 assert.equal(failedRoll?.reason, "T · Stealth", "the label the engine rolled with is kept");
 assert.deepEqual(splitAtRoll(rerollContent, failedRoll!), {

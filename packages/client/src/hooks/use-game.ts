@@ -641,8 +641,9 @@ export function useInspirationReroll() {
     mutationFn: (data: {
       chatId: string;
       messageId: string;
-      skill: string;
-      dc: number;
+      /** Game Mode's tagged check. Roleplay leaves both out; the server finds the missed roll. */
+      skill?: string;
+      dc?: number;
       connectionId?: string;
       debugMode?: boolean;
     }) =>
