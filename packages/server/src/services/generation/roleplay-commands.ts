@@ -112,6 +112,8 @@ function readCommand(type: string, body: string): RoleplayCommand | null {
     }
     case "combat":
       return { type };
+    case "inspire":
+      return { type };
     case "interrupt": {
       const part = field("part", 8_000);
       return part ? { type, part } : null;
@@ -458,6 +460,10 @@ export function buildRoleplayCommandsReminder(args: {
       `- [roll: character="participant name" notation="1d20" attribute="Strength" skill="Skill Name" modifier="+2" dc="15" reason="action being attempted"] requests a real roll; use roll_dice with the same fields when available. You may target any chat participant, including the user's persona by name. Attribute and skill are both optional and only one is needed; the engine automatically adds the assigned ability/skill modifier from character stats, so do not add it yourself. Optional modifier adds a situational bonus/penalty once; optional dc sets the total needed to succeed. Keep DCs and modifiers in command/tool fields, not narration. Stop after the command and wait for the result before narrating the outcome. Never invent results or reroll an action.${skillsList}`,
     );
   }
+  if (enabled("inspire"))
+    lines.push(
+      "- [inspire] awards the user's persona 1 Inspiration (they can hold up to 4). Award it for clever problem-solving, a bold in-character risk, or a heroic beat, not routinely. The user can spend it to reroll a failed roll.",
+    );
   if (enabled("combat") && args.availableAgentIds.has("combat"))
     lines.push("- [combat] asks the Combat agent to start an encounter when the scene turns to combat.");
   if (args.interruptAvailable === true && enabled("interrupt"))

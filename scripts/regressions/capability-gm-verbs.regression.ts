@@ -825,12 +825,14 @@ assert.deepEqual(
 // `nextMeta` (`withActiveGameMapMeta(freshMeta, nextMap)`, setting `gameMap`/`gameMaps`/
 // `activeGameMapId`). Both squat nothing — `game` and `active` are already owned prefixes — so the
 // count is bumped rather than widening a walk for two one-off variable payloads.
+// One fewer since: generate.routes.ts's Inspiration award wrote a `nextMeta` variable; it now goes through
+// inspiration.service.ts's applyInspirationAward, whose literal `{ ...meta, gameInspiration }` the sweep reads.
 // The other half of the boundary — a read off a parameter inside a helper — has no count
 // to pin, which is why sub-source 7 exists rather than a seventh sweep. The docs state both limits.
 assert.equal(
   unreadableWriteCalls,
-  21,
-  `chat-metadata writes this sweep cannot read statically changed: expected 21, found ${unreadableWriteCalls}. ` +
+  20,
+  `chat-metadata writes this sweep cannot read statically changed: expected 20, found ${unreadableWriteCalls}. ` +
     "This count is a boundary marker, not a budget, so do not simply edit the number to match. Read the " +
     "call this added by hand — the sites are listed below — and decide what it writes: if it commits a key " +
     "under a namespace that is not already in ENGINE_OWNED_METADATA_KEY_PREFIXES, add that namespace (or " +

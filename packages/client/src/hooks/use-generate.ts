@@ -4,7 +4,12 @@
 import { useCallback, useRef } from "react";
 import { audioManager } from "../lib/game-audio";
 import { normalizeEchoChamberMessages } from "../lib/echo-chamber-queue";
-import { characterDataSchema, normalizeAvatarCrop, type AvatarCrop } from "@marinara-engine/shared";
+import {
+  MAX_INSPIRATION_CAP,
+  characterDataSchema,
+  normalizeAvatarCrop,
+  type AvatarCrop,
+} from "@marinara-engine/shared";
 import { useQueryClient, type InfiniteData, type QueryClient } from "@tanstack/react-query";
 import { toast, type ExternalToast } from "sonner";
 import { api, ApiError, isPassiveStreamDisconnect, requestTimeoutSignal } from "../lib/api-client";
@@ -1147,7 +1152,13 @@ function applyGameMapUpdate(qc: QueryClient, chatId: string, map: GameMap) {
   }
 }
 
-function applyGameInspirationUpdate(qc: QueryClient, chatId: string, gameInspiration: number) {
+function applyGameInspirationUpdate(qc: QueryClient, chatId: string, gameInspiration: number, delta?: number) {
+  // Game Mode shows the count in its HUD; Roleplay has no HUD, so announce awards instead.
+  if (delta && delta > 0 && useChatStore.getState().activeChat?.mode === "roleplay") {
+    toast.success(
+      translate("roleplay.commands.inspire.awarded", { delta, count: gameInspiration, max: MAX_INSPIRATION_CAP }),
+    );
+  }
   qc.setQueryData<Chat | undefined>(chatKeys.detail(chatId), (current) => {
     if (!current) return current;
     const metadata = { ...parseChatMetadata(current.metadata as Chat["metadata"] | string), gameInspiration };
@@ -2480,9 +2491,9 @@ export function useGenerate() {
             }
 
             case "game_inspiration_update": {
-              const inspirationData = event.data as { gameInspiration?: number } | null;
+              const inspirationData = event.data as { gameInspiration?: number; delta?: number } | null;
               if (typeof inspirationData?.gameInspiration === "number") {
-                applyGameInspirationUpdate(qc, params.chatId, inspirationData.gameInspiration);
+                applyGameInspirationUpdate(qc, params.chatId, inspirationData.gameInspiration, inspirationData.delta);
               }
               break;
             }
@@ -3959,9 +3970,9 @@ export function useGenerate() {
             }
 
             case "game_inspiration_update": {
-              const inspirationData = event.data as { gameInspiration?: number } | null;
+              const inspirationData = event.data as { gameInspiration?: number; delta?: number } | null;
               if (typeof inspirationData?.gameInspiration === "number") {
-                applyGameInspirationUpdate(qc, chatId, inspirationData.gameInspiration);
+                applyGameInspirationUpdate(qc, chatId, inspirationData.gameInspiration, inspirationData.delta);
               }
               break;
             }

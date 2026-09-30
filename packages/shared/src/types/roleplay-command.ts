@@ -10,6 +10,7 @@ export const ROLEPLAY_COMMAND_KEYS = [
   "dm",
   "interrupt",
   "whisper",
+  "inspire",
 ] as const;
 
 export type RoleplayCommandKey = (typeof ROLEPLAY_COMMAND_KEYS)[number];
@@ -47,7 +48,8 @@ export type RoleplayCommand =
   | { type: "combat" }
   | { type: "dm"; character: string; message: string }
   | { type: "whisper"; character: string; text: string }
-  | { type: "interrupt"; part: string };
+  | { type: "interrupt"; part: string }
+  | { type: "inspire" };
 
 export interface RoleplayWhisperRecipient {
   id: string;
@@ -207,6 +209,8 @@ export function isRoleplayCommandAllowed(
     if (!characterId || characterId !== metadata.roleplayCommandNarratorId) return false;
   }
   if (key === "music" && metadata.enableAgents !== true) return false;
+  // Inspiration only buys rerolls, so it is meaningless without real rolls.
+  if (key === "inspire" && !isRoleplayCommandEnabled(metadata, "roll")) return false;
   if (key === "illustrate" || key === "combat" || key === "music") {
     return (
       Array.isArray(metadata.activeAgentIds) &&

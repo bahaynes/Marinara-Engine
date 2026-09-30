@@ -1,6 +1,8 @@
 import { Puzzle } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
+  DEFAULT_STARTING_INSPIRATION,
+  MAX_INSPIRATION_CAP,
   ROLEPLAY_COMMAND_KEYS,
   isRoleplayCommandEnabled,
   roleplayCommandsEnabled,
@@ -67,7 +69,9 @@ export function RoleplayCommandsSettings({
                           metadata.activeAgentIds?.includes("spotify") === true
                         : key === "notes" || key === "memory" || key === "whisper"
                           ? privateAvailable
-                          : true;
+                          : key === "inspire"
+                            ? isRoleplayCommandEnabled(metadata, "roll")
+                            : true;
                 const checked = available && isRoleplayCommandEnabled(metadata, key);
                 const audienceKey =
                   key === "roll"
@@ -110,6 +114,17 @@ export function RoleplayCommandsSettings({
                       )}
                       labelClassName="text-[0.6875rem] font-medium"
                     />
+                    {checked && key === "inspire" && (
+                      <span className="text-[0.6875rem] text-[var(--muted-foreground)]" role="status">
+                        {t("roleplay.commands.inspire.count", {
+                          count:
+                            typeof metadata.gameInspiration === "number"
+                              ? metadata.gameInspiration
+                              : DEFAULT_STARTING_INSPIRATION,
+                          max: MAX_INSPIRATION_CAP,
+                        })}
+                      </span>
+                    )}
                     {checked && (key === "roll" || key === "combat" || key === "document" || key === "whisper") && (
                       <div className="flex flex-col gap-1.5 text-xs">
                         <label htmlFor={`${chat.id}:${key}-audience`}>{t(`roleplay.commands.${key}.audience`)}</label>

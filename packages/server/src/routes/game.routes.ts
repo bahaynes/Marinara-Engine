@@ -22,6 +22,15 @@ import { readImageDimensionsFromFile } from "../utils/image-metadata.js";
 import { createChatsStorage, METADATA_WRITE_ORDINALS_KEY } from "../services/storage/chats.storage.js";
 import { createConnectionsStorage } from "../services/storage/connections.storage.js";
 import { createCharactersStorage } from "../services/storage/characters.storage.js";
+import {
+  buildRerolledSwipeExtra,
+  buildRoleplayRerollMessages,
+  findLatestFailedRoleplayRoll,
+  readInspiration,
+  rerollRoleplayRoll,
+  splitAtRoll,
+} from "../services/game/inspiration.service.js";
+import { parseRoleplayCommands } from "../services/generation/roleplay-commands.js";
 import { createCharacterGalleryStorage } from "../services/storage/character-gallery.storage.js";
 import { createPersonaGalleryStorage } from "../services/storage/persona-gallery.storage.js";
 import { createGalleryStorage } from "../services/storage/gallery.storage.js";
@@ -206,6 +215,7 @@ import {
   TERRAIN_DATA,
   extractLeadingThinkingBlocks,
   DEFAULT_STARTING_INSPIRATION,
+  isRoleplayCommandEnabled,
   formatSkillCheckResultSummary,
   getSkillCheckOutcomeLabel,
   type RPGStatsConfig,
@@ -9362,8 +9372,9 @@ export async function gameRoutes(app: FastifyInstance) {
   const inspirationRerollSchema = z.object({
     chatId: z.string().min(1),
     messageId: z.string().min(1),
-    skill: z.string().min(1),
-    dc: z.number().int(),
+    // Required for Game Mode's tagged checks; Roleplay finds its failed roll in the message's records.
+    skill: z.string().min(1).optional(),
+    dc: z.number().int().optional(),
     connectionId: z.string().optional(),
     debugMode: z.boolean().optional(),
   });
@@ -9380,6 +9391,90 @@ export async function gameRoutes(app: FastifyInstance) {
     }
 
     const meta = parseMeta(chat.metadata);
+
+    if ((chat.mode as string) === "roleplay") {
+      if (!isRoleplayCommandEnabled(meta, "inspire")) {
+        return reply.code(400).send({ error: "Inspiration is off for this chat." });
+      }
+      const currentInspiration = readInspiration(meta);
+      if (currentInspiration <= 0) return reply.code(400).send({ error: "No Inspiration points remaining." });
+      const targetMsg = await chats.getMessage(input.messageId);
+      if (!targetMsg || targetMsg.chatId !== input.chatId) {
+        return reply.code(404).send({ error: "Message not found in this chat." });
+      }
+      const extra = parseMeta(targetMsg.extra);
+      const failed = findLatestFailedRoleplayRoll(extra);
+      if (!failed) return reply.code(404).send({ error: "No failed roll with a DC on that message." });
+
+      const rerolled = await rerollRoleplayRoll(failed);
+      await chats.updateMetadata(input.chatId, { ...meta, gameInspiration: currentInspiration - 1 });
+
+      const characters = createCharactersStorage(app.db);
+      const characterRow = targetMsg.characterId ? await characters.getById(targetMsg.characterId) : null;
+      const characterName = (parseMeta(characterRow?.data).name as string | undefined) || "the narrator";
+      const persona = chat.personaId ? await characters.getPersona(chat.personaId) : null;
+      const { before, after } = splitAtRoll(targetMsg.content, failed);
+      const allMessages = await chats.listMessages(input.chatId);
+      const targetIdx = allMessages.findIndex((m) => m.id === input.messageId);
+      const messages = buildRoleplayRerollMessages({
+        characterName,
+        personaName: persona?.name || "The user",
+        context: (targetIdx >= 0 ? allMessages.slice(0, targetIdx) : allMessages).slice(-4).map((m) => ({
+          role: m.role === "user" ? ("user" as const) : ("assistant" as const),
+          content: m.content,
+        })),
+        before,
+        after,
+        failed,
+        roll: rerolled.roll,
+      });
+      logDebugOverride(input.debugMode === true, "[roleplay/inspiration-reroll] prompt: %j", messages);
+
+      let continuation = "";
+      try {
+        const { conn, baseUrl, defaultGenerationParameters } = await resolveConnection(
+          connections,
+          input.connectionId,
+          chat.connectionId,
+        );
+        const provider = await createGameMainProvider(connections, conn, baseUrl);
+        const abortTracker = createResponseAbortTracker(reply, GAME_GENERATION_TIMEOUT_MS, "Inspiration reroll");
+        const options = gameGenOptions(
+          conn.model,
+          { maxTokens: 4096, signal: abortTracker.signal },
+          defaultGenerationParameters,
+          conn.provider,
+        );
+        const llmResult = await runGameChatComplete(provider, messages, options, "Inspiration reroll");
+        continuation = parseRoleplayCommands(
+          extractLeadingThinkingBlocks(llmResult.content || "", defaultGenerationParameters?.customThinkingTags)
+            .content,
+        ).content.trim();
+      } catch (err) {
+        logger.error(err, "[roleplay/inspiration-reroll] Rewrite failed for chat %s", input.chatId);
+      }
+      // The point is already spent and the roll is real, so a failed rewrite still records it.
+      // `before` stays byte-identical so the rerolled roll's saved content offset still lands on it.
+      const content = continuation
+        ? `${before}${!before || /\s$/u.test(before) ? "" : "\n\n"}${continuation}`
+        : targetMsg.content;
+      const swipe = await chats.addSwipe(input.messageId, content);
+      await chats.updateMessageExtraForSwipe(
+        input.messageId,
+        swipe.index,
+        buildRerolledSwipeExtra(extra, failed, rerolled),
+      );
+      return {
+        success: true,
+        swipeIndex: swipe.index,
+        roll: rerolled.roll,
+        inspirationRemaining: currentInspiration - 1,
+        content,
+      };
+    }
+    if (!input.skill || input.dc === undefined) {
+      return reply.code(400).send({ error: "No failed skill check found on that message to reroll." });
+    }
     const setupConfig = meta.gameSetupConfig as GameSetupConfig | null;
     if (setupConfig?.enableInspiration === false) {
       return reply.code(400).send({ error: "Inspiration is disabled for this game." });

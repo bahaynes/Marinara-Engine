@@ -31,6 +31,13 @@ import { buildCommittedTrackerContextBlock } from "../../packages/server/src/ser
 import { isDiceRollResult, readRoleplayDiceRolls } from "../../packages/client/src/lib/dice-roll-result.js";
 import { executeToolCalls } from "../../packages/server/src/services/tools/tool-executor.js";
 import { parseRollDiceToolResult } from "../../packages/server/src/services/game/dice.service.js";
+import {
+  buildRerolledSwipeExtra,
+  findLatestFailedRoleplayRoll,
+  nextInspirationAfterAward,
+  rerollRoleplayRoll,
+  splitAtRoll,
+} from "../../packages/server/src/services/game/inspiration.service.js";
 
 const rollResult = JSON.stringify({ notation: "2d1+3", rolls: [1, 1], modifier: 3, total: 5 });
 const inlineRoll = {
@@ -848,6 +855,61 @@ try {
     assert.equal(parseRollDiceToolResult(JSON.stringify(malformed)), null);
     assert.equal(isDiceRollResult(malformed), false);
   }
+} finally {
+  Math.random = random;
+}
+
+// Inspiration: [inspire] parses, needs rolls on, and a reroll targets the last roll that missed its DC.
+assert.deepEqual(parseRoleplayCommands("Well played. [inspire]").commands, [{ type: "inspire" }]);
+const inspireMeta = { roleplayCommandsEnabled: true, roleplayCommandToggles: { inspire: true, roll: false } };
+assert.equal(isRoleplayCommandAllowed(inspireMeta, "inspire", null), false, "no rolls means nothing to reroll");
+assert.equal(
+  isRoleplayCommandAllowed({ ...inspireMeta, roleplayCommandToggles: { inspire: true, roll: true } }, "inspire", null),
+  true,
+);
+assert.equal(nextInspirationAfterAward({}, 1), 2, "an unset chat starts at the default of 1");
+assert.equal(nextInspirationAfterAward({ gameInspiration: 4 }, 1), null, "the cap makes an award a no-op");
+
+const missed = JSON.stringify({ notation: "1d20+3", rolls: [4], modifier: 3, total: 7, dc: 12, reason: "T · Stealth" });
+const madeIt = JSON.stringify({ notation: "1d20", rolls: [15], modifier: 0, total: 15, dc: 10 });
+const rerollContent = "She creeps forward. The guard turns and spots her.";
+const rerollExtra = {
+  roleplayCommandActivity: [
+    { command: { type: "notes", content: "n" }, raw: "[notes]" },
+    {
+      command: { type: "roll", notation: "1d20", reason: "sneak", skill: "Stealth", dc: 12 },
+      raw: "[roll]",
+      result: missed,
+      contentOffset: 19,
+      contentAnchor: "She creeps forward.",
+    },
+    { command: { type: "roll", notation: "1d20", reason: "later" }, raw: "[roll]", result: madeIt },
+  ],
+  diceRollResults: [JSON.parse(missed), JSON.parse(madeIt)],
+};
+const failedRoll = findLatestFailedRoleplayRoll(rerollExtra);
+assert.equal(failedRoll?.index, 1, "a later roll that met its DC is skipped");
+assert.equal(failedRoll?.reason, "T · Stealth", "the label the engine rolled with is kept");
+assert.deepEqual(splitAtRoll(rerollContent, failedRoll!), {
+  before: "She creeps forward.",
+  after: " The guard turns and spots her.",
+});
+assert.equal(findLatestFailedRoleplayRoll({ roleplayCommandActivity: [rerollExtra.roleplayCommandActivity[2]] }), null);
+assert.deepEqual(
+  splitAtRoll("A different text entirely.", failedRoll!),
+  { before: "", after: "A different text entirely." },
+  "a roll whose place is lost rewrites the whole message instead of appending a second outcome",
+);
+try {
+  Math.random = () => 0.99;
+  const rerolled = await rerollRoleplayRoll(failedRoll!);
+  assert.equal(rerolled.roll.notation, "1d20+3", "the reroll keeps every modifier baked into the saved notation");
+  assert.equal(rerolled.roll.total, 23);
+  const swipeExtra = buildRerolledSwipeExtra(rerollExtra, failedRoll!, rerolled);
+  const swipeActivity = swipeExtra.roleplayCommandActivity as Array<{ result?: string }>;
+  assert.equal(swipeActivity.length, 2, "records from the rewritten tail are dropped");
+  assert.equal(parseRollDiceToolResult(swipeActivity[1]!.result!)?.total, 23);
+  assert.deepEqual(swipeExtra.diceRollResults, [rerolled.roll], "the missed card is replaced, later cards dropped");
 } finally {
   Math.random = random;
 }
