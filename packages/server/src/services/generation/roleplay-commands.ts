@@ -454,7 +454,7 @@ export function buildRoleplayCommandsReminder(args: {
   if (enabled("roll")) {
     const skillsList =
       args.activeSkills && args.activeSkills.length > 0
-        ? ` Available skills for checks: ${args.activeSkills.map((s) => `${s.name} (${s.ability.toUpperCase()})`).join(", ")}.`
+        ? ` Available skills for checks: ${args.activeSkills.map((s) => s.name).join(", ")}.`
         : "";
     lines.push(
       `- [roll: character="participant name" notation="1d20" attribute="Strength" skill="Skill Name" modifier="+2" dc="15" reason="action being attempted"] requests a real roll; use roll_dice with the same fields when available. You may target any chat participant, including the user's persona by name. Attribute and skill are both optional and only one is needed; the engine automatically adds the assigned ability/skill modifier from character stats, so do not add it yourself. Optional modifier adds a situational bonus/penalty once; optional dc sets the total needed to succeed. Keep DCs and modifiers in command/tool fields, not narration. Stop after the command and wait for the result before narrating the outcome. Never invent results or reroll an action.${skillsList}`,
