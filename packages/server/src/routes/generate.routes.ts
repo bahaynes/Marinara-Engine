@@ -4351,6 +4351,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
               {
                 id: identity.id,
                 name: identity.name,
+                description: identity.description,
                 rpgStats: normalizeCharacterRpgStats(parseExtra(identity.personaStats).rpgStats),
               },
             ]
