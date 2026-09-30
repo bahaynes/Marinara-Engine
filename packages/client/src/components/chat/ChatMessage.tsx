@@ -40,7 +40,7 @@ import { PendingTypingDots } from "./PendingTypingDots";
 import { ChatImagePreview } from "./ChatImagePreview";
 import { ChatVideoAttachment, isAttachmentHiddenByImageText, isVideoAttachment } from "./ChatVideoAttachment";
 import { recordClientRuntimeEvent } from "../../lib/client-runtime-diagnostics";
-import { isDiceRollResult, readRoleplayDiceRolls } from "../../lib/dice-roll-result";
+import { isDiceRollResult, latestFailedRoleplayRollIndex, readRoleplayDiceRolls } from "../../lib/dice-roll-result";
 import { normalizeRollOutcomeToneMode } from "../dice/dice-tone";
 import { DiceMessageContent, diceRollReplacesMessageContent } from "./ConversationMessageShared";
 import {
@@ -3252,6 +3252,13 @@ export const ChatMessage = memo(function ChatMessage({
     [openAttachmentImageLightbox, handleRemoveAttachment, localizeUi],
   );
 
+  // Only the latest reply's last missed roll can be rerolled; older replies already have later turns built on them.
+  const rerollableRollIndex = useMemo(
+    () =>
+      isRoleplay && !isUser && isLastAssistantMessage && !isStreaming ? latestFailedRoleplayRollIndex(extra) : null,
+    [isRoleplay, isUser, isLastAssistantMessage, isStreaming, extra],
+  );
+
   const renderInlineRoleplayCommand = useCallback(
     (command: (typeof inlineRoleplayCommands)[number]) =>
       command.kind === "illustration" ? (
@@ -3284,6 +3291,9 @@ export const ChatMessage = memo(function ChatMessage({
           result={command.result}
           createdAt={message.createdAt}
           toneMode={rollToneMode}
+          rerollTarget={
+            command.index === rerollableRollIndex ? { chatId: message.chatId, messageId: message.id } : undefined
+          }
         />
       ),
     [
@@ -3297,6 +3307,7 @@ export const ChatMessage = memo(function ChatMessage({
       isStreaming,
       isUser,
       renderRoleplayImageAttachment,
+      rerollableRollIndex,
     ],
   );
 
