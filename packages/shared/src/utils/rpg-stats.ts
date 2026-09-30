@@ -1,4 +1,4 @@
-import type { RPGStatPool, RPGStatsConfig } from "../types/character.js";
+import type { RPGSkillProficiency, RPGStatPool, RPGStatsConfig } from "../types/character.js";
 
 export const DEFAULT_RPG_STAT_POOLS: readonly RPGStatPool[] = [
   { name: "HP", value: 100, max: 100, color: "#ef4444" },
@@ -56,6 +56,8 @@ export function syncRpgHpFromPools(
   };
 }
 
+// Proficiencies are deliberately left out: the engine adds their bonus to rolls itself, so
+// sending them would only spend prompt tokens every turn.
 export function formatRpgStatsForPrompt(rpgStats: RPGStatsConfig | undefined): string {
   if (!rpgStats?.enabled) return "";
   const lines: string[] = [];
@@ -70,4 +72,33 @@ export function formatRpgStatsForPrompt(rpgStats: RPGStatsConfig | undefined): s
     lines.push(attributes.map((attribute) => `${attribute.name}: ${attribute.value}`).join(", "));
   }
   return lines.join("\n");
+}
+
+/** 5e proficiency bonus for a character level (+2 at 1-4, +3 at 5-8, ...). */
+export function proficiencyBonusForLevel(level: number): number {
+  return Math.floor((Math.max(1, level) - 1) / 4) + 2;
+}
+
+/** Keep only well-formed proficiency entries, keyed by normalized skill id. */
+export function normalizeRpgProficiencies(value: unknown): Record<string, RPGSkillProficiency> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const result: Record<string, RPGSkillProficiency> = {};
+  for (const [key, level] of Object.entries(value)) {
+    const id = key
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "_");
+    if (id && (level === "proficient" || level === "expertise")) result[id] = level;
+  }
+  return Object.keys(result).length > 0 ? result : undefined;
+}
+
+/** Skill id -> flat bonus from a sheet's structured proficiencies, or null when it has none. */
+export function rpgProficiencySkillMap(proficiencies: unknown, level: number): Record<string, number> | null {
+  const normalized = normalizeRpgProficiencies(proficiencies);
+  if (!normalized) return null;
+  const bonus = proficiencyBonusForLevel(level);
+  return Object.fromEntries(
+    Object.entries(normalized).map(([id, kind]) => [id, kind === "expertise" ? bonus * 2 : bonus]),
+  );
 }
