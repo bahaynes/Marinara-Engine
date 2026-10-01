@@ -15554,6 +15554,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                         referenceImages: useAvatarRefs ? referenceResolution.referenceImages : [],
                         referenceNames: useAvatarRefs ? referenceResolution.referenceNames : [],
                         source: imgSource,
+                        bindPlainNames: requestOrderedReferences,
                       });
 
                       const compiledPrompt = compileImagePrompt({

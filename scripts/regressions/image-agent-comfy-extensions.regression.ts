@@ -108,6 +108,30 @@ assert.equal(
   "image 2 hands image 3 a map while Bea watches in image 1; Fay waves.",
 );
 assert.equal(bindReferenceTokens("No tokens here.", slots.names), "No tokens here.");
+// Plain names are left alone unless the agent asks (stock Illustrator explains references by name).
+assert.equal(bindReferenceTokens("[[Ann]] smiles at Dex.", slots.names), "image 2 smiles at Dex.");
+// The 2026-10-02 Illustrator 2 prompt: tokens first, then bare first names and possessives.
+assert.equal(
+  bindReferenceTokens(
+    "[[Marianne]] in a cream-white gown rests over [[Hera-Zaire]]. Marianne smiles at Hera's face; Heracles waits.",
+    ["Marianne", "Hera-Zaire"],
+    true,
+  ),
+  "image 1 in a cream-white gown rests over image 2. image 1 smiles at image 2's face; Heracles waits.",
+);
+// Shared name words, stopwords, the location slot and unslotted names stay as written.
+assert.equal(
+  bindReferenceTokens(
+    "Ann Lee, Ann Moss, Ann and Lee wait by the location with Bea.",
+    ["location", "Ann Lee", "Ann Moss"],
+    true,
+  ),
+  "image 2, image 3, Ann and image 2 wait by the location with Bea.",
+);
+assert.equal(
+  bindReferenceTokens("Sir Dex greets the lady.", ["Sir Dex", "Lady Eve"], true),
+  "image 1 greets the lady.",
+);
 
 // ── Present-character gating ──
 const present = [{ name: "Ann" }, { name: "Dex Moreau" }];
