@@ -1584,6 +1584,9 @@ export function AgentEditor() {
       "customAgentRepositorySource",
       CUSTOM_AGENT_IMPORT_SOURCE_SETTING,
       CUSTOM_AGENT_PERMISSIONS_EXPLICIT_SETTING,
+      // custom-mods: Illustrator 2 image-agent options have no form fields yet.
+      "presentCharactersOnly",
+      "referenceOrder",
     ]) {
       if (currentSettings[key] !== undefined) preservedSpotifyFields[key] = currentSettings[key];
     }
@@ -1949,7 +1952,13 @@ export function AgentEditor() {
       toast.error(localizeUi("ui.agents.agenteditor.invalidFixedLorebookOrder"));
       return;
     }
+    // custom-mods: carry Illustrator 2 image-agent options (no form fields) into exports.
+    const storedSettings = parseAgentSettingsRecord(dbConfig?.settings);
     const settings = sanitizeAgentSettingsForTransfer({
+      ...(storedSettings.presentCharactersOnly !== undefined
+        ? { presentCharactersOnly: storedSettings.presentCharactersOnly }
+        : {}),
+      ...(storedSettings.referenceOrder !== undefined ? { referenceOrder: storedSettings.referenceOrder } : {}),
       author: savedAuthor,
       promptTemplates: savedPromptTemplates,
       ...(isEditingCustomAgent ? { customCapabilities } : {}),

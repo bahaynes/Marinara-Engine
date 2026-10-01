@@ -843,6 +843,19 @@ export function RoleplayAgentsSection({
                   }
                   onReset={resetIllustratorAvatarReferences}
                 />
+                <AgentSettingsToggle
+                  label={localizeUi("ui.chat.chatsettingsdrawer.illustratorPresentCharactersOnly")}
+                  description={localizeUi("ui.chat.chatsettingsdrawer.illustratorPresentCharactersOnlyHelp")}
+                  enabled={metadata.illustratorPresentCharactersOnly === true}
+                  onToggle={() =>
+                    updateMeta.mutate({
+                      id: chat.id,
+                      illustratorPresentCharactersOnly: metadata.illustratorPresentCharactersOnly !== true,
+                    })
+                  }
+                  overridden={metadata.illustratorPresentCharactersOnly === true}
+                  onReset={() => updateMeta.mutate({ id: chat.id, illustratorPresentCharactersOnly: null })}
+                />
                 {illustratorUseAvatarReferences && (
                   <AgentChoiceSelect
                     label={localizeUi("ui.agents.agenteditor.referencePictureTarget")}

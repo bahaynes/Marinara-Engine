@@ -6,8 +6,14 @@ import { existsSync, readdirSync, statSync, type Dirent } from "node:fs";
 import {
   buildCharacterAppearanceReferenceBlock,
   personaEntityId,
+  readComfyLayoutCharacterLimit,
   readIllustratorImageAppearanceOverride,
 } from "../image/character-prompts.js";
+import {
+  foldComfyLayoutSceneFields,
+  isComfyLayoutCharacterPromptInstruction,
+  rewriteIllustratorTemplateForComfyLayout,
+} from "../image/comfyui-layout-placeholders.js";
 import { basename, extname, join, relative, resolve } from "node:path";
 import {
   measureContextBudget,
@@ -353,13 +359,28 @@ export function buildAgentPromptMacroContext(
   };
 }
 
+/** Fork: swap the Illustrator's scene-prompt contract for setting/lighting/props on a ComfyUI layout workflow. */
+function applyComfyLayoutTemplate(template: string, context: AgentContext): string {
+  if (!isComfyLayoutCharacterPromptInstruction(context.memory?._illustratorCharacterPromptInstruction)) return template;
+  if (!template.includes('"shouldGenerate"')) return template;
+  const rewritten = rewriteIllustratorTemplateForComfyLayout(
+    template,
+    readComfyLayoutCharacterLimit(context.memory?._illustratorCharacterPromptInstruction),
+  );
+  if (rewritten === null) {
+    logger.warn("[illustrator] layout scene fields not applied: the Illustrator template is not the default wording");
+    return template;
+  }
+  return rewritten;
+}
+
 export function renderAgentPromptTemplate(
   template: string,
   settings: Record<string, unknown>,
   context: AgentContext,
   options: { escapeValues?: boolean } = {},
 ): string {
-  const withSettingMacros = renderAgentSettingsMacros(template, settings, options);
+  const withSettingMacros = renderAgentSettingsMacros(applyComfyLayoutTemplate(template, context), settings, options);
   return resolveMacros(withSettingMacros, buildAgentPromptMacroContext(context, options), { trimResult: false });
 }
 
@@ -4012,6 +4033,8 @@ function parseAgentResponse(
         }
       }
       let data = config.type === "cyoa" ? normalizeCyoaChoiceOutput(parsedData) : parsedData;
+      if (config.type === "illustrator" || customAgentHasCapability(config.settings, "trigger_image_generation"))
+        data = foldComfyLayoutSceneFields(data);
       // Custom Tracker and Character Tracker each have one row group; tolerate
       // the incremental envelope at the root as well as under its key, then use
       // the usual merge/lock path (#7208).

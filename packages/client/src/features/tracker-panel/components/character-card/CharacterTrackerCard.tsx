@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Eye, HeartPulse, Maximize2, Shirt, X } from "lucide-react";
+import { Eye, HeartPulse, Maximize2, Shirt, UserPlus, X } from "lucide-react";
 import {
   characterCustomFieldTrackerLockKey,
   characterStatTrackerLockKey,
@@ -163,6 +163,7 @@ export function CharacterTrackerCard({
   addMode,
   onToggleFeatured,
   onUploadAvatar,
+  onPromote,
 }: {
   character: PresentCharacter;
   characterPicture?: string | null;
@@ -177,6 +178,7 @@ export function CharacterTrackerCard({
   addMode: boolean;
   onToggleFeatured: () => void;
   onUploadAvatar: () => void;
+  onPromote?: () => void;
 }) {
   const { t: localizeUi } = useUiTranslation();
   const {
@@ -333,6 +335,17 @@ export function CharacterTrackerCard({
       >
         <Maximize2 size="0.5625rem" />
       </button>
+      {onPromote && (
+        <button
+          type="button"
+          onClick={onPromote}
+          title={localizeUi("ui.npcRegistry.promoteBtn", { defaultValue: "Promote to Character Card" })}
+          aria-label={localizeUi("ui.npcRegistry.promoteBtn", { defaultValue: "Promote to Character Card" })}
+          className="absolute left-[1.35rem] top-0 z-[6] flex h-[1.35rem] w-[1.35rem] items-center justify-center rounded-br-[5px] bg-transparent text-[var(--tracker-profile-nameplate-text)]/42 transition-all hover:bg-[color-mix(in_srgb,var(--tracker-profile-nameplate-rule)_10%,transparent)] hover:text-[var(--tracker-profile-nameplate-text)]/74 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-[var(--border)] active:scale-95 [&>svg]:drop-shadow-[0_1px_1px_rgba(0,0,0,0.35)]"
+        >
+          <UserPlus size="0.5625rem" />
+        </button>
+      )}
 
       <div className={cn(CHARACTER_HEADER_CLASS, deleteMode && "pr-7")}>
         <div className={CHARACTER_HEADER_VOID_TEXTURE_CLASS} />

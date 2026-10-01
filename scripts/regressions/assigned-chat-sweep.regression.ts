@@ -508,9 +508,10 @@ try {
   mainResponse = '[illustrate: subject="The laboratory" characters="Dottore"] The scene changes.';
   const beforeCommand = illustratorEfforts.length;
   const commandRequests = await illustrateTurn();
-  assert.equal(commandRequests.length, 2, "an explicit illustration command adds to the automatic decision");
+  // custom-mods: the narrator's command replaces the automatic picture, so one reply never draws twice.
+  assert.equal(commandRequests.length, 1, "an explicit illustration command replaces the automatic decision");
   assert.equal(commandRequests.filter((prompt) => prompt.includes("manual_gallery_illustration_request")).length, 1);
-  assert.deepEqual(illustratorEfforts.slice(beforeCommand), ["low", "low"], "automatic and narrator use chat effort");
+  assert.deepEqual(illustratorEfforts.slice(beforeCommand), ["low"], "the narrator command uses chat effort");
 
   const galleryIllustration = async () => {
     const before = illustratorEfforts.length;

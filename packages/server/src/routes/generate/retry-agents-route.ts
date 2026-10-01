@@ -145,6 +145,12 @@ import {
 } from "../../services/image/image-generation-settings.js";
 import { compileImagePrompt } from "../../services/image/image-prompt-compiler.js";
 import {
+  applyImageAgentContextExtensions,
+  bindIllustratorReferenceTokens,
+  filterToPresentCharacters,
+  readAgentComfyVariables,
+} from "../../services/image/image-agent-comfy-extensions.js";
+import {
   mergeSpatialLocationReferenceImages,
   resolveSpatialLocationReferenceImage,
   SPATIAL_LOCATION_REFERENCE_PROMPT_LINE,
@@ -180,6 +186,10 @@ import {
   resolveNovelAiCharacterPromptLimit,
   supportsNovelAiCharacterPrompts,
 } from "../../services/image/character-prompts.js";
+import {
+  comfyLayoutLookSourcesFromContext,
+  finishComfyLayoutBoxes,
+} from "../../services/image/comfyui-layout-placeholders.js";
 import { resolveImagePromptReviewSize } from "../../services/image/image-prompt-review.js";
 import {
   parseIllustratorPromptReviewOverride,
@@ -281,6 +291,13 @@ import {
   resolveIllustratorCharacterReferences,
 } from "./illustrator-references.js";
 import {
+  buildIllustratorCastLookLines,
+  ensureIllustratorNpcPortraits,
+  isIllustratorNpcCastId,
+  loadIllustratorNpcCast,
+} from "../../services/image/illustrator-npc-cast.js";
+import { generateTrackerPortrait, trackerPortraitStyleProfileId } from "../../services/image/tracker-portrait.js";
+import {
   explicitlyRequestsTextRewrite,
   isBuiltInTextRewriteAgentType,
   mergePairedBuiltInRewriteAgents,
@@ -301,6 +318,7 @@ import {
   previewIllustratorSceneBackground,
   resolveIllustratorImageConnectionId,
   resolveIllustratorCharacterPromptInstruction,
+  resolveComfyLayoutCharacterPromptLimit,
   resolveIllustratorPromptStyle,
 } from "../../services/generation/illustrator-background-generation.js";
 import {
@@ -820,6 +838,18 @@ async function retryIllustratorClipCast(
       appearanceOverride: readIllustratorImageAppearanceOverride(agentContext.memory, identityId),
     });
   }
+
+  // custom-mods: card-less people (tracker portraits, NPC Registry).
+  chatCharacters.push(
+    ...(await loadIllustratorNpcCast({
+      chatId,
+      cards: chatCharacters.map((character) => ({
+        name: character.name,
+        appearance: character.appearanceOverride || character.appearance,
+      })),
+      presentCharacters: agentContext.gameState?.presentCharacters,
+    })),
+  );
   const personaRow = identitySource === "persona" && identityId ? await chars.getPersona(identityId, chatId) : null;
   const persona: IllustratorPersonaReference | null =
     identitySource === "persona" && identityId && agentContext.persona
@@ -2755,7 +2785,11 @@ async function resolveRetryImagePromptContext(args: {
   if (imagePromptInstructions) memory._imagePromptInstructions = imagePromptInstructions;
   const writerReferences = await args.writerReferences?.(args.entry, imageConnection);
   if (writerReferences) memory[WRITER_REFERENCE_MEMORY_KEY] = writerReferences;
-  return { ...args.context, memory };
+  return applyImageAgentContextExtensions(
+    { ...args.context, memory },
+    args.entry.resolved.settings,
+    imageConnection?.comfyuiWorkflow,
+  );
 }
 
 /** What a retried text rewrite does to `currentText`. The rewrite chain and the apply step must agree.
@@ -3783,12 +3817,19 @@ async function applyRetryResultEffects(args: {
             const imgModel = imgConnFull.model || "";
             const characterPromptLimit = supportsNovelAiCharacterPrompts(imgConnFull)
               ? resolveNovelAiCharacterPromptLimit(imgModel)
-              : 0;
-            const illustratorCharacterPrompts = readCharacterPrompts(
+              : resolveComfyLayoutCharacterPromptLimit(
+                  imgConnFull,
+                  typeof chat.metadata === "string" ? JSON.parse(chat.metadata) : (chat.metadata ?? {}),
+                );
+            // custom-mods: on a layout workflow the engine, not the writer, supplies each boxed character's looks.
+            const comfyLayoutActive = !supportsNovelAiCharacterPrompts(imgConnFull) && characterPromptLimit > 0;
+            const writerCharacterPrompts = readCharacterPrompts(
               illData,
               illCharacters.filter((name): name is string => typeof name === "string"),
               characterPromptLimit,
             );
+            // custom-mods: layout boxes are composed once the reference slots are known (below).
+            let illustratorCharacterPrompts = writerCharacterPrompts;
             if (illustratorCharacterPrompts.length > 0) {
               logger.debug(
                 "[retry-agents] Illustrator sending %d native NovelAI character caption(s): %s",
@@ -3893,6 +3934,48 @@ async function applyRetryResultEffects(args: {
                     getById: chars.getById,
                   }
                 : undefined;
+            // custom-mods (Illustrator 2): opt-in present-character gating and request-ordered refs.
+            const requestOrderedReferences = imagePromptAgent?.resolved.settings?.referenceOrder === "requested";
+            let requestedReferenceNames = illCharacters.filter((name): name is string => typeof name === "string");
+            if (imagePromptAgent?.resolved.settings?.presentCharactersOnly === true) {
+              const presence = filterToPresentCharacters(
+                requestedReferenceNames,
+                agentContext.gameState?.presentCharacters,
+                clipCast.persona?.name ?? null,
+                agentContext.mainResponse,
+              );
+              if (presence.dropped.length > 0) {
+                logger.debug("[retry-agents] Illustrator dropped absent characters: %s", presence.dropped.join(", "));
+              }
+              requestedReferenceNames = presence.kept;
+            }
+            if (useAvatarRefs) {
+              // custom-mods: card-less people with known looks get a portrait before their first picture.
+              const cards = clipCast.chatCharacters.filter((entry) => !isIllustratorNpcCastId(entry.id));
+              const npcCast = await ensureIllustratorNpcPortraits({
+                chatId,
+                requestedNames: requestedReferenceNames,
+                cards: [
+                  ...cards.map((entry) => ({
+                    name: entry.name,
+                    appearance: entry.appearanceOverride || entry.appearance,
+                  })),
+                  ...(clipCast.persona ? [{ name: clipCast.persona.name }] : []),
+                ],
+                cast: clipCast.chatCharacters.filter((entry) => isIllustratorNpcCastId(entry.id)),
+                generate: (character) =>
+                  generateTrackerPortrait({
+                    db: app.db,
+                    connectionId: imgConnFull.id,
+                    chatId,
+                    styleProfileId: trackerPortraitStyleProfileId(chatMeta),
+                    character,
+                    includeOutfit: false,
+                  }),
+              });
+              clipCast.chatCharacters = [...cards, ...npcCast];
+              assertRetryActive();
+            }
             const referenceResolution = await resolveIllustratorCharacterReferences({
               charactersStore: chars,
               chatScope,
@@ -3900,7 +3983,7 @@ async function applyRetryResultEffects(args: {
               personaGallery: createPersonaGalleryStorage(app.db),
               // The same cast its clips use: the chat's characters, a character used as the user, and the persona.
               ...clipCast,
-              requestedNames: illCharacters.filter((name): name is string => typeof name === "string"),
+              requestedNames: requestedReferenceNames,
               promptText: [
                 [...agentContext.recentMessages].reverse().find((message) => message.role === "user")?.content ?? "",
                 imagePrompt,
@@ -3912,9 +3995,11 @@ async function applyRetryResultEffects(args: {
               includeReferenceImages: useAvatarRefs,
               includePersonaWhenMentionedInPrompt: false,
               maxReferences: spatialLocationReferenceImage ? 5 : 6,
+              orderByRequest: requestOrderedReferences,
             });
             assertRetryActive();
-            if (includeCharacterAppearance) {
+            // custom-mods: layout boxes already carry each character's looks.
+            if (includeCharacterAppearance && !comfyLayoutActive) {
               const appearanceBlock =
                 illustratorCharacterPrompts.length > 0
                   ? buildUncaptionedCharacterAppearanceBlock(
@@ -3951,8 +4036,21 @@ async function applyRetryResultEffects(args: {
                 logger.debug("[retry-agents] Illustrator Added appearance for characters without native captions");
               }
             }
+            if (!comfyLayoutActive) {
+              // custom-mods: ensemble-card members and this turn's outfits.
+              const castLines = buildIllustratorCastLookLines({
+                sources: comfyLayoutLookSourcesFromContext(agentContext).cards,
+                visibleNames: requestedReferenceNames,
+                coveredNames: referenceResolution.appearanceNames,
+                trackerRows: agentContext.gameState?.presentCharacters,
+                includeLooks: includeCharacterAppearance && illustratorCharacterPrompts.length === 0,
+                includeOutfits: includeCharacterAppearance || useAvatarRefs,
+              });
+              if (castLines) fullPrompt += `\n\n${castLines}`;
+            }
             if (useAvatarRefs && referenceResolution.referenceImages.length > 0) {
-              if (referenceResolution.referenceLine && !suppressReferencePromptLine)
+              // custom-mods: on a layout workflow each box is paired with its own slot instead.
+              if (referenceResolution.referenceLine && !suppressReferencePromptLine && !comfyLayoutActive)
                 fullPrompt += `\n\n${referenceResolution.referenceLine}`;
               logger.debug(
                 "[retry-agents] Illustrator sending %d character reference(s) for: %s",
@@ -3968,9 +4066,38 @@ async function applyRetryResultEffects(args: {
             if (mergedReferenceImages.length > 0) {
               referenceImages = mergedReferenceImages;
             }
-            if (spatialLocationReferenceImage) {
-              fullPrompt += `\n\n${SPATIAL_LOCATION_REFERENCE_PROMPT_LINE}`;
+            if (spatialLocationReferenceImage && !comfyLayoutActive) {
+              // Illustrator 2 names the location slot itself via [[location]].
+              if (!requestOrderedReferences) fullPrompt += `\n\n${SPATIAL_LOCATION_REFERENCE_PROMPT_LINE}`;
               logger.debug("[retry-agents] Illustrator sending the current Maps location reference image first");
+            }
+            if (comfyLayoutActive) {
+              // custom-mods: box k is paired with reference image k on the workflow side.
+              const layout = finishComfyLayoutBoxes({
+                prompt: fullPrompt,
+                writerCharacterPrompts,
+                referenceImages: useAvatarRefs ? referenceResolution.referenceImages : [],
+                referenceNames: useAvatarRefs ? referenceResolution.referenceNames : [],
+                locationImage: spatialLocationReferenceImage,
+                source: imgSource,
+                lookSources: {
+                  ...comfyLayoutLookSourcesFromContext(agentContext),
+                  npcs: clipCast.chatCharacters.filter((entry) => isIllustratorNpcCastId(entry.id)),
+                },
+                logPrefix: "[retry-agents] Illustrator layout box",
+                bindPlainNames: requestOrderedReferences,
+              });
+              fullPrompt = layout.prompt;
+              illustratorCharacterPrompts = layout.characterPrompts;
+              referenceImages = layout.referenceImages;
+            } else {
+              fullPrompt = bindIllustratorReferenceTokens(fullPrompt, {
+                locationImage: spatialLocationReferenceImage,
+                referenceImages: useAvatarRefs ? referenceResolution.referenceImages : [],
+                referenceNames: useAvatarRefs ? referenceResolution.referenceNames : [],
+                source: imgSource,
+                bindPlainNames: requestOrderedReferences,
+              });
             }
 
             const compiledPrompt = compileImagePrompt({
@@ -4132,6 +4259,7 @@ async function applyRetryResultEffects(args: {
                         height: imgHeight,
                         imageEndpointId: imgConnFull.imageEndpointId || undefined,
                         comfyWorkflow: (imgConnFull as any).comfyuiWorkflow || undefined,
+                        comfyVariables: readAgentComfyVariables(illData.comfyVariables),
                         imageDefaults,
                         quality: resolveConnectionImageQuality(imgConnFull),
                         referenceImages,
