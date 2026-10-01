@@ -416,9 +416,11 @@ export class ClaudeSubscriptionProvider extends BaseLLMProvider {
       // on a persisted CLI value that would silently downgrade the model. The
       // value comes from the connection-level toggle — default `false` so
       // unconfigured connections keep the requested model.
+      // `promptCacheTtl` is sent for both toggle states: left unset, the CLI picks
+      // 1 hour on a subscription, so "off" would silently mean one hour too.
       settings: {
         fastMode: this.fastMode,
-        ...(options.anthropicExtendedCacheTtl ? { promptCacheTtl: "1h" as const } : {}),
+        promptCacheTtl: options.anthropicExtendedCacheTtl ? ("1h" as const) : ("5m" as const),
       },
     };
     if (systemPrompt !== undefined) sdkOptions.systemPrompt = systemPrompt;

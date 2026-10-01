@@ -6583,7 +6583,7 @@
   "ui.connections.connectioneditor.speechSoundEffectsAndMusicGeneration": "Speech, sound effects, and music generation.",
   "ui.connections.connectioneditor.steps": "%steps%",
   "ui.connections.connectioneditor.subscriptionAuthIsTheSameMechanismVisualStudioCode": "Subscription auth is the same mechanism Visual Studio Code and other Anthropic-endorsed IDE integrations use. Embeddings are not available on this provider; configure a separate connection for embedding work.",
-  "ui.connections.connectioneditor.subscriptionExtendedCacheDescription": "Request a 1-hour cache for longer pauses between messages. Off uses Claude's account default, which may already be 1 hour. Longer cache writes cost more on API or credit billing. Requires Claude Code 2.1.242 or later.",
+  "ui.connections.connectioneditor.subscriptionExtendedCacheDescription": "On requests a 1-hour cache, which survives longer pauses between messages. Off requests the standard 5-minute cache. 1-hour cache writes cost more than 5-minute writes. Requires Claude Code 2.1.242 or later.",
   "ui.connections.connectioneditor.subscriptionInsteadOfAnApiKeyPrerequisitesOnThe": "subscription instead of an API key. Prerequisites on the Marinara host:",
   "ui.connections.connectioneditor.subscriptionNotActive": "Subscription is not active (status: {{state}}).",
   "ui.connections.connectioneditor.subscriptionUsage": "{{provider}} subscription usage",
