@@ -7210,6 +7210,7 @@ export async function gameRoutes(app: FastifyInstance, options: GameRouteOptions
       gameId,
       gameSessionNumber: 1,
       gameSessionStatus: "setup",
+      gameLoreInTail: true,
       ...(setupConfig.autoTranslate !== undefined ? { autoTranslate: setupConfig.autoTranslate } : {}),
       ...(setupConfig.translationOutputTargetLang
         ? { translationOutputTargetLang: setupConfig.translationOutputTargetLang }
@@ -8174,6 +8175,7 @@ export async function gameRoutes(app: FastifyInstance, options: GameRouteOptions
         gameId,
         gameSessionNumber: sessionNumber,
         gameSessionStatus: "ready",
+        gameLoreInTail: prevMeta.gameLoreInTail !== false,
         gameCurrentSessionStartedAt: new Date().toISOString(),
         gameActiveState: "exploration",
         gamePartyChatId: null,

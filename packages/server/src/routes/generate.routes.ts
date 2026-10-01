@@ -695,6 +695,8 @@ import {
   computeSummaryMessageRange,
   selectRollingSummaryMessages,
   injectIntoOutputFormatOrLastUser,
+  placeGameWorldInfo,
+  selectGameWindow,
   getMessageConversationStartCharacterIds,
   getMessageHiddenFromAICharacterIds,
   isMessageHiddenFromAI,
@@ -2546,7 +2548,23 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
         contextMessageLimit > 0 &&
         chatMessages.length > contextMessageLimit
       ) {
-        chatMessages = applyContextMessageLimitWithPins(chatMessages, contextMessageLimit);
+        if (chatMeta.gameLoreInTail !== false) {
+          // Game prompt caching: hold the window head steady until the cache has lapsed anyway.
+          const lastReply = [...chatMessages].reverse().find((m) => m.role === "assistant");
+          const ttlMs = (conn.anthropicExtendedCacheTtl === "true" ? 60 : 5) * 60_000;
+          const windowed = selectGameWindow(chatMessages, {
+            limit: contextMessageLimit,
+            slack: typeof chatMeta.gameWindowSlack === "number" ? chatMeta.gameWindowSlack : 30,
+            headId: typeof chatMeta.gameWindowHeadId === "string" ? chatMeta.gameWindowHeadId : null,
+            cacheCold: !lastReply?.createdAt || Date.now() - new Date(lastReply.createdAt).getTime() > ttlMs,
+          });
+          chatMessages = windowed.messages;
+          if (windowed.headId && windowed.headId !== chatMeta.gameWindowHeadId) {
+            await chats.patchMetadata(input.chatId, { gameWindowHeadId: windowed.headId });
+          }
+        } else {
+          chatMessages = applyContextMessageLimitWithPins(chatMessages, contextMessageLimit);
+        }
       }
       const pastReasoning = collectPastReasoningMetadata(
         chatMessages,
@@ -5635,7 +5653,6 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
               resolvePromptMacros,
             });
           canonicalGamePartyNames = gmCtx.partyNames;
-
           // ── Lorebook injection for game mode ──
           if (!presetHandledLorebooks) {
             sendProgress("lorebooks");
@@ -5693,18 +5710,9 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
               : "";
             const loreAfter = lorebookResult.worldInfoAfter ? `<lore>\n${lorebookResult.worldInfoAfter}\n</lore>` : "";
             gameLoreAfterBlock = loreAfter;
-            if (loreBefore || loreAfter) {
-              // Keep world-info positions on either side of the GM's character and game context.
-              const sysMsg = finalMessages.find((m) => m.role === "system");
-              if (sysMsg) {
-                sysMsg.content = [loreBefore, sysMsg.content, loreAfter].filter(Boolean).join("\n\n");
-              } else {
-                finalMessages.unshift({
-                  role: "system" as const,
-                  content: [loreBefore, loreAfter].filter(Boolean).join("\n\n"),
-                });
-              }
-            }
+            // Default keeps world-info positions on either side of the GM's character and game context;
+            // `gameLoreInTail` (chat metadata) moves them onto the final user message for prompt caching.
+            placeGameWorldInfo(finalMessages, loreBefore, loreAfter, chatMeta.gameLoreInTail !== false);
             if (lorebookResult.depthEntries.length > 0) {
               finalMessages = injectAtDepth(finalMessages, lorebookResult.depthEntries);
             }
