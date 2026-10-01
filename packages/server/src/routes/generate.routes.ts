@@ -428,6 +428,12 @@ import { createPromptsStorage } from "../services/storage/prompts.storage.js";
 import { createCharactersStorage } from "../services/storage/characters.storage.js";
 import { resolveChatUserIdentity } from "../services/chat-user-identity.js";
 import { withAvatarFileLifecycleLock } from "../services/image/avatar-file-lifecycle.js";
+import {
+  applyImageAgentContextExtensions,
+  bindIllustratorReferenceTokens,
+  filterToPresentCharacters,
+  readAgentComfyVariables,
+} from "../services/image/image-agent-comfy-extensions.js";
 import { createAgentsStorage } from "../services/storage/agents.storage.js";
 import {
   createGameStateStorage,
@@ -548,6 +554,10 @@ import {
   resolveNovelAiCharacterPromptLimit,
   supportsNovelAiCharacterPrompts,
 } from "../services/image/character-prompts.js";
+import {
+  comfyLayoutLookSourcesFromContext,
+  finishComfyLayoutBoxes,
+} from "../services/image/comfyui-layout-placeholders.js";
 import { resolveCustomAgentStyleProfileId } from "../services/generation/custom-agent-image-settings.js";
 import { buildSpotifyDjConstraints } from "../services/spotify/spotify-dj-constraints.js";
 import {
@@ -601,6 +611,7 @@ import {
   illustratorTrackerLocationChanged,
   resolveIllustratorImageConnectionId,
   resolveIllustratorCharacterPromptInstruction,
+  resolveComfyLayoutCharacterPromptLimit,
   resolveIllustratorPromptStyle,
 } from "../services/generation/illustrator-background-generation.js";
 import {
@@ -5175,6 +5186,40 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
         }
 
         const charInfo = await loadCharacterPromptInfo({ chars, characterIds, chatMode, chatId: input.chatId });
+        const npcRegistryNpcs: Array<{
+          id: string;
+          name: string;
+          avatarPath: string | null;
+          appearance: string | null;
+          appearanceOverride: null;
+        }> = [];
+        try {
+          const registryService = getCapabilityService<{
+            current: (
+              chatId: string,
+            ) => Promise<{ npcs: Map<string, { id: string; name: string; avatar?: string; aliases?: string[] }> }>;
+          }>("npc-registry");
+          if (registryService && input.chatId) {
+            const resolved = await registryService.current(input.chatId);
+            if (resolved?.npcs) {
+              for (const entry of resolved.npcs.values()) {
+                if (
+                  entry.name &&
+                  entry.avatar &&
+                  !charInfo.some((c) => c.name.toLowerCase() === entry.name.toLowerCase())
+                ) {
+                  npcRegistryNpcs.push({
+                    id: `npc-registry:${entry.id}`,
+                    name: entry.name,
+                    avatarPath: entry.avatar,
+                    appearance: null,
+                    appearanceOverride: null,
+                  });
+                }
+              }
+            }
+          }
+        } catch {}
         // Who Illustrator can show: the chat's characters (and a character used as the user's identity)
         // and the user's persona, with their appearance and avatars. Pictures and clips match names against it.
         const illustratorCast = () => ({
@@ -5200,6 +5245,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                   },
                 ]
               : []),
+            ...npcRegistryNpcs,
           ],
           persona:
             identity?.source === "persona" && persona
@@ -7770,6 +7816,11 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
           eligiblePipelineAgents.push(agent);
         }
         pipelineAgents = eligiblePipelineAgents;
+        // custom-mods: a group's shared context is resolved from its first agent, so an image agent
+        // that trims character cards (presentCharactersOnly) must not share a group with trackers.
+        for (const agent of pipelineAgents) {
+          if (agent.settings.presentCharactersOnly === true) agent.batchContextKey = `image-agent:${agent.id}`;
+        }
         if (chatMode === "roleplay") {
           for (const agent of pipelineAgents) {
             if (!trackerAgentTypes.has(agent.type)) continue;
@@ -7871,7 +7922,11 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
             const writerReferences = await writerReferencePicturesFor(agent, memory, imageConnection);
             if (writerReferences) memory[WRITER_REFERENCE_MEMORY_KEY] = writerReferences;
           }
-          return { ...trackerContext, memory };
+          return applyImageAgentContextExtensions(
+            { ...trackerContext, memory },
+            agent.settings,
+            imageConnection?.comfyuiWorkflow,
+          );
         };
         // Decision statements in agent prompt templates (#6569), planned from the agents
         // that will actually run, with the templates they run with, once activation,
@@ -14027,7 +14082,8 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
 
           // Sort so game_state_update (world-state) is processed before dependent types
           // (character_tracker_update, persona_stats_update) that merge into the snapshot.
-          const RESULT_ORDER: Record<string, number> = { game_state_update: 0 };
+          // custom-mods: present-character gating reads this turn's tracker snapshot from image results.
+          const RESULT_ORDER: Record<string, number> = { game_state_update: 0, character_tracker_update: 0.5 };
           const sortedResults = postResults
             .filter((result) => customAgentCanEmitResult(result, resolvedAgents, builtInAgentTypes))
             .sort((a, b) => (RESULT_ORDER[a.type] ?? 1) - (RESULT_ORDER[b.type] ?? 1));
@@ -15035,12 +15091,17 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                       const imgModel = imgConnFull.model || "";
                       const characterPromptLimit = supportsNovelAiCharacterPrompts(imgConnFull)
                         ? resolveNovelAiCharacterPromptLimit(imgModel)
-                        : 0;
-                      const illustratorCharacterPrompts = readCharacterPrompts(
+                        : resolveComfyLayoutCharacterPromptLimit(imgConnFull, chatMeta);
+                      // custom-mods: on a layout workflow the engine, not the writer, supplies each boxed character's looks.
+                      const comfyLayoutActive =
+                        !supportsNovelAiCharacterPrompts(imgConnFull) && characterPromptLimit > 0;
+                      const writerCharacterPrompts = readCharacterPrompts(
                         illData,
                         illCharacters.filter((name): name is string => typeof name === "string"),
                         characterPromptLimit,
                       );
+                      // custom-mods: layout boxes are composed once the reference slots are known (below).
+                      let illustratorCharacterPrompts = writerCharacterPrompts;
                       if (illustratorCharacterPrompts.length > 0) {
                         logger.debug(
                           "[illustrator] Sending %d native NovelAI character caption(s): %s",
@@ -15134,6 +15195,28 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                           postReplySpatialProjection?.ownerMode === "roleplay" ? postReplySpatialProjection : null,
                       });
                       let illustratorRefImages: string[] | undefined;
+                      // custom-mods (Illustrator 2): opt-in present-character gating and request-ordered refs.
+                      const requestOrderedReferences = imagePromptAgent?.settings?.referenceOrder === "requested";
+                      let requestedReferenceNames = illCharacters.filter(
+                        (name): name is string => typeof name === "string",
+                      );
+                      if (imagePromptAgent?.settings?.presentCharactersOnly === true) {
+                        const turnSnapshot = await gameStateStore
+                          .getByChatAndMessage(input.chatId, messageId, targetSwipeIndex)
+                          .catch(() => null);
+                        const presence = filterToPresentCharacters(
+                          requestedReferenceNames,
+                          turnSnapshot
+                            ? parseGameStateRow(turnSnapshot as Record<string, unknown>).presentCharacters
+                            : null,
+                          identity?.source === "persona" ? personaName : null,
+                          completedResponse,
+                        );
+                        if (presence.dropped.length > 0) {
+                          logger.debug("[illustrator] Dropped absent characters: %s", presence.dropped.join(", "));
+                        }
+                        requestedReferenceNames = presence.kept;
+                      }
                       const referenceResolution = await resolveIllustratorCharacterReferences({
                         charactersStore: chars,
                         chatScope:
@@ -15143,7 +15226,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                         characterGallery,
                         personaGallery,
                         ...illustratorCast(),
-                        requestedNames: illCharacters.filter((name): name is string => typeof name === "string"),
+                        requestedNames: requestedReferenceNames,
                         promptText: [
                           currentUserInputContent() ?? "",
                           imagePrompt,
@@ -15155,8 +15238,10 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                         includeReferenceImages: useAvatarRefs,
                         includePersonaWhenMentionedInPrompt: false,
                         maxReferences: spatialLocationReferenceImage ? 5 : 6,
+                        orderByRequest: requestOrderedReferences,
                       });
-                      if (includeCharacterAppearance) {
+                      // custom-mods: layout boxes already carry each character's looks.
+                      if (includeCharacterAppearance && !comfyLayoutActive) {
                         const appearanceBlock =
                           illustratorCharacterPrompts.length > 0
                             ? buildUncaptionedCharacterAppearanceBlock(
@@ -15196,7 +15281,8 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                         }
                       }
                       if (useAvatarRefs && referenceResolution.referenceImages.length > 0) {
-                        if (referenceResolution.referenceLine && !suppressReferencePromptLine)
+                        // custom-mods: on a layout workflow each box is paired with its own slot instead.
+                        if (referenceResolution.referenceLine && !suppressReferencePromptLine && !comfyLayoutActive)
                           fullPrompt += `\n\n${referenceResolution.referenceLine}`;
                         logger.debug(
                           "[illustrator] Sending %d character reference(s) for: %s",
@@ -15212,13 +15298,15 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                       if (mergedReferenceImages.length > 0) {
                         illustratorRefImages = mergedReferenceImages;
                       }
-                      if (spatialLocationReferenceImage) {
-                        fullPrompt += `\n\n${SPATIAL_LOCATION_REFERENCE_PROMPT_LINE}`;
+                      if (spatialLocationReferenceImage && !comfyLayoutActive) {
+                        // Illustrator 2 names the location slot itself via [[location]].
+                        if (!requestOrderedReferences) fullPrompt += `\n\n${SPATIAL_LOCATION_REFERENCE_PROMPT_LINE}`;
                         logger.debug("[illustrator] Sending the current Maps location reference image first");
                       }
                       // Activated entries' pictures fill what the cap leaves, when the connection takes them (#9698).
                       // "Reference pictures go to" shows, and holds them back, only with avatar references on.
                       const lorebookReferences =
+                        !comfyLayoutActive &&
                         (!avatarReferencesOn || imageModelGetsReferences) &&
                         imageConnectionTakesEntryPictures(imgConnFull)
                           ? await readLorebookReferenceImages(
@@ -15226,14 +15314,47 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                               6 - mergedReferenceImages.length,
                             )
                           : null;
-                      if (lorebookReferences?.referenceLine) {
-                        illustratorRefImages = [...mergedReferenceImages, ...lorebookReferences.images];
-                        if (!suppressReferencePromptLine) fullPrompt += `\n\n${lorebookReferences.referenceLine}`;
-                        logger.debug(
-                          "[illustrator] Sending %d lorebook reference(s) for: %s",
-                          lorebookReferences.images.length,
-                          lorebookReferences.labels.join("; "),
-                        );
+                      if (comfyLayoutActive) {
+                        // custom-mods: box k is paired with reference image k on the workflow side.
+                        const layout = finishComfyLayoutBoxes({
+                          prompt: fullPrompt,
+                          writerCharacterPrompts,
+                          referenceImages: useAvatarRefs ? referenceResolution.referenceImages : [],
+                          referenceNames: useAvatarRefs ? referenceResolution.referenceNames : [],
+                          locationImage: spatialLocationReferenceImage,
+                          source: imgSource,
+                          lookSources: comfyLayoutLookSourcesFromContext(
+                            agentContext,
+                            await gameStateStore
+                              .getByChatAndMessage(input.chatId, messageId, targetSwipeIndex)
+                              .then((row) =>
+                                row ? parseGameStateRow(row as Record<string, unknown>).presentCharacters : null,
+                              )
+                              .catch(() => null),
+                          ),
+                          logPrefix: "[illustrator] layout box",
+                          bindPlainNames: requestOrderedReferences,
+                        });
+                        fullPrompt = layout.prompt;
+                        illustratorCharacterPrompts = layout.characterPrompts;
+                        illustratorRefImages = layout.referenceImages;
+                      } else {
+                        fullPrompt = bindIllustratorReferenceTokens(fullPrompt, {
+                          locationImage: spatialLocationReferenceImage,
+                          referenceImages: useAvatarRefs ? referenceResolution.referenceImages : [],
+                          referenceNames: useAvatarRefs ? referenceResolution.referenceNames : [],
+                          source: imgSource,
+                          bindPlainNames: requestOrderedReferences,
+                        });
+                        if (lorebookReferences?.referenceLine) {
+                          illustratorRefImages = [...mergedReferenceImages, ...lorebookReferences.images];
+                          if (!suppressReferencePromptLine) fullPrompt += `\n\n${lorebookReferences.referenceLine}`;
+                          logger.debug(
+                            "[illustrator] Sending %d lorebook reference(s) for: %s",
+                            lorebookReferences.images.length,
+                            lorebookReferences.labels.join("; "),
+                          );
+                        }
                       }
 
                       const compiledPrompt = compileImagePrompt({
@@ -15325,6 +15446,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                                   height: imgHeight,
                                   imageEndpointId: imgConnFull.imageEndpointId || undefined,
                                   comfyWorkflow: imgConnFull.comfyuiWorkflow || undefined,
+                                  comfyVariables: readAgentComfyVariables(illData.comfyVariables),
                                   imageDefaults,
                                   quality: resolveConnectionImageQuality(imgConnFull),
                                   referenceImages: illustratorRefImages,

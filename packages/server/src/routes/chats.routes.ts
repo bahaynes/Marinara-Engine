@@ -127,6 +127,7 @@ import { createGameWorldSnapshotsStorage } from "../services/storage/game-world-
 import { createMessageTrashStorage, MessageTrashPinnedLimitError } from "../services/storage/message-trash.storage.js";
 import { createAppSettingsStorage } from "../services/storage/app-settings.storage.js";
 import { createChatPresetsStorage } from "../services/storage/chat-presets.storage.js";
+import { getNpcRegistryService } from "../services/image/illustrator-npc-cast.js";
 import { createCharactersStorage } from "../services/storage/characters.storage.js";
 import { resolveChatUserIdentity } from "../services/chat-user-identity.js";
 import { withAvatarFileLifecycleLock } from "../services/image/avatar-file-lifecycle.js";
@@ -3603,6 +3604,138 @@ export async function chatsRoutes(app: FastifyInstance) {
       rulesetClocks: parseStoredRulesetClocks(row.rulesetClocks),
       createdAt: row.createdAt,
     };
+  });
+
+  // Get active NPC registry entries for a chat
+  app.get<{ Params: { id: string } }>("/:id/npc-registry", async (req, reply) => {
+    const chat = await storage.getById(req.params.id);
+    if (!chat) return reply.status(404).send({ error: "Chat not found" });
+
+    const NPC_AVATAR_DIR = join(DATA_DIR, "avatars", "npc");
+    const npcRegistry = getNpcRegistryService();
+
+    if (!npcRegistry) {
+      return reply.send({ active: false, npcs: [] });
+    }
+
+    try {
+      const resolved = await npcRegistry.current(req.params.id);
+      const npcs = [...resolved.npcs.values()].map((entry) => {
+        let avatar = entry.avatar || null;
+        if (!avatar) {
+          const safeName = npcAvatarSlug(entry.name);
+          if (safeName) {
+            const diskPath = join(NPC_AVATAR_DIR, req.params.id, `${safeName}.png`);
+            if (existsSync(diskPath)) {
+              avatar = `/api/avatars/npc/${req.params.id}/${safeName}.png`;
+              if (npcRegistry.setAvatar) {
+                void npcRegistry.setAvatar(req.params.id, entry.id, avatar);
+              }
+            }
+          }
+        }
+        return {
+          id: entry.id,
+          name: entry.name,
+          gender: entry.gender || null,
+          aliases: entry.aliases || [],
+          avatar,
+          looks: entry.looks || null,
+        };
+      });
+      return reply.send({ active: true, npcs });
+    } catch (error) {
+      return reply.send({ active: false, error: String(error), npcs: [] });
+    }
+  });
+
+  // Set an avatar for an NPC registry entry
+  app.post<{ Params: { id: string }; Body: { npcId: string; avatarPath: string } }>(
+    "/:id/npc-registry/avatar",
+    async (req, reply) => {
+      const { npcId, avatarPath } = req.body || {};
+      if (!npcId || !avatarPath) return reply.status(400).send({ error: "Missing npcId or avatarPath" });
+
+      const npcRegistry = getNpcRegistryService();
+
+      if (!npcRegistry?.setAvatar) {
+        return reply.status(400).send({ error: "NPC registry service not available" });
+      }
+
+      const result = await npcRegistry.setAvatar(req.params.id, npcId, avatarPath);
+      return reply.send({ ok: Boolean(result), avatarPath: result });
+    },
+  );
+
+  // Set (or clear, with an empty string) an NPC registry entry's looks: body only, never clothing.
+  app.post<{ Params: { id: string }; Body: { npcId?: string; looks?: string } }>(
+    "/:id/npc-registry/looks",
+    async (req, reply) => {
+      const { npcId, looks } = req.body || {};
+      if (!npcId || typeof looks !== "string") return reply.status(400).send({ error: "Missing npcId or looks" });
+
+      const npcRegistry = getNpcRegistryService();
+      if (!npcRegistry?.setLooks) {
+        return reply.status(400).send({ error: "NPC registry service not available" });
+      }
+
+      const result = await npcRegistry.setLooks(req.params.id, npcId, looks);
+      return reply.send({ ok: result !== null, looks: result });
+    },
+  );
+
+  // Promote an NPC to a full Character Card
+  app.post<{
+    Params: { id: string };
+    Body: { npcId?: string; name?: string; description?: string; avatarPath?: string | null };
+  }>("/:id/npc-registry/promote", async (req, reply) => {
+    const chat = await storage.getById(req.params.id);
+    if (!chat) return reply.status(404).send({ error: "Chat not found" });
+
+    let name = req.body.name?.trim();
+    let description = req.body.description?.trim() || "";
+    let avatarPath = req.body.avatarPath || null;
+    let appearance = "";
+
+    if (req.body.npcId) {
+      const npcRegistry = getNpcRegistryService();
+      if (npcRegistry) {
+        const resolved = await npcRegistry.current(req.params.id).catch(() => null);
+        const entry = resolved?.npcs.get(req.body.npcId);
+        if (entry) {
+          if (!name) name = entry.name;
+          if (!avatarPath && entry.avatar) avatarPath = entry.avatar;
+          appearance = entry.looks ?? "";
+          if (!description) {
+            const details = [];
+            if (entry.gender) details.push(`Pronouns: ${entry.gender}`);
+            if (entry.aliases?.length) details.push(`Aliases: ${entry.aliases.join(", ")}`);
+            description = details.join("\n");
+          }
+        }
+      }
+    }
+
+    if (!name) return reply.status(400).send({ error: "Name is required" });
+
+    const charData = characterDataSchema.parse({
+      name,
+      description,
+      extensions: { appearance },
+    });
+    const charsStore = createCharactersStorage(app.db);
+    const newCard = await charsStore.create(charData, avatarPath ?? undefined);
+
+    if (newCard) {
+      const currentIds = (Array.isArray(chat.characterIds) ? chat.characterIds : []) as string[];
+      if (!currentIds.includes(newCard.id)) {
+        await storage.update(req.params.id, {
+          characterIds: [...currentIds, newCard.id],
+        });
+      }
+    }
+
+    return reply.send({ character: newCard });
   });
 
   // Update game state fields for a chat

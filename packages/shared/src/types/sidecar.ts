@@ -206,6 +206,14 @@ export interface SceneIllustrationCharacterPrompt {
   negativePrompt?: string;
   /** Optional normalized subject center used by providers with spatial character prompting. */
   position?: { x: number; y: number };
+  /** Optional spatial staging preset for regional layout composition (e.g. "center_left", "foreground_right"). */
+  role?: string;
+  /** Optional explicit bounding box [ymin, xmin, ymax, xmax] in 0..1000 normalized coordinates. */
+  bbox?: [number, number, number, number];
+  /** True when the character is in a transformed, shapeshifted, or non-standard form in this scene. */
+  transformed?: boolean;
+  /** How the character holds their body in this scene; sets the height of a layout box. */
+  stance?: "standing" | "seated" | "lying" | "crouched";
 }
 
 /** Rare request for a VN CG-style illustration background. */

@@ -54,6 +54,8 @@ export type IllustratorChatCharacterReference = {
   name: string;
   avatarPath?: string | null;
   appearance?: string | null;
+  /** Pronouns the story uses for them (NPC Registry), e.g. "she". */
+  gender?: string | null;
   /**
    * Image-prompt appearance override (#7053). When set it wins over BOTH the
    * caller `appearance` and the DB row, because the card's explicit override is
@@ -609,6 +611,8 @@ export async function resolveIllustratorCharacterReferences(args: {
   includePersonaWhenMentionedInPrompt?: boolean;
   characterGallery?: CharacterGalleryReferenceStore;
   personaGallery?: PersonaGalleryReferenceStore;
+  /** custom-mods: use only requestedNames, ordered as given (most important first), instead of chat order. */
+  orderByRequest?: boolean;
 }): Promise<IllustratorReferenceResolution> {
   const maxReferences = Math.max(1, Math.min(args.maxReferences ?? MAX_ILLUSTRATOR_REFERENCE_IMAGES, 12));
   const { charactersStore, chatScope } = args;
@@ -656,6 +660,9 @@ export async function resolveIllustratorCharacterReferences(args: {
   const globalSources = chatScope ? [] : sources.filter((source) => !chatIds.has(source.id));
   const normalizedPromptText = normalizeReferenceName(args.promptText);
   const requestedNames = args.requestedNames.map((name) => normalizeReferenceName(name)).filter(Boolean);
+  const personaName = args.persona?.name?.trim() ?? "";
+  const personaAliases = personaName ? buildNameAliases(personaName) : [];
+  const personaPromptAliases = personaName ? buildNameAliases(personaName, { includeStandaloneTokens: false }) : [];
   const selected = new Map<string, CharacterReferenceSource>();
   const selectUniqueMatchPreferringCast = (
     matches: CharacterReferenceSource[],
@@ -664,8 +671,9 @@ export async function resolveIllustratorCharacterReferences(args: {
     const castMatches = matches.filter((source) => chatIds.has(source.id));
     return castMatches.length === 1 ? castMatches[0] : undefined;
   };
+  const requestRank = new Map<string, number>();
 
-  for (const requestedName of requestedNames) {
+  for (const [requestIndex, requestedName] of requestedNames.entries()) {
     const exactChatMatches = chatSources.filter((source) => normalizeReferenceName(source.name) === requestedName);
     const chatMatches =
       exactChatMatches.length > 0
@@ -675,17 +683,24 @@ export async function resolveIllustratorCharacterReferences(args: {
               source.aliases.some((alias) => alias === requestedName || textContainsAlias(requestedName, alias)) ||
               source.aliases.some((alias) => textContainsAlias(alias, requestedName)),
           );
-    // Chat aliases are useful for nicknames; outside the chat, require a unique full name.
+    // Chat aliases are useful for nicknames; outside the chat, require a unique full name. The active
+    // persona outranks a same-named library card, which would otherwise send a second reference.
     const match =
       chatMatches.length > 0
         ? selectUniqueMatchPreferringCast(chatMatches)
-        : selectUniqueMatchPreferringCast(
-            globalSources.filter((source) => normalizeReferenceName(source.name) === requestedName),
-          );
-    if (match) selected.set(match.id, match);
+        : personaAliases.includes(requestedName)
+          ? undefined
+          : selectUniqueMatchPreferringCast(
+              globalSources.filter((source) => normalizeReferenceName(source.name) === requestedName),
+            );
+    if (match) {
+      selected.set(match.id, match);
+      if (!requestRank.has(match.id)) requestRank.set(match.id, requestIndex);
+    }
   }
 
-  for (const source of chatSources) {
+  // orderByRequest agents name every depicted character themselves; skip mention scanning.
+  for (const source of args.orderByRequest ? [] : chatSources) {
     if (selected.has(source.id)) continue;
     if (
       source.promptAliases.some(
@@ -699,9 +714,6 @@ export async function resolveIllustratorCharacterReferences(args: {
     }
   }
 
-  const personaName = args.persona?.name?.trim() ?? "";
-  const personaAliases = personaName ? buildNameAliases(personaName) : [];
-  const personaPromptAliases = personaName ? buildNameAliases(personaName, { includeStandaloneTokens: false }) : [];
   const personaExplicitlyRequested = requestedNames.some((requestedName) =>
     personaAliases.some((alias) => alias === requestedName || textContainsAlias(requestedName, alias)),
   );
@@ -718,7 +730,11 @@ export async function resolveIllustratorCharacterReferences(args: {
     }
   }
 
-  const orderedSelectedSources = [...selected.values()].sort((a, b) => a.sourceOrder - b.sourceOrder);
+  const orderKey = (source: CharacterReferenceSource) =>
+    args.orderByRequest
+      ? (requestRank.get(source.id) ?? Number.MAX_SAFE_INTEGER / 2 + source.sourceOrder)
+      : source.sourceOrder;
+  const orderedSelectedSources = [...selected.values()].sort((a, b) => orderKey(a) - orderKey(b));
   const orderedSources = orderedSelectedSources.slice(0, maxReferences);
   const referenceImages: string[] = [];
   const referenceNames: string[] = [];

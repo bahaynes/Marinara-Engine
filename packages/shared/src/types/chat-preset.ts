@@ -311,6 +311,7 @@ export const CHAT_PROFILE_FOLLOWER_SYNC_KEYS: readonly string[] = [
   "illustratorIncludeCharacterAppearance", // Illustrator: add card appearance
   "illustratorUseAvatarReferences", // Illustrator: send avatars as references
   "illustratorReferencePictureTarget", // Illustrator: avatar references go to the image model, the writer, or both
+  "illustratorPresentCharactersOnly", // Illustrator: only characters in the scene
   "illustratorVideoIncludeCharacterAppearance", // Illustrator: add card appearance to video prompts
   "illustratorVideoUseAvatarReferences", // Illustrator: a Prompt only clip starts from the avatar
   "illustratorAutoBackgroundsEnabled", // Illustrator: make a background when the scene moves

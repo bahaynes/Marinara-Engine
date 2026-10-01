@@ -422,6 +422,8 @@ export interface ChatMetadata {
   agentLorebookAttachments?: Record<string, { enabled: boolean; lorebookId: string | null }>;
   /** Whether Illustrator should append matched character card appearance text to image prompts. */
   illustratorIncludeCharacterAppearance?: boolean;
+  /** custom-mods: keep Illustrator's cards, references and layout boxes to the scene's present characters. */
+  illustratorPresentCharactersOnly?: boolean;
   /** Whether Illustrator should send matching character/persona avatar references to image providers. */
   illustratorUseAvatarReferences?: boolean;
   /** Where image avatar references go: the image model, the prompt writer, both, or automatic. Missing = the agent's. */

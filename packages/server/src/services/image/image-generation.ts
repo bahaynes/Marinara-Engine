@@ -73,11 +73,18 @@ import {
   withConnectionAdmission,
 } from "../generation/connection-admission.js";
 import {
+  buildComfyReferenceSlotReplacements,
   COMFYUI_MAX_REFERENCE_IMAGES,
   comfyWorkflowTakesReference,
   findMissingComfyReferenceSlots,
   numberedComfyReferencePlaceholder,
 } from "./comfyui-reference-placeholders.js";
+import { buildComfyLayoutReplacements, comfyWorkflowTakesLayout } from "./comfyui-layout-placeholders.js";
+import {
+  readWorkflowVariableDeclarations,
+  resolveWorkflowVariableReplacements,
+  stripWorkflowVariableDeclarations,
+} from "./image-agent-comfy-extensions.js";
 import { buildVeniceApiUrl, buildVeniceImageRequest, parseVeniceImageResponse } from "./venice-image.js";
 import { buildZaiImageRequest, buildZaiImageUrl, parseZaiImageUrl } from "./zai-image.js";
 import { buildFalImageUrl } from "./fal-image.js";
@@ -265,6 +272,20 @@ export class ImageAnimationUnsupportedError extends Error {
 // The connection rule lives in shared so client gates ask the same question.
 export { imageConnectionMakesAnimatedGif };
 
+/** Fork: whether an image connection, given as generateImage receives it, fills a ComfyUI layout workflow's boxes. */
+export function imageConnectionTakesComfyLayout(connection: {
+  source: string;
+  baseUrl: string;
+  serviceHint: string;
+  model?: string;
+  comfyWorkflow?: string | null;
+}): boolean {
+  return (
+    resolveImageBackend(connection.source, connection.baseUrl, connection.serviceHint, connection.model) ===
+      "comfyui" && comfyWorkflowTakesLayout(connection.comfyWorkflow)
+  );
+}
+
 /** Default 30-minute timeout for image generation API calls (overridable via env). */
 const IMAGE_GEN_TIMEOUT = Number(process.env.IMAGE_GEN_TIMEOUT_MS ?? 1_800_000);
 const COMFYUI_GEN_TIMEOUT_SECONDS = Number(process.env.COMFYUI_GEN_TIMEOUT ?? 2400);
@@ -346,7 +367,8 @@ export async function generateImage(
   // the prompt writer put there, including when a NovelAI request falls back.
   const flattenedPrompt =
     request.characterPrompts?.length &&
-    !(resolvedSource === "novelai" && supportsNovelAiCharacterPrompts({ baseUrl, model: request.model }))
+    !(resolvedSource === "novelai" && supportsNovelAiCharacterPrompts({ baseUrl, model: request.model })) &&
+    !(resolvedSource === "comfyui" && comfyWorkflowTakesLayout(request.comfyWorkflow))
       ? [request.prompt, ...request.characterPrompts.map((entry) => `${entry.name}: ${entry.prompt}`)].join("\n\n")
       : undefined;
   const generationTimeoutMs =
@@ -4586,7 +4608,10 @@ function buildDefaultComfyUiWorkflow(defaults: ComfyUiDefaults): Record<string, 
   return workflow;
 }
 
-function replaceComfyUiPlaceholders(value: unknown, replacements: Record<string, string | number>): unknown {
+export function replaceComfyUiPlaceholders(
+  value: unknown,
+  replacements: Record<string, string | number | boolean>,
+): unknown {
   if (typeof value === "string") {
     const exactReplacement = replacements[value];
     if (exactReplacement !== undefined) return exactReplacement;
@@ -4676,7 +4701,7 @@ async function generateComfyUI(baseUrl: string, request: ImageGenRequest, apiKey
     workflow = buildDefaultComfyUiWorkflow(defaults);
   }
 
-  const replacements: Record<string, string | number> = {
+  const replacements: Record<string, string | number | boolean> = {
     "%prompt%": prompt,
     "%negative_prompt%": negativePrompt,
     "%width%": request.width ?? 512,
@@ -4696,8 +4721,19 @@ async function generateComfyUI(baseUrl: string, request: ImageGenRequest, apiKey
   if (request.model) {
     replacements["%model%"] = request.model;
   }
+  const variableDeclarations = readWorkflowVariableDeclarations(workflow);
+  workflow = stripWorkflowVariableDeclarations(workflow);
+  Object.assign(replacements, resolveWorkflowVariableReplacements(variableDeclarations, request.comfyVariables));
   const workflowJson = JSON.stringify(workflow);
+  if (comfyWorkflowTakesLayout(workflowJson)) {
+    Object.assign(replacements, buildComfyLayoutReplacements(request.characterPrompts));
+  }
   const references = collectComfyReferenceImages(request, defaults);
+  // Real references always come first; the placeholder only stands in when none exist.
+  const realReferenceCount = references.filter(
+    (reference) => reference !== COMFYUI_PLACEHOLDER_REFERENCE_BASE64,
+  ).length;
+  Object.assign(replacements, buildComfyReferenceSlotReplacements(realReferenceCount));
   let placeholderUploadedName: string | undefined;
   for (let i = 0; i < references.length; i++) {
     const reference = references[i]!;

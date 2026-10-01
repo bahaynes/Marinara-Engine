@@ -111,6 +111,9 @@ const GameCheckpointsModal = lazy(() =>
 const ActivityOverviewModal = lazy(() =>
   import("../modals/ActivityOverviewModal").then((module) => ({ default: module.ActivityOverviewModal })),
 );
+const NpcRegistryModal = lazy(() =>
+  import("../modals/NpcRegistryModal").then((module) => ({ default: module.NpcRegistryModal })),
+);
 
 export function ModalRenderer() {
   const modal = useUIStore((s) => s.modal);
@@ -336,6 +339,9 @@ export function ModalRenderer() {
       break;
     case "activity-overview":
       content = <ActivityOverviewModal open onClose={closeModal} />;
+      break;
+    case "npc-registry":
+      content = <NpcRegistryModal open onClose={closeModal} chatId={(modal?.props?.chatId as string) ?? ""} />;
       break;
     default:
       content = null;
