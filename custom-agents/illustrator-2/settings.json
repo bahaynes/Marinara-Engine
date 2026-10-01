@@ -1,0 +1,21 @@
+{
+  "author": "custom-mods",
+  "resultType": "image_prompt",
+  "maxTokens": 1024,
+  "runInterval": 3,
+  "useAvatarReferences": true,
+  "includeCharacterAppearance": false,
+  "referenceOrder": "requested",
+  "presentCharactersOnly": true,
+  "contextSources": {
+    "chatHistory": true,
+    "characters": true,
+    "persona": true,
+    "activatedLorebookEntries": false,
+    "chatSummary": false,
+    "authorNotes": false,
+    "trackerData": true,
+    "recalledMemories": false,
+    "previousOutput": false
+  }
+}
