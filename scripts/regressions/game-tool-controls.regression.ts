@@ -459,7 +459,7 @@ try {
       planStateChange = false;
       await chats.patchMetadata(chat.id, { enableTools: false });
     }
-    if (provider !== "google") {
+    if (provider === "grok_subscription") {
       expectPlan = false;
       order.length = 0;
       await chats.patchMetadata(chat.id, { gameGmToolConnectionId: null, enableTools: true });
@@ -661,15 +661,21 @@ try {
   assert.equal(recoveredReply.role, "assistant");
   assert.equal(recoveredReply.content, "Fog creeps over the quay as the lock clicks open.");
 
+  // Use a normal text-only connection; the package table is the only boundary stub.
+  const textOnlyNarrator = await connections.create({
+    name: "Text-only narrator",
+    provider: "grok_subscription",
+    model: "narrator",
+    apiKey: "synthetic",
+    maxContext: 32768,
+  });
   const refusalChat = (await chats.create({
     name: "Refused commands",
     mode: "game",
     characterIds: [],
-    connectionId: dedicatedNarrator.id,
+    connectionId: textOnlyNarrator.id,
     promptPresetId: null,
   }))!;
-  // Use a normal text-only connection; the package table is the only boundary stub.
-  await connections.update(dedicatedNarrator.id, { treatAsLocalEndpoint: false });
   await chats.patchMetadata(refusalChat.id, {
     gameOneRequestDice: false,
     enableAgents: false,

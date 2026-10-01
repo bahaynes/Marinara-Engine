@@ -66,6 +66,16 @@ export function formatGenerationParameterError(message: string): string {
     return `The model refused a tool call that was sent back without its thought signature. This is not a setting: try again, and if it keeps happening, report it with the connection's provider and model. Provider message: ${message}`;
   }
 
+  // Claude's safety classifier names its category in "Details: `[...]`", but its own advice is to rephrase,
+  // which sends players rewording messages when the trigger is usually the preset sent with every turn.
+  if (/\bsafeguards flagged this message\b/i.test(message)) {
+    const category = message.match(/Details:\s*`?\[([A-Za-z0-9_-]+)\]/)?.[1];
+    if (category === "reasoning_extraction") {
+      return "Claude's safety filter blocked this reply because the prompt asks it to write out its reasoning (reasoning_extraction). This usually comes from a preset Chain-of-Thought section that has the model reason inside think tags. Rewording your message will not help: turn that section off while using Claude, or switch to another model.";
+    }
+    return `Claude's safety filter blocked this reply${category ? ` (${category})` : ""}. Try again, check the preset and recent messages for what it may be reacting to, or switch to another model. Provider message: ${message}`;
+  }
+
   const unsupported = extractParameter(message, [
     /\bunsupported parameters?\b[:\s]+([A-Za-z0-9_.-]+)/i,
     /\bunknown parameters?\b[:\s]+([A-Za-z0-9_.-]+)/i,

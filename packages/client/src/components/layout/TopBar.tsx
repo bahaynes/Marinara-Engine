@@ -46,6 +46,7 @@ import { requestProfessorMariOpen } from "../../lib/professor-mari-open";
 import { OmnibarPullDrop } from "./OmnibarPullDrop";
 import { MariTopbarStatus } from "./MariTopbarStatus";
 import { CombatTopbarControls } from "./CombatTopbarControls";
+import { QuotaLowWarning } from "../connections/QuotaLowWarning";
 import { useLocalizedUiText } from "../../localization/use-localized-ui-text";
 import {
   activatePersonalExtensionContribution,
@@ -517,6 +518,7 @@ export function TopBar({ mobileTopbarNavigation }: { mobileTopbarNavigation: boo
         ) : null}
         <MariTopbarStatus state={mariEdgeGlow} />
         <CombatTopbarControls />
+        {activeChatId ? <QuotaLowWarning chatId={activeChatId} /> : null}
       </div>
 
       {/* Panel side: Chats and the panel toggles, on the sidebar's side */}

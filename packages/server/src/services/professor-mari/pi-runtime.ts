@@ -401,7 +401,10 @@ export async function runPiLoop(input: PiRunInput & { commands: WorkspaceCommand
   const reviewState = newRoundReviewState();
   // Decided once per connection: only these connections ever parse text as tool calls.
   const textualTools =
-    isLocalSidecarConnection(input.connection) || !supportsNativeToolCalls(input.connection.provider);
+    isLocalSidecarConnection(input.connection) ||
+    !supportsNativeToolCalls(input.connection.provider) ||
+    // custom-mods: native subscription tools are wired for chats only; Mari keeps textual tools.
+    input.connection.provider === "claude_subscription";
   // The system messages before the history are pi's system prompt, the same on every turn. The others change every
   // turn (workspace context with the time, continuity, @ links), so they go into the history where the prompt put
   // them, that many conversation messages before the end (the user's context depth): the system prompt and the
