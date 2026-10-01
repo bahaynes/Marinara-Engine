@@ -1903,6 +1903,8 @@ export function ChatSettingsDrawer({
               storedValue={(metadata.gameSystemPrompt as string) ?? ""}
               specialInstructionsValue={gameSpecialInstructionsDraft}
               sessionHistoryMode={(metadata.gameSessionHistoryMode as string) ?? "tiered"}
+              cacheFriendlyPrompt={metadata.gameLoreInTail !== false}
+              windowSlack={typeof metadata.gameWindowSlack === "number" ? metadata.gameWindowSlack : null}
               promptPresetId={effectiveModePromptPresetId}
               promptPresets={promptPresetOptions}
               selectedPresetPrompt={selectedModePromptPreset?.gamePrompt ?? ""}
@@ -1916,6 +1918,8 @@ export function ChatSettingsDrawer({
               onSessionHistoryModeChange={(gameSessionHistoryMode) =>
                 updateMeta.mutate({ id: chat.id, gameSessionHistoryMode })
               }
+              onCacheFriendlyPromptChange={(gameLoreInTail) => updateMeta.mutate({ id: chat.id, gameLoreInTail })}
+              onWindowSlackChange={(gameWindowSlack) => updateMeta.mutate({ id: chat.id, gameWindowSlack })}
               onPromptPresetChange={handleModePromptPresetChange}
               onGmPromptTemplateChange={updateGameGmPromptTemplateSelection}
               rating={gameSetupConfig.rating === "nsfw" ? "nsfw" : "sfw"}
