@@ -1632,6 +1632,36 @@ export function injectIntoOutputFormatOrLastUser(
 }
 
 /**
+ * Place game-mode world-info blocks. By default "before" entries lead the GM system message and
+ * "after" entries trail it. With `inTail`, both go on the final user message instead: keyword-driven
+ * lore changes between turns, and inside the system message that rewrites the whole cached system
+ * prompt (and the history after it) every turn. Falls back to the default when the prompt does not
+ * end on a user message (continue, impersonate).
+ */
+export function placeGameWorldInfo(
+  messages: SimpleMessage[],
+  loreBefore: string,
+  loreAfter: string,
+  inTail = false,
+): void {
+  if (!loreBefore && !loreAfter) return;
+  if (inTail) {
+    const lastIdx = messages.length - 1;
+    const last = messages[lastIdx];
+    if (last && last.role === "user") {
+      messages[lastIdx] = { ...last, content: [last.content, loreBefore, loreAfter].filter(Boolean).join("\n\n") };
+      return;
+    }
+  }
+  const sysMsg = messages.find((m) => m.role === "system");
+  if (sysMsg) {
+    sysMsg.content = [loreBefore, sysMsg.content, loreAfter].filter(Boolean).join("\n\n");
+  } else {
+    messages.unshift({ role: "system", content: [loreBefore, loreAfter].filter(Boolean).join("\n\n") });
+  }
+}
+
+/**
  * Remove speaker wrappers from older group-chat history while preserving the
  * latest assistant turn as a concrete formatting example for the model.
  */
@@ -2112,4 +2142,23 @@ export function parseGameStateRow(row: Record<string, unknown>): GameState {
     rulesetClocks: parseStoredRulesetClocks(row.rulesetClocks),
     createdAt: row.createdAt as string,
   };
+}
+
+/**
+ * Window the game history for prompt caching. A plain `slice(-limit)` moves the first message every turn
+ * once the chat is at the cap, which misses the whole cached history. This keeps the previous head while
+ * the cache is warm and the window is within `limit + slack`, and re-cuts at `-limit` once the cache has
+ * lapsed (a miss anyway) or the window outgrows the slack.
+ */
+export function selectGameWindow<T extends { id: string }>(
+  messages: T[],
+  opts: { limit: number; slack: number; headId?: string | null; cacheCold: boolean },
+): { messages: T[]; headId: string | null } {
+  if (messages.length <= opts.limit) return { messages, headId: messages[0]?.id ?? null };
+  const kept = opts.headId ? messages.findIndex((m) => m.id === opts.headId) : -1;
+  const start =
+    kept >= 0 && !opts.cacheCold && messages.length - kept <= opts.limit + opts.slack
+      ? kept
+      : messages.length - opts.limit;
+  return { messages: messages.slice(start), headId: messages[start]!.id };
 }
