@@ -96,7 +96,47 @@ Verify that TypeScript compilation, linting, and tests pass cleanly.
 
 ---
 
-## 5. Related Resources
+## 5. Illustrator 2 (custom image agent)
+
+`custom-agents/illustrator-2/` is a custom agent for local multi-reference edit models (FLUX.2 [klein], Qwen-Image-Edit) on ComfyUI. It reuses the stock `image_prompt` pipeline (gallery, swipes, camera button, retry) and relies on the engine hooks in `packages/server/src/services/image/image-agent-comfy-extensions.ts`.
+
+**Install**
+1. Settings → Advanced → Danger Zone → **Allow custom Agent imports**.
+2. Agents → **Import agent folder** → pick `custom-agents/illustrator-2`. Review the permission request (Image generation).
+3. Open the imported agent and set its image connection (connection IDs are stripped on import), then add it to a chat. It needs a text model for the prompt writer; a cheap one is fine.
+4. Enable **Character Tracker** in the same chat for present-character gating (optional — without tracker data nothing is filtered).
+
+Give Illustrator 2 chats one short image **style profile** (5-8 tags). The template writes no style words, so the profile is the only source of style and it appears once. Also keep the image connection's `imagePromptInstructions` short and consistent with the template (e.g. "One frozen moment, 30-70 words, at most two people, placed left/right."); instructions like "fully describing the desired outcome" push the prompt writer back to long, crowded prompts. The editor keeps the agent's `presentCharactersOnly` / `referenceOrder` options on save even though it has no fields for them.
+
+Import gives the agent a `custom-import-illustrator-2-<uuid>` type, so per-chat `customAgentImageSettings` overrides are keyed by that type, not `illustrator-2`.
+
+**Agent settings it uses (all opt-in, inert for the stock Illustrator)**
+- `presentCharactersOnly`: trims character cards to the tracker's `presentCharacters` (plus anyone named in the reply) and drops absent names from references using this turn's tracker snapshot. The agent also gets its own batch so the trim never reaches other agents.
+- `referenceOrder: "requested"`: references follow the agent's `characters` order, and only the image prompt (not the whole reply) is scanned for extra names.
+
+**Prompt tokens.** The agent writes `[[Name]]`; after references are resolved it becomes `image N` in actual slot order (Maps location first, avatar-less characters skipped, duplicates collapsed, 4 slots on ComfyUI, 6 elsewhere). `[[location]]` maps to the location slot. Names without a slot stay plain names. Plain mentions of a slotted character (full name or any name word of 3+ letters, possessives included, e.g. "Hera's" for `Hera-Zaire`) are rewritten to `image N` too, because the prompt writer does not always keep to tokens; a name word shared by two slotted characters stays as written. The stock Illustrator keeps plain names.
+
+**Workflow placeholders (local ComfyUI only; not RunPod or SwarmUI)**
+- `%reference_count%` (number) and `%reference_enabled_01%`..`%reference_enabled_04%` (JSON booleans, true only for real references). For the DaSiWa reference stack set `"enabled": "%reference_enabled_02%"` etc. on each `DaSiWa_OptionalLoadImage`, keeping `%reference_image_name_0N%` (with the placeholder-upload option on) as the image.
+- Agent-chosen variables: add a top-level `marinara_variables` object to the workflow JSON. Marinara strips it before queueing, shows it to image agents, validates their `comfyVariables` answer and always fills a value (the default when absent or invalid). Read the values as `%var_<name>%`:
+
+```json
+{
+  "marinara_variables": {
+    "shot": { "type": "enum", "values": ["close-up", "medium shot", "wide shot"], "default": "medium shot", "description": "camera framing" },
+    "detail_lora": { "type": "number", "min": 0, "max": 1, "default": 0.6, "description": "strength of the detail LoRA" }
+  },
+  "151": { "class_type": "PrimitiveStringMultiline", "inputs": { "value": "%prompt% %var_shot%. <lora:detail:%var_detail_lora%>" } }
+}
+```
+
+Types: `string` (≤200 chars), `number` (clamped to `min`/`max`), `boolean`, `enum` (`values` required). Names are `[a-z0-9_]`, up to 16 variables.
+
+**Why the template is this strict.** Measured on 86 stock-Illustrator prompts sent to FLUX.2 klein (2026-09-24..10-02, Gemma4 prompt writer): median 181 words; style text repeated in 75 (the engine asks for style in both the `style` field and the prompt, then prepends `style`); 3+ body traits in 71 despite avatar references; 3+ placed subjects in 42; mood/scent lines in 39; motion verbs (flickering, trembling) in 32; unnamed extras in 19; sequence words in 19. Each clause is drawn at the same instant, which shows up as fused objects and extra hands. Re-measure with `python3 scripts/fork/illustrator-prompt-metrics.py --since <iso> --model klein` (read-only, uses `mari` in the container).
+
+---
+
+## 6. Related Resources
 
 - **Agent Skill**: [`.agents/skills/custom-mods/SKILL.md`](.agents/skills/custom-mods/SKILL.md)
 - **Repo Agent Rules**: [`AGENTS.md`](AGENTS.md)

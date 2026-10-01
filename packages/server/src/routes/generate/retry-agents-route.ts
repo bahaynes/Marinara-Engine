@@ -3947,6 +3947,7 @@ async function applyRetryResultEffects(args: {
               referenceImages: useAvatarRefs ? referenceResolution.referenceImages : [],
               referenceNames: useAvatarRefs ? referenceResolution.referenceNames : [],
               source: imgSource,
+              bindPlainNames: requestOrderedReferences,
             });
 
             const compiledPrompt = compileImagePrompt({
