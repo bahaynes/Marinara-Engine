@@ -96,7 +96,47 @@ Verify that TypeScript compilation, linting, and tests pass cleanly.
 
 ---
 
-## 5. Related Resources
+## 5. Illustrator 2 (custom image agent)
+
+`custom-agents/illustrator-2/` is a custom agent for local multi-reference edit models (FLUX.2 [klein], Qwen-Image-Edit) on ComfyUI. It reuses the stock `image_prompt` pipeline (gallery, swipes, camera button, retry) and relies on the engine hooks in `packages/server/src/services/image/image-agent-comfy-extensions.ts`.
+
+**Install**
+1. Settings → Advanced → Danger Zone → **Allow custom Agent imports**.
+2. Agents → **Import agent folder** → pick `custom-agents/illustrator-2`. Review the permission request (Image generation).
+3. Open the imported agent and set its image connection (connection IDs are stripped on import), then add it to a chat. It needs a text model for the prompt writer; a cheap one is fine.
+4. Enable **Character Tracker** in the same chat for present-character gating (optional — without tracker data nothing is filtered).
+
+Leave the chat's image **style profile** unset for chats using Illustrator 2: a profile adds style text after the prompt, which works against the short single-style prompt. The editor keeps the agent's `presentCharactersOnly` / `referenceOrder` options on save even though it has no fields for them.
+
+Import gives the agent a `custom-import-illustrator-2-<uuid>` type, so per-chat `customAgentImageSettings` overrides are keyed by that type, not `illustrator-2`.
+
+**Agent settings it uses (all opt-in, inert for the stock Illustrator)**
+- `presentCharactersOnly`: trims character cards to the tracker's `presentCharacters` (plus anyone named in the reply) and drops absent names from references using this turn's tracker snapshot. The agent also gets its own batch so the trim never reaches other agents.
+- `referenceOrder: "requested"`: references follow the agent's `characters` order, and only the image prompt (not the whole reply) is scanned for extra names.
+
+**Prompt tokens.** The agent writes `[[Name]]`; after references are resolved it becomes `image N` in actual slot order (Maps location first, avatar-less characters skipped, duplicates collapsed, 4 slots on ComfyUI, 6 elsewhere). `[[location]]` maps to the location slot. Names without a slot stay plain names.
+
+**Workflow placeholders (local ComfyUI only; not RunPod or SwarmUI)**
+- `%reference_count%` (number) and `%reference_enabled_01%`..`%reference_enabled_04%` (JSON booleans, true only for real references). For the DaSiWa reference stack set `"enabled": "%reference_enabled_02%"` etc. on each `DaSiWa_OptionalLoadImage`, keeping `%reference_image_name_0N%` (with the placeholder-upload option on) as the image.
+- Agent-chosen variables: add a top-level `marinara_variables` object to the workflow JSON. Marinara strips it before queueing, shows it to image agents, validates their `comfyVariables` answer and always fills a value (the default when absent or invalid). Read the values as `%var_<name>%`:
+
+```json
+{
+  "marinara_variables": {
+    "shot": { "type": "enum", "values": ["close-up", "medium shot", "wide shot"], "default": "medium shot", "description": "camera framing" },
+    "detail_lora": { "type": "number", "min": 0, "max": 1, "default": 0.6, "description": "strength of the detail LoRA" }
+  },
+  "151": { "class_type": "PrimitiveStringMultiline", "inputs": { "value": "%prompt% %var_shot%. <lora:detail:%var_detail_lora%>" } }
+}
+```
+
+Types: `string` (≤200 chars), `number` (clamped to `min`/`max`), `boolean`, `enum` (`values` required). Names are `[a-z0-9_]`, up to 16 variables.
+
+**If images stay blurry**, test the workflow before blaming the prompt: queue a fixed prompt in ComfyUI with the full FLUX.2 VAE decoder instead of `full_encoder_small_decoder`, and compare Q5 GGUF vs fp8 and `target_megapixels` 0.66 vs 1.0.
+
+---
+
+## 6. Related Resources
 
 - **Agent Skill**: [`.agents/skills/custom-mods/SKILL.md`](.agents/skills/custom-mods/SKILL.md)
 - **Repo Agent Rules**: [`AGENTS.md`](AGENTS.md)

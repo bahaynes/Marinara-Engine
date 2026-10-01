@@ -1,0 +1,16 @@
+{
+  "kind": "marinara.agent",
+  "version": 1,
+  "config": {
+    "type": "illustrator-2",
+    "name": "Illustrator 2",
+    "description": "Illustrator tuned for local multi-reference edit models (FLUX.2 klein, Qwen-Image-Edit) on ComfyUI: one focused moment, short prose prompts, reference images bound by slot, only characters the tracker says are present, and optional workflow variables.",
+    "phase": "post_processing",
+    "enabled": true,
+    "connectionId": null,
+    "imagePath": null,
+    "resultType": "image_prompt",
+    "promptTemplatePath": "prompt.md",
+    "settingsPath": "settings.json"
+  }
+}
