@@ -146,6 +146,12 @@ import {
 } from "../../services/image/image-generation-settings.js";
 import { compileImagePrompt } from "../../services/image/image-prompt-compiler.js";
 import {
+  applyImageAgentContextExtensions,
+  bindIllustratorReferenceTokens,
+  filterToPresentCharacters,
+  readAgentComfyVariables,
+} from "../../services/image/image-agent-comfy-extensions.js";
+import {
   mergeSpatialLocationReferenceImages,
   resolveSpatialLocationReferenceImage,
   SPATIAL_LOCATION_REFERENCE_PROMPT_LINE,
@@ -2662,7 +2668,11 @@ async function resolveRetryImagePromptContext(args: {
   imageConnection ??= await args.conns.getDefaultForImageGeneration().catch(() => null);
   const imagePromptInstructions = normalizeImagePromptInstructions(imageConnection?.imagePromptInstructions);
   if (imagePromptInstructions) memory._imagePromptInstructions = imagePromptInstructions;
-  return { ...args.context, memory };
+  return applyImageAgentContextExtensions(
+    { ...args.context, memory },
+    args.entry.resolved.settings,
+    imageConnection?.comfyuiWorkflow,
+  );
 }
 
 /** What a retried text rewrite does to `currentText`. The rewrite chain and the apply step must agree.
@@ -4045,13 +4055,27 @@ async function applyRetryResultEffects(args: {
                 });
             assertRetryActive();
             let referenceImages: string[] | undefined;
+            // custom-mods (Illustrator 2): opt-in present-character gating and request-ordered refs.
+            const requestOrderedReferences = imagePromptAgent?.resolved.settings?.referenceOrder === "requested";
+            let requestedReferenceNames = illCharacters.filter((name): name is string => typeof name === "string");
+            if (imagePromptAgent?.resolved.settings?.presentCharactersOnly === true) {
+              const presence = filterToPresentCharacters(
+                requestedReferenceNames,
+                agentContext.gameState?.presentCharacters,
+                clipCast.persona?.name ?? null,
+              );
+              if (presence.dropped.length > 0) {
+                logger.debug("[retry-agents] Illustrator dropped absent characters: %s", presence.dropped.join(", "));
+              }
+              requestedReferenceNames = presence.kept;
+            }
             const referenceResolution = await resolveIllustratorCharacterReferences({
               charactersStore: chars,
               characterGallery: createCharacterGalleryStorage(app.db),
               personaGallery: createPersonaGalleryStorage(app.db),
               // The same cast its clips use: the chat's characters, a character used as the user, and the persona.
               ...clipCast,
-              requestedNames: illCharacters.filter((name): name is string => typeof name === "string"),
+              requestedNames: requestedReferenceNames,
               promptText: [
                 [...agentContext.recentMessages].reverse().find((message) => message.role === "user")?.content ?? "",
                 imagePrompt,
@@ -4063,6 +4087,7 @@ async function applyRetryResultEffects(args: {
               includeReferenceImages: useAvatarRefs,
               includePersonaWhenMentionedInPrompt: false,
               maxReferences: spatialLocationReferenceImage ? 5 : 6,
+              orderByRequest: requestOrderedReferences,
             });
             assertRetryActive();
             if (includeCharacterAppearance) {
@@ -4120,9 +4145,16 @@ async function applyRetryResultEffects(args: {
               referenceImages = mergedReferenceImages;
             }
             if (spatialLocationReferenceImage) {
-              fullPrompt += `\n\n${SPATIAL_LOCATION_REFERENCE_PROMPT_LINE}`;
+              // Illustrator 2 names the location slot itself via [[location]].
+              if (!requestOrderedReferences) fullPrompt += `\n\n${SPATIAL_LOCATION_REFERENCE_PROMPT_LINE}`;
               logger.debug("[retry-agents] Illustrator sending the current Maps location reference image first");
             }
+            fullPrompt = bindIllustratorReferenceTokens(fullPrompt, {
+              locationImage: spatialLocationReferenceImage,
+              referenceImages: useAvatarRefs ? referenceResolution.referenceImages : [],
+              referenceNames: useAvatarRefs ? referenceResolution.referenceNames : [],
+              source: imgSource,
+            });
 
             const compiledPrompt = compileImagePrompt({
               kind: "illustration",
@@ -4258,6 +4290,7 @@ async function applyRetryResultEffects(args: {
                   height: imgHeight,
                   imageEndpointId: imgConnFull.imageEndpointId || undefined,
                   comfyWorkflow: (imgConnFull as any).comfyuiWorkflow || undefined,
+                  comfyVariables: readAgentComfyVariables(illData.comfyVariables),
                   imageDefaults,
                   quality: resolveConnectionImageQuality(imgConnFull),
                   referenceImages,
