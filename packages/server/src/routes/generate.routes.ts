@@ -610,6 +610,8 @@ import {
   computeSummaryMessageRange,
   selectRollingSummaryMessages,
   injectIntoOutputFormatOrLastUser,
+  placeGameWorldInfo,
+  selectGameWindow,
   getMessageConversationStartCharacterIds,
   getMessageHiddenFromAICharacterIds,
   isManualTrackerCharacterId,
@@ -2377,7 +2379,23 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
         contextMessageLimit > 0 &&
         chatMessages.length > contextMessageLimit
       ) {
-        chatMessages = applyContextMessageLimitWithPins(chatMessages, contextMessageLimit);
+        if (chatMeta.gameLoreInTail === true) {
+          // Game prompt caching: hold the window head steady until the cache has lapsed anyway.
+          const lastReply = [...chatMessages].reverse().find((m) => m.role === "assistant");
+          const ttlMs = (conn.anthropicExtendedCacheTtl === "true" ? 60 : 5) * 60_000;
+          const windowed = selectGameWindow(chatMessages, {
+            limit: contextMessageLimit,
+            slack: typeof chatMeta.gameWindowSlack === "number" ? chatMeta.gameWindowSlack : 30,
+            headId: typeof chatMeta.gameWindowHeadId === "string" ? chatMeta.gameWindowHeadId : null,
+            cacheCold: !lastReply?.createdAt || Date.now() - new Date(lastReply.createdAt).getTime() > ttlMs,
+          });
+          chatMessages = windowed.messages;
+          if (windowed.headId && windowed.headId !== chatMeta.gameWindowHeadId) {
+            await chats.patchMetadata(input.chatId, { gameWindowHeadId: windowed.headId });
+          }
+        } else {
+          chatMessages = applyContextMessageLimitWithPins(chatMessages, contextMessageLimit);
+        }
       }
       const pastReasoning = collectPastReasoningMetadata(
         chatMessages,
@@ -5286,24 +5304,33 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
             !(typeof chatMeta.gameGmPromptTemplateId === "string" && chatMeta.gameGmPromptTemplateId.trim().length > 0)
               ? { ...chatMeta, gameSystemPrompt: selectedGamePrompt }
               : chatMeta;
-          const { gmCtx, gameActiveState, sessionNumber, gameTurnNumber, gameTime, gameMap, hasSceneModel } =
-            await injectGameGmPromptRuntime({
-              messages: finalMessages,
-              chatId: input.chatId,
-              chat,
-              chatMetadata: gamePromptMetadata,
-              world: await loadGameWorld(app.db, input.chatId, gamePromptMetadata),
-              ruleset: pinnedGameRuleset?.status === "ok" ? pinnedGameRuleset.definition : undefined,
-              characterIds,
-              chars,
-              chats,
-              selectedGameStateSnapshotPromise,
-              mappedMessages,
-              personaName,
-              hasPlayerIdentity: persona != null,
-              resolvePromptMacros,
-            });
+          const {
+            gmCtx,
+            gameActiveState,
+            sessionNumber,
+            gameTurnNumber,
+            gameTime,
+            gameMap,
+            hasSceneModel,
+            volatileTail,
+          } = await injectGameGmPromptRuntime({
+            messages: finalMessages,
+            chatId: input.chatId,
+            chat,
+            chatMetadata: gamePromptMetadata,
+            world: await loadGameWorld(app.db, input.chatId, gamePromptMetadata),
+            ruleset: pinnedGameRuleset?.status === "ok" ? pinnedGameRuleset.definition : undefined,
+            characterIds,
+            chars,
+            chats,
+            selectedGameStateSnapshotPromise,
+            mappedMessages,
+            personaName,
+            hasPlayerIdentity: persona != null,
+            resolvePromptMacros,
+          });
           canonicalGamePartyNames = gmCtx.partyNames;
+          placeGameWorldInfo(finalMessages, volatileTail, "", true);
 
           // ── Lorebook injection for game mode ──
           if (!presetHandledLorebooks) {
@@ -5361,18 +5388,9 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
               : "";
             const loreAfter = lorebookResult.worldInfoAfter ? `<lore>\n${lorebookResult.worldInfoAfter}\n</lore>` : "";
             gameLoreAfterBlock = loreAfter;
-            if (loreBefore || loreAfter) {
-              // Keep world-info positions on either side of the GM's character and game context.
-              const sysMsg = finalMessages.find((m) => m.role === "system");
-              if (sysMsg) {
-                sysMsg.content = [loreBefore, sysMsg.content, loreAfter].filter(Boolean).join("\n\n");
-              } else {
-                finalMessages.unshift({
-                  role: "system" as const,
-                  content: [loreBefore, loreAfter].filter(Boolean).join("\n\n"),
-                });
-              }
-            }
+            // Default keeps world-info positions on either side of the GM's character and game context;
+            // `gameLoreInTail` (chat metadata) moves them onto the final user message for prompt caching.
+            placeGameWorldInfo(finalMessages, loreBefore, loreAfter, chatMeta.gameLoreInTail === true);
             if (lorebookResult.depthEntries.length > 0) {
               finalMessages = injectAtDepth(finalMessages, lorebookResult.depthEntries);
             }
