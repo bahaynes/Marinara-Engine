@@ -37,6 +37,20 @@ assert.doesNotMatch(group.appearanceBlock ?? "", /unrelated|duplicate|ambiguous/
 assert.deepEqual((await resolve([], "An empty landscape.")).characterIds, []);
 assert.deepEqual((await resolve([], "")).characterIds, [], "Backgrounds must not inherit a solo-chat avatar");
 
+// A persona that shares a library card's name is one person: send the persona, not both.
+const personaTwin = await resolveIllustratorCharacterReferences({
+  charactersStore,
+  chatCharacters: cards.filter((card) => card.id === "chat"),
+  persona: { id: "persona", name: "Elena Vale", avatarPath: null, appearance: "persona appearance" },
+  requestedNames: ["Doctor Ash", "Elena Vale"],
+  promptText: "",
+  includeReferenceImages: false,
+});
+assert.deepEqual(personaTwin.characterIds, ["chat"]);
+assert.equal(personaTwin.personaId, "persona");
+assert.deepEqual(personaTwin.appearanceNames, ["Doctor Ash", "Elena Vale"]);
+assert.match(personaTwin.appearanceBlock ?? "", /Elena Vale's Appearance: persona appearance/);
+
 const globalAppearance = await resolve(["Doctor Ash", "Elena Vale"]);
 assert.equal(
   buildUncaptionedCharacterAppearanceBlock(
