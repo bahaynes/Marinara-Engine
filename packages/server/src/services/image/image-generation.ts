@@ -66,6 +66,7 @@ import {
   withConnectionAdmission,
 } from "../generation/connection-admission.js";
 import {
+  buildComfyReferenceSlotReplacements,
   COMFYUI_MAX_REFERENCE_IMAGES,
   comfyWorkflowTakesReference,
   findMissingComfyReferenceSlots,
@@ -3826,7 +3827,10 @@ function buildDefaultComfyUiWorkflow(defaults: ComfyUiDefaults): Record<string, 
   return workflow;
 }
 
-function replaceComfyUiPlaceholders(value: unknown, replacements: Record<string, string | number>): unknown {
+export function replaceComfyUiPlaceholders(
+  value: unknown,
+  replacements: Record<string, string | number | boolean>,
+): unknown {
   if (typeof value === "string") {
     const exactReplacement = replacements[value];
     if (exactReplacement !== undefined) return exactReplacement;
@@ -3916,7 +3920,7 @@ async function generateComfyUI(baseUrl: string, request: ImageGenRequest, apiKey
     workflow = buildDefaultComfyUiWorkflow(defaults);
   }
 
-  const replacements: Record<string, string | number> = {
+  const replacements: Record<string, string | number | boolean> = {
     "%prompt%": prompt,
     "%negative_prompt%": negativePrompt,
     "%width%": request.width ?? 512,
@@ -3938,6 +3942,11 @@ async function generateComfyUI(baseUrl: string, request: ImageGenRequest, apiKey
   }
   const workflowJson = JSON.stringify(workflow);
   const references = collectComfyReferenceImages(request, defaults);
+  // Real references always come first; the placeholder only stands in when none exist.
+  const realReferenceCount = references.filter(
+    (reference) => reference !== COMFYUI_PLACEHOLDER_REFERENCE_BASE64,
+  ).length;
+  Object.assign(replacements, buildComfyReferenceSlotReplacements(realReferenceCount));
   let placeholderUploadedName: string | undefined;
   for (let i = 0; i < references.length; i++) {
     const reference = references[i]!;
