@@ -45,8 +45,8 @@ const {
   summarizeGameDiceTurn,
 } = await import("../../packages/server/src/services/game/one-request-dice.js");
 const { rollDieSecurely } = await import("../../packages/server/src/services/game/dice-rng.js");
-const { ClaudeSubscriptionProvider } =
-  await import("../../packages/server/src/services/llm/providers/claude-subscription.provider.js");
+const { GrokSubscriptionProvider } =
+  await import("../../packages/server/src/services/llm/providers/grok-subscription.provider.js");
 
 // ── The gate, as a predicate ──
 // While the switch is on this reads as if the narration toggle were off, for every
@@ -189,8 +189,8 @@ async function* scriptedChat(messages: ChatMessage[], options: ChatOptions): Asy
   }
   return { promptTokens: 10, completionTokens: 5, totalTokens: 15, finishReason: "stop" };
 }
-const originalClaude = ClaudeSubscriptionProvider.prototype.chat;
-ClaudeSubscriptionProvider.prototype.chat = scriptedChat;
+const originalGrok = GrokSubscriptionProvider.prototype.chat;
+GrokSubscriptionProvider.prototype.chat = scriptedChat;
 const db = await getDB();
 const chats = createChatsStorage(db);
 const app = Fastify();
@@ -199,7 +199,7 @@ await app.register(generateRoutes, { prefix: "/api/generate" });
 try {
   const connection = await createConnectionsStorage(db).create({
     name: "One-request fixture",
-    provider: "claude_subscription",
+    provider: "grok_subscription",
     model: "fixture",
     apiKey: "synthetic-fixture",
     maxContext: 32768,
@@ -263,7 +263,7 @@ try {
     "and it is still stored exactly as the player left it",
   );
 } finally {
-  ClaudeSubscriptionProvider.prototype.chat = originalClaude;
+  GrokSubscriptionProvider.prototype.chat = originalGrok;
   await app.close();
   await closeDB();
   rmSync(dir, { recursive: true, force: true });

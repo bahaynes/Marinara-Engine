@@ -401,7 +401,10 @@ export async function runPiLoop(input: PiRunInput & { commands: WorkspaceCommand
   const reviewState = newRoundReviewState();
   // Decided once per connection: only these connections ever parse text as tool calls.
   const textualTools =
-    isLocalSidecarConnection(input.connection) || !supportsNativeToolCalls(input.connection.provider);
+    isLocalSidecarConnection(input.connection) ||
+    !supportsNativeToolCalls(input.connection.provider) ||
+    // custom-mods: native subscription tools are wired for chats only; Mari keeps textual tools.
+    input.connection.provider === "claude_subscription";
   const systemMessages = input.messages.filter((message) => message.role === "system");
   const systemSeparator = "\n\n";
   const systemPrompt = systemMessages.map((message) => message.content).join(systemSeparator);
