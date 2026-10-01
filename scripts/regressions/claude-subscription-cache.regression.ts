@@ -58,7 +58,11 @@ try {
     if (expectedCost === null) assert.equal(logged.verdict, "unknown-cache-ttl");
   }
   await provider.chatComplete([{ role: "user", content: "Hello" }], { model: "claude-opus-5" });
-  assert.deepEqual(sdkOptions.settings, { fastMode: false }, "off preserves Claude's account-dependent default TTL");
+  assert.deepEqual(
+    sdkOptions.settings,
+    { fastMode: false, promptCacheTtl: "5m" },
+    "off must request five minutes explicitly: unset lets the CLI pick one hour on a subscription",
+  );
 } finally {
   logger.debug = originalDebug;
   __setSdkForTesting(null);
