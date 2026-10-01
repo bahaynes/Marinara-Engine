@@ -191,25 +191,57 @@ export function maxReferenceSlotsForSource(source: string): number {
   return /comfy/i.test(source) ? COMFYUI_MAX_REFERENCE_IMAGES : 6;
 }
 
-/** Rewrite [[Name]] tokens to "image N" using the final slot owners; unslotted names stay plain names. */
-export function bindReferenceTokens(prompt: string, slotNames: string[]): string {
-  return prompt.replace(/\[\[([^\]\n]{1,80})\]\]/g, (_token, rawName: string) => {
+const NAME_WORD_STOPWORDS = new Set(["the", "of", "and", "von", "van", "de", "la", "le", "sir", "lady", "lord"]);
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Rewrite [[Name]] tokens to "image N" using the final slot owners; unslotted names stay plain names.
+ * With bindPlainNames, plain mentions of a slotted name ("Marianne's neck", "Hera" for "Hera-Zaire") are
+ * rewritten too: the prompt writer does not always keep to tokens, and the image model only knows people
+ * as "image N". A name word shared by two slot owners stays as written.
+ */
+export function bindReferenceTokens(prompt: string, slotNames: string[], bindPlainNames = false): string {
+  const tokenBound = prompt.replace(/\[\[([^\]\n]{1,80})\]\]/g, (_token, rawName: string) => {
     const name = rawName.trim();
     const slot = slotNames.findIndex((slotName) => slotName && namesMatch(slotName, name));
     return slot >= 0 ? `image ${slot + 1}` : name;
   });
+  if (!bindPlainNames) return tokenBound;
+
+  const owners = new Map<string, number | null>();
+  slotNames.forEach((slotName, slot) => {
+    if (!slotName || slotName === "location") return;
+    const words = slotName.split(/[^\p{L}\p{N}']+/u).filter((word) => word.length >= 3);
+    for (const alias of new Set([slotName.trim(), ...words])) {
+      if (NAME_WORD_STOPWORDS.has(alias.toLowerCase())) continue;
+      owners.set(alias, owners.has(alias) && owners.get(alias) !== slot ? null : slot);
+    }
+  });
+  const aliases = [...owners.keys()].filter((alias) => owners.get(alias) !== null).sort((a, b) => b.length - a.length);
+  if (aliases.length === 0) return tokenBound;
+  const pattern = new RegExp(`(?<![\\p{L}\\p{N}])(?:${aliases.map(escapeRegExp).join("|")})(?![\\p{L}\\p{N}])`, "gu");
+  return tokenBound.replace(pattern, (alias) => `image ${owners.get(alias)! + 1}`);
 }
 
 /** Slot the references like the backend will, warn about truncation, and bind [[Name]] tokens. */
 export function bindIllustratorReferenceTokens(
   prompt: string,
-  args: { locationImage: string | null; referenceImages: string[]; referenceNames: string[]; source: string },
+  args: {
+    locationImage: string | null;
+    referenceImages: string[];
+    referenceNames: string[];
+    source: string;
+    bindPlainNames?: boolean;
+  },
 ): string {
   const slots = buildReferenceSlots({ ...args, maxSlots: maxReferenceSlotsForSource(args.source) });
   if (slots.dropped.length > 0) {
     logger.warn("[illustrator] Reference slots full; not sent: %s", slots.dropped.join(", "));
   }
-  return bindReferenceTokens(prompt, slots.names);
+  return bindReferenceTokens(prompt, slots.names, args.bindPlainNames);
 }
 
 export function readAgentComfyVariables(value: unknown): Record<string, unknown> | undefined {
