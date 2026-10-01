@@ -1505,6 +1505,36 @@ export function injectIntoOutputFormatOrLastUser(
 }
 
 /**
+ * Place game-mode world-info blocks. By default "before" entries lead the GM system message and
+ * "after" entries trail it. With `inTail`, both go on the final user message instead: keyword-driven
+ * lore changes between turns, and inside the system message that rewrites the whole cached system
+ * prompt (and the history after it) every turn. Falls back to the default when the prompt does not
+ * end on a user message (continue, impersonate).
+ */
+export function placeGameWorldInfo(
+  messages: SimpleMessage[],
+  loreBefore: string,
+  loreAfter: string,
+  inTail = false,
+): void {
+  if (!loreBefore && !loreAfter) return;
+  if (inTail) {
+    const lastIdx = messages.length - 1;
+    const last = messages[lastIdx];
+    if (last && last.role === "user") {
+      messages[lastIdx] = { ...last, content: [last.content, loreBefore, loreAfter].filter(Boolean).join("\n\n") };
+      return;
+    }
+  }
+  const sysMsg = messages.find((m) => m.role === "system");
+  if (sysMsg) {
+    sysMsg.content = [loreBefore, sysMsg.content, loreAfter].filter(Boolean).join("\n\n");
+  } else {
+    messages.unshift({ role: "system", content: [loreBefore, loreAfter].filter(Boolean).join("\n\n") });
+  }
+}
+
+/**
  * Remove speaker wrappers from older group-chat history while preserving the
  * latest assistant turn as a concrete formatting example for the model.
  */

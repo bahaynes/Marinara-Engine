@@ -407,6 +407,7 @@ import {
   computeSummaryMessageRange,
   selectRollingSummaryMessages,
   injectIntoOutputFormatOrLastUser,
+  placeGameWorldInfo,
   getMessageConversationStartCharacterIds,
   getMessageHiddenFromAICharacterIds,
   isManualTrackerCharacterId,
@@ -4328,18 +4329,9 @@ export async function generateRoutes(app: FastifyInstance) {
               ? `<lore>\n${lorebookResult.worldInfoBefore}\n</lore>`
               : "";
             const loreAfter = lorebookResult.worldInfoAfter ? `<lore>\n${lorebookResult.worldInfoAfter}\n</lore>` : "";
-            if (loreBefore || loreAfter) {
-              // Keep world-info positions on either side of the GM's character and game context.
-              const sysMsg = finalMessages.find((m) => m.role === "system");
-              if (sysMsg) {
-                sysMsg.content = [loreBefore, sysMsg.content, loreAfter].filter(Boolean).join("\n\n");
-              } else {
-                finalMessages.unshift({
-                  role: "system" as const,
-                  content: [loreBefore, loreAfter].filter(Boolean).join("\n\n"),
-                });
-              }
-            }
+            // Default keeps world-info positions on either side of the GM's character and game context;
+            // `gameLoreInTail` (chat metadata) moves them onto the final user message for prompt caching.
+            placeGameWorldInfo(finalMessages, loreBefore, loreAfter, chatMeta.gameLoreInTail === true);
             if (lorebookResult.depthEntries.length > 0) {
               finalMessages = injectAtDepth(finalMessages, lorebookResult.depthEntries);
             }
