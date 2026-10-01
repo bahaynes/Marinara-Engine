@@ -462,6 +462,8 @@ export async function resolveIllustratorCharacterReferences(args: {
   includePersonaWhenMentionedInPrompt?: boolean;
   characterGallery?: CharacterGalleryReferenceStore;
   personaGallery?: PersonaGalleryReferenceStore;
+  /** custom-mods: use only requestedNames, ordered as given (most important first), instead of chat order. */
+  orderByRequest?: boolean;
 }): Promise<IllustratorReferenceResolution> {
   const maxReferences = Math.max(1, Math.min(args.maxReferences ?? MAX_ILLUSTRATOR_REFERENCE_IMAGES, 12));
   const allRows = await args.charactersStore.list().catch(() => []);
@@ -496,8 +498,9 @@ export async function resolveIllustratorCharacterReferences(args: {
   const normalizedPromptText = normalizeReferenceName(args.promptText);
   const requestedNames = args.requestedNames.map((name) => normalizeReferenceName(name)).filter(Boolean);
   const selected = new Map<string, CharacterReferenceSource>();
+  const requestRank = new Map<string, number>();
 
-  for (const requestedName of requestedNames) {
+  for (const [requestIndex, requestedName] of requestedNames.entries()) {
     const exactChatMatches = chatSources.filter((source) => normalizeReferenceName(source.name) === requestedName);
     const chatMatches =
       exactChatMatches.length > 0
@@ -512,10 +515,14 @@ export async function resolveIllustratorCharacterReferences(args: {
       chatMatches.length > 0
         ? chatMatches
         : globalSources.filter((source) => normalizeReferenceName(source.name) === requestedName);
-    if (matches.length === 1) selected.set(matches[0]!.id, matches[0]!);
+    if (matches.length === 1) {
+      selected.set(matches[0]!.id, matches[0]!);
+      if (!requestRank.has(matches[0]!.id)) requestRank.set(matches[0]!.id, requestIndex);
+    }
   }
 
-  for (const source of chatSources) {
+  // orderByRequest agents name every depicted character themselves; skip mention scanning.
+  for (const source of args.orderByRequest ? [] : chatSources) {
     if (selected.has(source.id)) continue;
     if (
       source.promptAliases.some(
@@ -547,7 +554,11 @@ export async function resolveIllustratorCharacterReferences(args: {
     }
   }
 
-  const orderedSelectedSources = [...selected.values()].sort((a, b) => a.sourceOrder - b.sourceOrder);
+  const orderKey = (source: CharacterReferenceSource) =>
+    args.orderByRequest
+      ? (requestRank.get(source.id) ?? Number.MAX_SAFE_INTEGER / 2 + source.sourceOrder)
+      : source.sourceOrder;
+  const orderedSelectedSources = [...selected.values()].sort((a, b) => orderKey(a) - orderKey(b));
   const orderedSources = orderedSelectedSources.slice(0, maxReferences);
   const referenceImages: string[] = [];
   const referenceNames: string[] = [];

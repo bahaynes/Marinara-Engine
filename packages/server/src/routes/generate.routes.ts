@@ -198,6 +198,12 @@ import {
 import { createPromptsStorage } from "../services/storage/prompts.storage.js";
 import { createCharactersStorage } from "../services/storage/characters.storage.js";
 import { resolveChatUserIdentity } from "../services/chat-user-identity.js";
+import {
+  applyImageAgentContextExtensions,
+  bindIllustratorReferenceTokens,
+  filterToPresentCharacters,
+  readAgentComfyVariables,
+} from "../services/image/image-agent-comfy-extensions.js";
 import { createAgentsStorage } from "../services/storage/agents.storage.js";
 import { createGameStateStorage, parseStoredRulesetLive } from "../services/storage/game-state.storage.js";
 import {
@@ -5915,6 +5921,11 @@ export async function generateRoutes(app: FastifyInstance) {
           eligiblePipelineAgents.push(agent);
         }
         pipelineAgents = eligiblePipelineAgents;
+        // custom-mods: a group's shared context is resolved from its first agent, so an image agent
+        // that trims character cards (presentCharactersOnly) must not share a group with trackers.
+        for (const agent of pipelineAgents) {
+          if (agent.settings.presentCharactersOnly === true) agent.batchContextKey = `image-agent:${agent.id}`;
+        }
         if (chatMode === "roleplay") {
           for (const agent of pipelineAgents) {
             if (!trackerAgentTypes.has(agent.type)) continue;
@@ -5964,7 +5975,11 @@ export async function generateRoutes(app: FastifyInstance) {
           imageConnection ??= await connections.getDefaultForImageGeneration();
           const imagePromptInstructions = normalizeImagePromptInstructions(imageConnection?.imagePromptInstructions);
           if (imagePromptInstructions) memory._imagePromptInstructions = imagePromptInstructions;
-          return { ...trackerContext, memory };
+          return applyImageAgentContextExtensions(
+            { ...trackerContext, memory },
+            agent.settings,
+            imageConnection?.comfyuiWorkflow,
+          );
         };
         // Decision statements in agent prompt templates (#6569), planned from the agents
         // that will actually run, with the templates they run with, once activation,
@@ -11286,7 +11301,8 @@ export async function generateRoutes(app: FastifyInstance) {
 
           // Sort so game_state_update (world-state) is processed before dependent types
           // (character_tracker_update, persona_stats_update) that merge into the snapshot.
-          const RESULT_ORDER: Record<string, number> = { game_state_update: 0 };
+          // custom-mods: present-character gating reads this turn's tracker snapshot from image results.
+          const RESULT_ORDER: Record<string, number> = { game_state_update: 0, character_tracker_update: 0.5 };
           const sortedResults = postResults
             .filter((result) => customAgentCanEmitResult(result, resolvedAgents, builtInAgentTypes))
             .sort((a, b) => (RESULT_ORDER[a.type] ?? 1) - (RESULT_ORDER[b.type] ?? 1));
@@ -12746,6 +12762,27 @@ export async function generateRoutes(app: FastifyInstance) {
                         projection: ownerSpatialProjection?.ownerMode === "roleplay" ? ownerSpatialProjection : null,
                       });
                       let illustratorRefImages: string[] | undefined;
+                      // custom-mods (Illustrator 2): opt-in present-character gating and request-ordered refs.
+                      const requestOrderedReferences = imagePromptAgent?.settings?.referenceOrder === "requested";
+                      let requestedReferenceNames = illCharacters.filter(
+                        (name): name is string => typeof name === "string",
+                      );
+                      if (imagePromptAgent?.settings?.presentCharactersOnly === true) {
+                        const turnSnapshot = await gameStateStore
+                          .getByChatAndMessage(input.chatId, messageId, targetSwipeIndex)
+                          .catch(() => null);
+                        const presence = filterToPresentCharacters(
+                          requestedReferenceNames,
+                          turnSnapshot
+                            ? parseGameStateRow(turnSnapshot as Record<string, unknown>).presentCharacters
+                            : null,
+                          identity?.source === "persona" ? personaName : null,
+                        );
+                        if (presence.dropped.length > 0) {
+                          logger.debug("[illustrator] Dropped absent characters: %s", presence.dropped.join(", "));
+                        }
+                        requestedReferenceNames = presence.kept;
+                      }
                       const referenceResolution = await resolveIllustratorCharacterReferences({
                         charactersStore: chars,
                         characterGallery,
@@ -12783,7 +12820,7 @@ export async function generateRoutes(app: FastifyInstance) {
                                 useCharacterSheetAsReference: persona.useCharacterSheetAsReference,
                               }
                             : null,
-                        requestedNames: illCharacters.filter((name): name is string => typeof name === "string"),
+                        requestedNames: requestedReferenceNames,
                         promptText: [
                           currentUserInputContent() ?? "",
                           imagePrompt,
@@ -12795,6 +12832,7 @@ export async function generateRoutes(app: FastifyInstance) {
                         includeReferenceImages: useAvatarRefs,
                         includePersonaWhenMentionedInPrompt: false,
                         maxReferences: spatialLocationReferenceImage ? 5 : 6,
+                        orderByRequest: requestOrderedReferences,
                       });
                       if (includeCharacterAppearance) {
                         const appearanceBlock =
@@ -12832,9 +12870,16 @@ export async function generateRoutes(app: FastifyInstance) {
                         illustratorRefImages = mergedReferenceImages;
                       }
                       if (spatialLocationReferenceImage) {
-                        fullPrompt += `\n\n${SPATIAL_LOCATION_REFERENCE_PROMPT_LINE}`;
+                        // Illustrator 2 names the location slot itself via [[location]].
+                        if (!requestOrderedReferences) fullPrompt += `\n\n${SPATIAL_LOCATION_REFERENCE_PROMPT_LINE}`;
                         logger.debug("[illustrator] Sending the current Maps location reference image first");
                       }
+                      fullPrompt = bindIllustratorReferenceTokens(fullPrompt, {
+                        locationImage: spatialLocationReferenceImage,
+                        referenceImages: useAvatarRefs ? referenceResolution.referenceImages : [],
+                        referenceNames: useAvatarRefs ? referenceResolution.referenceNames : [],
+                        source: imgSource,
+                      });
 
                       const compiledPrompt = compileImagePrompt({
                         kind: "illustration",
@@ -12898,6 +12943,7 @@ export async function generateRoutes(app: FastifyInstance) {
                             height: imgHeight,
                             imageEndpointId: imgConnFull.imageEndpointId || undefined,
                             comfyWorkflow: imgConnFull.comfyuiWorkflow || undefined,
+                            comfyVariables: readAgentComfyVariables(illData.comfyVariables),
                             imageDefaults,
                             quality: resolveConnectionImageQuality(imgConnFull),
                             referenceImages: illustratorRefImages,

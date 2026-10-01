@@ -218,6 +218,8 @@ export interface ImageGenRequest {
   imageEndpointId?: string;
   /** Optional ComfyUI workflow JSON. Placeholders like %prompt%, %width%, %height%, %seed% will be replaced. */
   comfyWorkflow?: string;
+  /** Image-agent values for the workflow's declared "marinara_variables" (%var_<name>%); validated by the backend. */
+  comfyVariables?: Record<string, unknown>;
   /** Optional connection-scoped generation defaults and API request parameters. */
   imageDefaults?: ImageGenerationDefaultsProfile | null;
   /** Allow this explicit image-generation connection to call local/private URLs. */

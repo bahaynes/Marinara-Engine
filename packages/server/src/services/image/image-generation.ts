@@ -60,6 +60,11 @@ import {
   findMissingComfyReferenceSlots,
   numberedComfyReferencePlaceholder,
 } from "./comfyui-reference-placeholders.js";
+import {
+  readWorkflowVariableDeclarations,
+  resolveWorkflowVariableReplacements,
+  stripWorkflowVariableDeclarations,
+} from "./image-agent-comfy-extensions.js";
 import { buildVeniceApiUrl, buildVeniceImageRequest, parseVeniceImageResponse } from "./venice-image.js";
 import { buildZaiImageRequest, buildZaiImageUrl, parseZaiImageUrl } from "./zai-image.js";
 import { buildFalImageUrl } from "./fal-image.js";
@@ -3319,6 +3324,9 @@ async function generateComfyUI(baseUrl: string, request: ImageGenRequest): Promi
   if (request.model) {
     replacements["%model%"] = request.model;
   }
+  const variableDeclarations = readWorkflowVariableDeclarations(workflow);
+  workflow = stripWorkflowVariableDeclarations(workflow);
+  Object.assign(replacements, resolveWorkflowVariableReplacements(variableDeclarations, request.comfyVariables));
   const workflowJson = JSON.stringify(workflow);
   const references = collectComfyReferenceImages(request, defaults);
   // Real references always come first; the placeholder only stands in when none exist.
