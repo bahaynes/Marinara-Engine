@@ -1311,7 +1311,7 @@ assert.equal(
     assert.equal("extraArgs" in subscriptionOptions, false);
     assert.equal(subscriptionOptions.permissionMode, "bypassPermissions");
     assert.deepEqual(subscriptionOptions.settingSources, []);
-    assert.deepEqual(subscriptionOptions.settings, { fastMode: false });
+    assert.deepEqual(subscriptionOptions.settings, { fastMode: false, promptCacheTtl: "5m" });
     assert.equal(subscriptionOptions.cwd, undefined);
     assert.equal(subscriptionOptions.systemPrompt, "Keep the caller-owned system prompt.");
     assert.equal((subscriptionOptions.env as Record<string, unknown>).ENABLE_CLAUDEAI_MCP_SERVERS, "false");
@@ -3583,13 +3583,11 @@ try {
             tool_calls: identifiedResult.toolCalls,
             ...(replayMetadata ? { providerMetadata: identifiedResult.providerMetadata } : {}),
           },
-          ...identifiedResult.toolCalls.map(
-            (call, index): ChatMessage => ({
-              role: "tool",
-              tool_call_id: call.id,
-              content: JSON.stringify({ total: 17 + index }),
-            }),
-          ),
+          ...identifiedResult.toolCalls.map((call, index): ChatMessage => ({
+            role: "tool",
+            tool_call_id: call.id,
+            content: JSON.stringify({ total: 17 + index }),
+          })),
         ],
         { model: "gemini-2.0-flash", tools: [rollDiceTool], onToken: () => {} },
       );
