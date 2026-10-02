@@ -106,7 +106,7 @@ Verify that TypeScript compilation, linting, and tests pass cleanly.
 3. Open the imported agent and set its image connection (connection IDs are stripped on import), then add it to a chat. It needs a text model for the prompt writer; a cheap one is fine.
 4. Enable **Character Tracker** in the same chat for present-character gating (optional — without tracker data nothing is filtered).
 
-Leave the chat's image **style profile** unset for chats using Illustrator 2: a profile adds style text after the prompt, which works against the short single-style prompt. The editor keeps the agent's `presentCharactersOnly` / `referenceOrder` options on save even though it has no fields for them.
+Give Illustrator 2 chats one short image **style profile** (5-8 tags). The template writes no style words, so the profile is the only source of style and it appears once. Also keep the image connection's `imagePromptInstructions` short and consistent with the template (e.g. "One frozen moment, 30-70 words, at most two people, placed left/right."); instructions like "fully describing the desired outcome" push the prompt writer back to long, crowded prompts. The editor keeps the agent's `presentCharactersOnly` / `referenceOrder` options on save even though it has no fields for them.
 
 Import gives the agent a `custom-import-illustrator-2-<uuid>` type, so per-chat `customAgentImageSettings` overrides are keyed by that type, not `illustrator-2`.
 
@@ -132,7 +132,7 @@ Import gives the agent a `custom-import-illustrator-2-<uuid>` type, so per-chat 
 
 Types: `string` (≤200 chars), `number` (clamped to `min`/`max`), `boolean`, `enum` (`values` required). Names are `[a-z0-9_]`, up to 16 variables.
 
-**If images stay blurry**, test the workflow before blaming the prompt: queue a fixed prompt in ComfyUI with the full FLUX.2 VAE decoder instead of `full_encoder_small_decoder`, and compare Q5 GGUF vs fp8 and `target_megapixels` 0.66 vs 1.0.
+**Why the template is this strict.** Measured on 86 stock-Illustrator prompts sent to FLUX.2 klein (2026-09-24..10-02, Gemma4 prompt writer): median 181 words; style text repeated in 75 (the engine asks for style in both the `style` field and the prompt, then prepends `style`); 3+ body traits in 71 despite avatar references; 3+ placed subjects in 42; mood/scent lines in 39; motion verbs (flickering, trembling) in 32; unnamed extras in 19; sequence words in 19. Each clause is drawn at the same instant, which shows up as fused objects and extra hands. Re-measure with `python3 scripts/fork/illustrator-prompt-metrics.py --since <iso> --model klein` (read-only, uses `mari` in the container).
 
 ---
 
