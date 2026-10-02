@@ -64,6 +64,8 @@ interface AdvancedParametersSectionProps {
     imageCaptioningConnectionId?: string | null;
     imageCaptioningPrompt?: string | null;
   }) => void;
+  /** Roleplay only: hold the start of the limited history steady for prompt caching (same flag as game mode). */
+  onCacheWindowChange?: (patch: { gameLoreInTail?: boolean; gameWindowSlack?: number | null }) => void;
 }
 
 export function AdvancedParametersSection({
@@ -82,6 +84,7 @@ export function AdvancedParametersSection({
   onExcludePastReasoningChange,
   onPastReasoningLimitChange,
   onImageCaptioningChange,
+  onCacheWindowChange,
 }: AdvancedParametersSectionProps) {
   const { t: localizeUi } = useUiTranslation();
   const modeDefaults = isConversation ? CHAT_PARAMETER_DEFAULTS : ROLEPLAY_PARAMETER_DEFAULTS;
@@ -274,6 +277,43 @@ export function AdvancedParametersSection({
           <p className="px-1 text-[0.625rem] text-[var(--muted-foreground)]">
             {localizeUi("ui.chatSettings.advancedparameterssection.contextMessageLimitAdvancedMemory")}
           </p>
+        )}
+        {contextMessageLimit && !advancedMemoryManagesHistory && onCacheWindowChange && (
+          <>
+            <SettingsSwitch
+              label={localizeUi("ui.chatSettings.advancedparameterssection.holdHistoryStart")}
+              description={localizeUi("ui.chatSettings.advancedparameterssection.holdHistoryStartHelp")}
+              checked={metadata.gameLoreInTail === true}
+              onChange={(gameLoreInTail) => onCacheWindowChange({ gameLoreInTail })}
+              labelPosition="start"
+              className={cn(
+                "justify-between rounded-lg px-3 py-2.5 text-left",
+                metadata.gameLoreInTail === true
+                  ? "bg-[var(--primary)]/10 ring-1 ring-[var(--primary)]/30"
+                  : "bg-[var(--secondary)] hover:bg-[var(--accent)]",
+              )}
+              labelClassName="text-xs font-medium"
+            />
+            {metadata.gameLoreInTail === true && (
+              <div className="flex items-center gap-2 px-1">
+                <DraftNumberInput
+                  aria-label={localizeUi("ui.chatSettings.gameextrapromptsection.windowSlack")}
+                  min={0}
+                  max={9999}
+                  value={typeof metadata.gameWindowSlack === "number" ? metadata.gameWindowSlack : 30}
+                  onCommit={(value) => {
+                    const slack = Math.max(0, Math.min(9999, value));
+                    onCacheWindowChange({ gameWindowSlack: slack === 30 ? null : slack });
+                  }}
+                  selectOnFocus
+                  className="w-20 rounded-lg bg-[var(--secondary)] px-3 py-1.5 text-xs outline-none ring-1 ring-transparent transition-shadow focus:ring-[var(--primary)]/40"
+                />
+                <span className="text-[0.625rem] text-[var(--muted-foreground)]">
+                  {localizeUi("ui.chatSettings.gameextrapromptsection.windowSlackHelp")}
+                </span>
+              </div>
+            )}
+          </>
         )}
         <SettingsSwitch
           label={localizeUi("ui.chatSettings.advancedparameterssection.excludePastReasoning")}
