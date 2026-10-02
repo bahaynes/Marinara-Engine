@@ -149,6 +149,7 @@ import {
   guardServerChatSnapshot,
   useBranchChat,
   useCreateMessage,
+  useServerGenerationActive,
   useUpdateChat,
   useUpdateChatMetadata,
   useUpdateMessage,
@@ -2472,8 +2473,9 @@ function GameSurfaceComponent({
     audioManager.setArtFamily(artFamily);
     return () => audioManager.setArtFamily(undefined);
   }, [artFamily]);
+  const serverGenerationActive = useServerGenerationActive(activeChatId);
   const gameInputGenerationBlocked = isGenerationSendBlocked({
-    streamActive: isStreaming,
+    streamActive: isStreaming || serverGenerationActive,
     agentsProcessing,
     backgroundIllustration: backgroundIllustration && !gameSequentialAgents,
   });
