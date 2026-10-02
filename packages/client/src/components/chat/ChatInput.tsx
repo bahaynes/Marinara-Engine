@@ -29,7 +29,13 @@ import { useGenerate } from "../../hooks/use-generate";
 import { useCommitSpatialOwnerTurn } from "../../hooks/use-spatial-context";
 import { useApplyRegex } from "../../hooks/use-apply-regex";
 import { useInstalledCapabilityPackages } from "../../hooks/use-capability-packages";
-import { useCreateMessage, useDeleteMessage, useUpdateMessageExtra, chatKeys } from "../../hooks/use-chats";
+import {
+  useCreateMessage,
+  useDeleteMessage,
+  useUpdateMessageExtra,
+  chatKeys,
+  useServerGenerationActive,
+} from "../../hooks/use-chats";
 import { useConnections } from "../../hooks/use-connections";
 import { characterKeys } from "../../hooks/use-characters";
 import {
@@ -266,8 +272,9 @@ export const ChatInput = memo(function ChatInput({
   );
   const hasActiveStream = isStreamingGlobal && streamingChatId === activeChatId;
   const isStreaming = hasActiveStream && !isBackgroundIllustration;
+  const serverGenerationActive = useServerGenerationActive(mode === "conversation" ? null : activeChatId);
   const isInputBusy = isGenerationSendBlocked({
-    streamActive: hasActiveStream,
+    streamActive: hasActiveStream || serverGenerationActive,
     agentsProcessing: mode === "roleplay" ? false : interactionsLocked,
     backgroundIllustration: isBackgroundIllustration,
   });
