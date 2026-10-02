@@ -391,17 +391,28 @@ function dedupeKeeperContentParagraphs(content: string): string {
   return deduped.join("\n\n");
 }
 
+/**
+ * Keeper models sometimes return every key as one comma-joined string ("hotel, room 412, morning"),
+ * which only matches that exact phrase. Split those; regex keys (/.../) stay whole.
+ */
+function splitKeeperKey(key: string): string[] {
+  const trimmed = key.trim();
+  return trimmed.startsWith("/") ? [trimmed] : trimmed.split(",");
+}
+
 function mergeLorebookKeys(existingKeys: unknown, newKeys: string[]): string[] {
   const merged: string[] = [];
   const seen = new Set<string>();
   const add = (key: unknown) => {
     if (typeof key !== "string") return;
-    const trimmed = key.trim();
-    if (!trimmed) return;
-    const comparable = trimmed.toLowerCase();
-    if (seen.has(comparable)) return;
-    seen.add(comparable);
-    merged.push(trimmed);
+    for (const part of splitKeeperKey(key)) {
+      const trimmed = part.trim();
+      if (!trimmed) continue;
+      const comparable = trimmed.toLowerCase();
+      if (seen.has(comparable)) continue;
+      seen.add(comparable);
+      merged.push(trimmed);
+    }
   };
 
   if (Array.isArray(existingKeys)) {
@@ -467,7 +478,10 @@ function readKeeperUpdateContent(update: Record<string, unknown>): string {
 function readKeeperUpdateKeys(update: Record<string, unknown>): string[] {
   const nestedEntry = readNestedEntry(update);
   const rawKeys = Array.isArray(update.keys) ? update.keys : Array.isArray(nestedEntry.keys) ? nestedEntry.keys : [];
-  return rawKeys.filter((key): key is string => typeof key === "string");
+  return mergeLorebookKeys(
+    [],
+    rawKeys.filter((key): key is string => typeof key === "string"),
+  );
 }
 
 function readKeeperUpdateTag(update: Record<string, unknown>): string {
