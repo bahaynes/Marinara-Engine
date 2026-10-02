@@ -733,6 +733,16 @@ export async function persistLorebookKeeperUpdates(args: {
         keys,
         tag,
       });
+      // New entries need vectors too, or vector lorebooks can only find them by keyword.
+      if (revectorizeEntry) {
+        try {
+          await revectorizeEntry(created as LorebookEntry);
+          signal?.throwIfAborted();
+        } catch (err) {
+          signal?.throwIfAborted();
+          logger.warn(err, "[lorebook-keeper] Failed to embed new entry %s", createdEntry.id);
+        }
+      }
     }
   }
 
