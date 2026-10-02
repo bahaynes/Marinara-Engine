@@ -196,7 +196,7 @@ export function CyoaChoices({ messages }: Props) {
         pendingSpatialTransition?.status === "ready" ? pendingSpatialTransition.transition : null;
       if (action === "impersonate") {
         const { impersonatePresetId, impersonateBlockAgents, impersonatePromptTemplate } = useUIStore.getState();
-        const impersonated = await generate(
+        await generate(
           buildCyoaChoiceSubmissionPayload({
             chatId: activeChatId,
             text,
@@ -208,9 +208,6 @@ export function CyoaChoices({ messages }: Props) {
             },
           }),
         );
-        if (impersonated) {
-          await generate({ chatId: activeChatId, connectionId: null });
-        }
         return;
       }
 
