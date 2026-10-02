@@ -305,6 +305,17 @@ function hasLocalGeneration(state: ReturnType<typeof useChatStore.getState>, cha
   );
 }
 
+/**
+ * True while the server is generating for this chat but this browser holds no local stream for it
+ * (page reload, reconnect, another tab). Sending then is rejected with a 409 and looks like nothing
+ * happened, so the send guards use this to stay blocked until the server settles.
+ */
+export function useServerGenerationActive(chatId: string | null) {
+  const hasLocal = useChatStore((state) => !!chatId && hasLocalGeneration(state, chatId));
+  const { data } = useGenerationStatus(chatId, !!chatId && !hasLocal);
+  return !hasLocal && data?.active === true;
+}
+
 export function useChatMessages(chatId: string | null, pageSize: number = 0, enabled = true) {
   const queryClient = useQueryClient();
   const previousWindow = useRef({ chatId, pageSize });

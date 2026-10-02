@@ -91,6 +91,7 @@ import {
   useBranchChat,
   useCreateMessage,
   useDeleteChat,
+  useServerGenerationActive,
   useUpdateChat,
   useUpdateChatMetadata,
   useUpdateMessage,
@@ -2277,8 +2278,9 @@ function GameSurfaceComponent({
   const backgroundIllustration = useChatStore((state) => state.backgroundIllustrationChatIds.has(activeChatId));
   const agentsProcessing = useAgentStore((state) => state.processingChatIds.includes(activeChatId));
   const gameSequentialAgents = chatMeta.gameSequentialAgents === true;
+  const serverGenerationActive = useServerGenerationActive(activeChatId);
   const gameInputGenerationBlocked = isGenerationSendBlocked({
-    streamActive: isStreaming,
+    streamActive: isStreaming || serverGenerationActive,
     agentsProcessing,
     backgroundIllustration: backgroundIllustration && !gameSequentialAgents,
   });
