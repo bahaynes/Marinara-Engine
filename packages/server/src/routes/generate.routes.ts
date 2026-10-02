@@ -643,6 +643,7 @@ import {
 } from "../services/conversation/autonomous.service.js";
 import { buildIntentCooldownPatch, isMessageIntent } from "../services/conversation/intent.service.js";
 import { buildImpersonateInstruction } from "../services/conversation/impersonate-prompt.js";
+import { pullHistoryInjectionsIntoInstruction } from "../services/prompt/impersonate-tail.js";
 import {
   isRepeatedConversationResponse,
   stripConversationPromptTimestamps,
@@ -4949,7 +4950,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
             ).trim()
           : "";
         if (authorNotes) {
-          const authorNotesDepth = (chatMeta.authorNotesDepth as number) ?? 4;
+          const authorNotesDepth = (chatMeta.authorNotesDepth as number) ?? 0;
           finalMessages = injectAtDepth(finalMessages, [
             { content: authorNotes, role: "system", depth: authorNotesDepth },
           ]);
@@ -6305,11 +6306,10 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
           });
         }
 
-        // ── Inject cross-chat awareness (after persona info so it appears right before chat history) ──
+        // ── Inject cross-chat awareness ──
+        // Fork: other chats and the clock change it, so it follows the history instead of breaking its cached prefix.
         if (convoAwarenessBlock) {
-          const firstUserIdx = finalMessages.findIndex((m) => m.role === "user" || m.role === "assistant");
-          const insertAt = firstUserIdx >= 0 ? firstUserIdx : finalMessages.length;
-          finalMessages.splice(insertAt, 0, { role: "system", content: convoAwarenessBlock });
+          finalMessages.push({ role: "system", content: convoAwarenessBlock, contextKind: "injection" });
         }
 
         // ── Memory recall: semantic retrieval of relevant past conversation fragments ──
@@ -8559,7 +8559,10 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
             personaName,
             personaDescription: resolvePromptMacros(personaDescription),
           });
-          finalMessages.push({ role: "user", content: impersonateInstruction });
+          // fork: keep depth injections and tracker context out of the history so the cached prefix stays append-only.
+          const pulled = pullHistoryInjectionsIntoInstruction(finalMessages, impersonateInstruction);
+          finalMessages = pulled.messages;
+          finalMessages.push({ role: "user", content: pulled.instruction });
         }
 
         const tailMessages = appendGenerationTailMessages(finalMessages, {

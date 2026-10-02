@@ -1,4 +1,5 @@
 import { readChatMetadataSecret } from "../utils/stored-secrets.js";
+import { newChatCacheDefaults } from "../services/generation/new-chat-cache-defaults.js";
 import { createRoomGameRuntime, type RoomGameRuntime } from "../services/multiplayer/game-runtime.js";
 import {
   currentRoomGeneration,
@@ -7206,6 +7207,7 @@ export async function gameRoutes(app: FastifyInstance, options: GameRouteOptions
       }
     }
     await chats.updateMetadata(sessionChat.id, {
+      ...newChatCacheDefaults("game"),
       ...sessionMeta,
       gameId,
       gameSessionNumber: 1,
@@ -8170,6 +8172,7 @@ export async function gameRoutes(app: FastifyInstance, options: GameRouteOptions
 
       const newMeta = parseMeta(newChat.metadata);
       const updatedNewMeta = {
+        ...newChatCacheDefaults("game"),
         ...newMeta,
         ...carryMeta,
         gameId,

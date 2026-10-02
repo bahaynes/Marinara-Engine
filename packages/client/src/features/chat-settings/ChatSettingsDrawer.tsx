@@ -1977,6 +1977,9 @@ export function ChatSettingsDrawer({
             }
             onPastReasoningLimitChange={(pastReasoningLimit) => updateMeta.mutate({ id: chat.id, pastReasoningLimit })}
             onImageCaptioningChange={(patch) => updateMeta.mutate({ id: chat.id, ...patch })}
+            onCacheWindowChange={
+              chatMode === "roleplay" ? (patch) => updateMeta.mutate({ id: chat.id, ...patch }) : undefined
+            }
           />
 
           {/* Party (game mode) */}

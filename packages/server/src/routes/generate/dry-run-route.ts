@@ -31,7 +31,6 @@ import {
   isAgentConfigDeleted,
   isBuiltInAgentRuntimeDisabled,
   normalizeAdvancedMemorySettings,
-  applyContextMessageLimitWithPins,
   advancedMemoryDecisionDiagnosticsSchema,
   type DecisionDebugReport,
   type AdvancedMemoryDecisionDiagnostics,
@@ -101,6 +100,7 @@ import {
   resolveOwnerSpatialProjection,
 } from "../../services/spatial-context/projection.js";
 import { buildImpersonateInstruction } from "../../services/conversation/impersonate-prompt.js";
+import { pullHistoryInjectionsIntoInstruction } from "../../services/prompt/impersonate-tail.js";
 import { processLorebooks } from "../../services/lorebook/index.js";
 import { resolveLorebookScopeExclusions } from "../../services/lorebook/game-lorebook-scope.js";
 import { injectAtDepth } from "../../services/lorebook/prompt-injector.js";
@@ -192,6 +192,7 @@ import {
   resolveBaseUrl,
   shouldEnableAgentsForGeneration,
   type PromptAttachment,
+  applyContextWindow,
 } from "../generate/generate-route-utils.js";
 import { buildGenerationPromptPresetCandidates, type PromptPresetCandidateSource } from "./prompt-preset-selection.js";
 import {
@@ -828,7 +829,12 @@ export async function registerDryRunRoute(app: FastifyInstance) {
       contextMessageLimit > 0 &&
       chatMessages.length > contextMessageLimit
     ) {
-      chatMessages = applyContextMessageLimitWithPins(chatMessages, contextMessageLimit);
+      chatMessages = applyContextWindow(chatMessages, {
+        chatMode,
+        limit: contextMessageLimit,
+        chatMeta,
+        cacheTtlMs: (conn?.anthropicExtendedCacheTtl === "true" ? 60 : 5) * 60_000,
+      }).messages;
     }
 
     // Ephemeral user line (normal dry run only): mirrors an unsaved "what if I said this" turn.
@@ -2189,7 +2195,7 @@ export async function registerDryRunRoute(app: FastifyInstance) {
       const authorNotesDepth =
         typeof chatMeta.authorNotesDepth === "number" && Number.isFinite(chatMeta.authorNotesDepth)
           ? Math.max(0, Math.floor(chatMeta.authorNotesDepth))
-          : 4;
+          : 0;
       finalMessages = injectAtDepth(finalMessages as any, [
         { content: authorNotes, role: "system", depth: authorNotesDepth },
       ]) as any;
@@ -2287,7 +2293,10 @@ export async function registerDryRunRoute(app: FastifyInstance) {
         personaName,
         personaDescription,
       });
-      finalMessages.push({ role: "user", content: impersonateInstruction });
+      // fork: keep depth injections and tracker context out of the history so the cached prefix stays append-only.
+      const pulled = pullHistoryInjectionsIntoInstruction(finalMessages, impersonateInstruction);
+      finalMessages = pulled.messages;
+      finalMessages.push({ role: "user", content: pulled.instruction });
     }
 
     // Optional post-processing: in preset mode, re-wrap conversation as <chat_history> + <last_message>.

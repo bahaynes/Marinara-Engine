@@ -10,6 +10,7 @@ import { sanitizePromptLeaf } from "../prompt/prompt-escaping.js";
 import { memoryRecallBudgetTokens, packRecalledMemories } from "./memory-recall-pack.js";
 
 type PromptMessage = {
+  contextKind?: "prompt" | "history" | "injection";
   role: "system" | "user" | "assistant";
   content: string;
 };
@@ -201,9 +202,10 @@ export async function injectMemoryRecallContext<T extends MemoryRecallWindowMess
       const leftOut = removeOldestHistory(promptWindow.prompt, droppedHistory);
       if (leftOut.length > 0) promptWindow.onHistoryLeftOut?.(leftOut);
     }
-    // A preset's Memory Recall marker decides where memories go; without one, right before the chat history.
+    // A preset's Memory Recall marker decides where memories go; without one, follow the history instead of
+    // breaking its cached prefix each turn (tagged like a depth-0 section).
     if (!fillMemoryRecallSlot(messages, memoriesBlock)) {
-      insertBeforeHistory(messages, { role: "system", content: memoriesBlock });
+      messages.push({ role: "system", content: memoriesBlock, contextKind: "injection" });
     }
     return selected.map(({ line }) => line);
   } catch (err) {

@@ -254,8 +254,9 @@ const unitCases = [
       assert.ok(lines.some((line) => line.startsWith("CHUNK_A")));
       assertNoRepeats(fixture, lines, fit);
       const blockIndex = fixture.prompt.findIndex((message) => message.content.includes("recalled fragments"));
-      assert.equal(blockIndex, 1, "memories go right before the chat history");
-      assert.equal(fixture.prompt[blockIndex + 1]?.contextKind, "history");
+      assert.equal(blockIndex, fixture.prompt.length - 1, "custom-mods: memories follow history in the tail");
+      assert.equal(fixture.prompt[blockIndex - 1]?.contextKind, "history");
+      assert.equal(fixture.prompt[blockIndex]?.contextKind, "injection");
     },
   },
   {
@@ -402,9 +403,14 @@ async function generateAndRead() {
   const sent = prompts.at(-1)!;
   const block = sent.find((message) => message.content.includes("recalled fragments"));
   const markers = (text: string) => new Set([...text.matchAll(/HISTORY_(\d+)_/g)].map((match) => Number(match[1])));
-  const historyMarkers = new Set(
-    sent.filter((message) => message !== block).flatMap((message) => [...markers(message.content)]),
-  );
+  // Under strict role formatting, a tail recall injection merges into the final user message; split at its header.
+  const splitAt = block ? block.content.indexOf("The following are recalled fragments") : -1;
+  const blockTurnText = block && splitAt > 0 ? block.content.slice(0, splitAt) : "";
+  const blockRecallText = block && splitAt >= 0 ? block.content.slice(splitAt) : (block?.content ?? "");
+  const historyMarkers = new Set([
+    ...sent.filter((message) => message !== block).flatMap((message) => [...markers(message.content)]),
+    ...markers(blockTurnText),
+  ]);
   // Remove the reply this generation saved, so every case starts from the same chat.
   const saved = (await chats.listMessages(chat!.id)).at(-1)!;
   assert.equal(saved.content, "The character answers.");
@@ -413,7 +419,7 @@ async function generateAndRead() {
   return {
     block,
     contextFit,
-    recalled: block ? markers(block.content) : new Set<number>(),
+    recalled: block ? markers(blockRecallText) : new Set<number>(),
     historyMarkers,
     queried: queryEmbeddings.length - queriesBefore,
   };

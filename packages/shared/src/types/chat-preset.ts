@@ -189,6 +189,7 @@ export const CHAT_PRESET_EXCLUDED_METADATA_KEYS: readonly string[] = [
   // members' names, summary retries, current sprite expressions, and the link a Roleplay DM thread
   // keeps to the chat it came from.
   "advancedMemoryRosterChanges",
+  "advancedMemoryFreshStart",
   "encounterActive",
   "archivedCharacterSnapshots",
   "conversationSummaryFailures",
