@@ -80,5 +80,5 @@ await persistLorebookKeeperUpdates({
 });
 assert.deepEqual(embedded, ["entry-Memory"]);
 console.log(
-  "Lorebook Keeper explicit target, approval, locks and automatic routing and new-entry embedding regressions passed.",
+  "Lorebook Keeper explicit target, approval, locks and automatic routing and new-entry embedding and key-splitting regressions passed.",
 );
