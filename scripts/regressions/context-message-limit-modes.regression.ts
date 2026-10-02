@@ -76,9 +76,11 @@ try {
     return [...new Set(Array.from(dry.body.matchAll(/HISTORY_(\d+)_END/gu), (match) => Number(match[1])))];
   };
 
-  for (const mode of ["conversation", "game", "roleplay"] as const) {
+  for (const mode of ["conversation", "game"] as const) {
     assert.deepEqual(await sentHistory(await createChat(mode)), [9, 10, 11], `${mode} sends only the last 3 messages`);
   }
+  // Fork: a Roleplay re-cuts to 75% of its limit so it can grow back without moving the cached history.
+  assert.deepEqual(await sentHistory(await createChat("roleplay")), [10, 11], "roleplay stays within the limit");
 
   const advancedChatId = await createChat("roleplay");
   await chats.patchMetadata(advancedChatId, {

@@ -843,6 +843,8 @@ assert.deepEqual(
 // The shared World State effect (#9508) removes one: retry-agents-route.ts no longer writes its whole stale
 // `chatMeta` back after moving the party marker; the shared handler patches only gameMap, gameMaps and
 // activeGameMapId through the queued patchMetadata.
+// Fork: chats.routes.ts seeds a new chat with newChatCacheDefaults: advancedMemory, enableMemoryRecall and
+// impersonateUseChatPrompt, all under reserved namespaces.
 assert.equal(
   unreadableWriteCalls,
   23,
