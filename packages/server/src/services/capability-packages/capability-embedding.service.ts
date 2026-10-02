@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import type { DB } from "../../db/connection.js";
 import { localEmbed } from "../local-embedder.js";
 import { logger } from "../../lib/logger.js";
+import { embedMemoryRecallTexts } from "../memory-recall.js";
 import { resolveMemoryRecallEmbeddingSource } from "../memory-recall-embedding.js";
 
 const MAX_EMBEDDING_TEXTS = 128;
@@ -37,7 +38,13 @@ export async function createConfiguredCapabilityEmbeddingHost(
       async embed(texts: string[], signal?: AbortSignal, inputType?: "query" | "document"): Promise<number[][] | null> {
         if (texts.length === 0 || texts.length > MAX_EMBEDDING_TEXTS) return null;
         if (texts.reduce((total, text) => total + text.length, 0) > MAX_EMBEDDING_CHARACTERS) return null;
-        return source.embed(texts, signal, inputType === "query" ? "query" : "document");
+        // Shared path: caps each input to the model's window and batches per request.
+        const vectors = await embedMemoryRecallTexts(texts, {
+          embeddingSource: source,
+          signal,
+          inputType: inputType === "query" ? "query" : "document",
+        });
+        return vectors.length === texts.length ? vectors : null;
       },
     });
   } catch (error) {
