@@ -2031,6 +2031,9 @@ export function ChatSettingsDrawer({
                 updateMeta.mutate({ id: chat.id, pastReasoningLimit })
               }
               onImageCaptioningChange={(patch) => updateMeta.mutate({ id: chat.id, ...patch })}
+              onCacheWindowChange={
+                chatMode === "roleplay" ? (patch) => updateMeta.mutate({ id: chat.id, ...patch }) : undefined
+              }
             />
           </div>
 
