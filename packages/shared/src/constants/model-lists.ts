@@ -1203,10 +1203,26 @@ const OPENAI_COMPATIBLE_AGGREGATOR_MODELS: KnownModel[] = [
 ];
 
 /**
+ * The Claude CLI also accepts the bare aliases (`sonnet`, `opus[1m]`) and dated snapshot ids
+ * (`claude-haiku-4-5-20251001`). Resolve both to the catalog entry so they keep their effort controls.
+ */
+function findClaudeCliModel(modelId: string): KnownModel | undefined {
+  const id = modelId
+    .trim()
+    .toLowerCase()
+    .replace(/\[1m\]$/u, "");
+  const family = /^(opus|sonnet|haiku|fable)$/u.exec(id)?.[1];
+  if (family) return CLAUDE_SUBSCRIPTION_MODELS.find((model) => model.id.startsWith(`claude-${family}-`));
+  const undated = id.replace(/-\d{8}$/u, "");
+  return CLAUDE_SUBSCRIPTION_MODELS.find((model) => model.id === undated);
+}
+
+/**
  * Look up a known model by ID across all providers.
  */
 export function findKnownModel(provider: APIProvider, modelId: string): KnownModel | undefined {
   const exact = MODEL_LISTS[provider]?.find((model) => model.id === modelId);
+  if (provider === "claude_subscription" && !exact) return findClaudeCliModel(modelId);
   if (exact || (provider !== "openrouter" && provider !== "nanogpt" && provider !== "custom")) return exact;
 
   // Aggregators namespace model IDs (for example, `deepseek/deepseek-v4-pro`)
