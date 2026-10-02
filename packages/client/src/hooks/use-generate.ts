@@ -3770,6 +3770,8 @@ export function useGenerate() {
 
         let agentResultCount = 0;
         let trackerPatchCount = 0;
+        // Image agents (custom ones included) never return tracker changes; don't expect any from them.
+        let trackerCandidateResultCount = 0;
         let spriteChangeReceived = false;
         let retryAgentEventGenerationId: string | null = null;
         const failedRetryFailures: Array<ReturnType<typeof toAgentFailure>> = [];
@@ -3821,6 +3823,8 @@ export function useGenerate() {
               const ownsVisibleSwipe = agentResultMatchesVisibleSwipe(getCachedMessages(qc, chatId), result);
               const shouldApplyVisibleResult = isActiveChat() && ownsVisibleSwipe;
               agentResultCount += 1;
+              const isImagePromptResult = result.resultType === "image_prompt";
+              if (!isImagePromptResult) trackerCandidateResultCount += 1;
 
               if (retryDebugMode) {
                 if (result.success) {
@@ -3890,7 +3894,7 @@ export function useGenerate() {
               }
               const bubble = result.success
                 ? (formatAgentBubble(result.agentType, result.agentName, result.data) ??
-                  formatRetryAgentActivityBubble(result, isTrackerRetry))
+                  formatRetryAgentActivityBubble(result, isTrackerRetry && !isImagePromptResult))
                 : null;
               if (shouldApplyVisibleResult && bubble) addThoughtBubble(result.agentType, result.agentName, bubble);
 
@@ -4156,7 +4160,7 @@ export function useGenerate() {
             toast.success(translate("ui.chat.customAgentBackfill.completed"));
           } else if (agentResultCount === 0) {
             toast.warning("No agents ran. Add tracker agents to this chat or check their connection settings.");
-          } else if (isTrackerRetry && trackerPatchCount === 0) {
+          } else if (isTrackerRetry && trackerCandidateResultCount > 0 && trackerPatchCount === 0) {
             toast.warning("Agent run finished, but no tracker changes were returned.");
           } else {
             toast.success("Agent retry completed");
