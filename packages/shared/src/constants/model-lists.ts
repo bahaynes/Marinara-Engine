@@ -1342,6 +1342,15 @@ const OPENAI_COMPATIBLE_AGGREGATOR_MODELS: KnownModel[] = [
 ];
 
 /**
+ * The Claude CLI also accepts the bare aliases (`sonnet`, `opus[1m]`). Resolve them to the catalog entry so they
+ * keep their effort controls.
+ */
+function findClaudeCliAlias(modelId: string): KnownModel | undefined {
+  const family = /^(opus|sonnet|haiku|fable)(?:\[1m\])?$/u.exec(modelId.trim().toLowerCase())?.[1];
+  return family ? CLAUDE_SUBSCRIPTION_MODELS.find((model) => model.id.startsWith(`claude-${family}-`)) : undefined;
+}
+
+/**
  * Variant suffixes proxies add to a catalog id: thinking switches (new-api `-thinking[-<budget>]`/`-nothinking`,
  * AiHubMix `-think`/`-nothink`), effort tails (new-api, AiHubMix `gpt-5.4-high`), AiHubMix `-search`, LinkAPI `-r`,
  * Chutes `-tee`, and date pins (`-20250929`, `-2024-08-06`, `-0731`). findKnownModel removes them one at a time,
@@ -1375,6 +1384,8 @@ function catalogModelId(modelId: string): string {
 export function findKnownModel(provider: APIProvider, modelId: string): KnownModel | undefined {
   const exact = MODEL_LISTS[provider]?.find((model) => model.id === modelId);
   if (exact) return exact;
+  const alias = provider === "claude_subscription" ? findClaudeCliAlias(modelId) : undefined;
+  if (alias) return alias;
 
   // Aggregators namespace model IDs (for example, `deepseek/deepseek-v4-pro`)
   // while direct OAI-compatible endpoints generally do not. Resolve both
