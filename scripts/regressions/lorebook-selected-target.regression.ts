@@ -62,4 +62,23 @@ assert.deepEqual(
   ["other", "new-book"],
 );
 assert.equal(createdBooks[0]?.name, "Campaign Scenes", "Automatic routing must remain available without a selection");
-console.log("Lorebook Keeper explicit target, approval, locks and automatic routing regressions passed.");
+// New entries are embedded as well as updated ones, so vector lorebooks can find them.
+const embedded: string[] = [];
+await persistLorebookKeeperUpdates({
+  ...options,
+  lorebooksStore: {
+    ...store,
+    async createEntry(input: Record<string, unknown>) {
+      return { id: `entry-${String(input.name)}`, ...input };
+    },
+  } as unknown as Parameters<typeof persistLorebookKeeperUpdates>[0]["lorebooksStore"],
+  allowTargetRouting: false,
+  updates: updates.slice(0, 1),
+  revectorizeEntry: async (entry) => {
+    embedded.push(entry.id);
+  },
+});
+assert.deepEqual(embedded, ["entry-Memory"]);
+console.log(
+  "Lorebook Keeper explicit target, approval, locks and automatic routing and new-entry embedding regressions passed.",
+);
