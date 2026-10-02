@@ -408,6 +408,7 @@ import {
   selectRollingSummaryMessages,
   injectIntoOutputFormatOrLastUser,
   placeGameWorldInfo,
+  selectGameWindow,
   getMessageConversationStartCharacterIds,
   getMessageHiddenFromAICharacterIds,
   isManualTrackerCharacterId,
@@ -1789,7 +1790,23 @@ export async function generateRoutes(app: FastifyInstance) {
         contextMessageLimit > 0 &&
         chatMessages.length > contextMessageLimit
       ) {
-        chatMessages = chatMessages.slice(-contextMessageLimit);
+        if (chatMeta.gameLoreInTail === true) {
+          // Game prompt caching: hold the window head steady until the cache has lapsed anyway.
+          const lastReply = [...chatMessages].reverse().find((m) => m.role === "assistant");
+          const ttlMs = (conn.anthropicExtendedCacheTtl === "true" ? 60 : 5) * 60_000;
+          const windowed = selectGameWindow(chatMessages, {
+            limit: contextMessageLimit,
+            slack: typeof chatMeta.gameWindowSlack === "number" ? chatMeta.gameWindowSlack : 30,
+            headId: typeof chatMeta.gameWindowHeadId === "string" ? chatMeta.gameWindowHeadId : null,
+            cacheCold: !lastReply?.createdAt || Date.now() - new Date(lastReply.createdAt).getTime() > ttlMs,
+          });
+          chatMessages = windowed.messages;
+          if (windowed.headId && windowed.headId !== chatMeta.gameWindowHeadId) {
+            await chats.patchMetadata(input.chatId, { gameWindowHeadId: windowed.headId });
+          }
+        } else {
+          chatMessages = chatMessages.slice(-contextMessageLimit);
+        }
       }
       const pastReasoning = collectPastReasoningMetadata(
         chatMessages,
@@ -4258,21 +4275,30 @@ export async function generateRoutes(app: FastifyInstance) {
             !(typeof chatMeta.gameGmPromptTemplateId === "string" && chatMeta.gameGmPromptTemplateId.trim().length > 0)
               ? { ...chatMeta, gameSystemPrompt: selectedGamePrompt }
               : chatMeta;
-          const { gmCtx, gameActiveState, sessionNumber, gameTurnNumber, gameTime, gameMap, hasSceneModel } =
-            await injectGameGmPromptRuntime({
-              messages: finalMessages,
-              chatId: input.chatId,
-              chat,
-              chatMetadata: gamePromptMetadata,
-              characterIds,
-              chars,
-              chats,
-              selectedGameStateSnapshotPromise,
-              mappedMessages,
-              personaName,
-              resolvePromptMacros,
-            });
+          const {
+            gmCtx,
+            gameActiveState,
+            sessionNumber,
+            gameTurnNumber,
+            gameTime,
+            gameMap,
+            hasSceneModel,
+            volatileTail,
+          } = await injectGameGmPromptRuntime({
+            messages: finalMessages,
+            chatId: input.chatId,
+            chat,
+            chatMetadata: gamePromptMetadata,
+            characterIds,
+            chars,
+            chats,
+            selectedGameStateSnapshotPromise,
+            mappedMessages,
+            personaName,
+            resolvePromptMacros,
+          });
           canonicalGamePartyNames = gmCtx.partyNames;
+          placeGameWorldInfo(finalMessages, volatileTail, "", true);
 
           // ── Lorebook injection for game mode ──
           if (!presetHandledLorebooks) {

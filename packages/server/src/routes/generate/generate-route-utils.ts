@@ -2015,3 +2015,22 @@ export function parseGameStateRow(row: Record<string, unknown>): GameState {
     createdAt: row.createdAt as string,
   };
 }
+
+/**
+ * Window the game history for prompt caching. A plain `slice(-limit)` moves the first message every turn
+ * once the chat is at the cap, which misses the whole cached history. This keeps the previous head while
+ * the cache is warm and the window is within `limit + slack`, and re-cuts at `-limit` once the cache has
+ * lapsed (a miss anyway) or the window outgrows the slack.
+ */
+export function selectGameWindow<T extends { id: string }>(
+  messages: T[],
+  opts: { limit: number; slack: number; headId?: string | null; cacheCold: boolean },
+): { messages: T[]; headId: string | null } {
+  if (messages.length <= opts.limit) return { messages, headId: messages[0]?.id ?? null };
+  const kept = opts.headId ? messages.findIndex((m) => m.id === opts.headId) : -1;
+  const start =
+    kept >= 0 && !opts.cacheCold && messages.length - kept <= opts.limit + opts.slack
+      ? kept
+      : messages.length - opts.limit;
+  return { messages: messages.slice(start), headId: messages[start]!.id };
+}

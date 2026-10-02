@@ -47,6 +47,9 @@ export type GameGmPromptRuntime = {
   gameTime: string | undefined;
   gameMap: GameMap | null;
   hasSceneModel: boolean;
+  /** Per-turn server context (weather, perception, morale) held out of the system prompt when
+   *  `gameLoreInTail` is on; the caller appends it to the final user message. Empty otherwise. */
+  volatileTail: string;
 };
 
 function parseExtra(extra: unknown): Record<string, unknown> {
@@ -432,7 +435,23 @@ export async function injectGameGmPromptRuntime(args: {
         : null,
   };
 
-  const builtGmPrompt = buildGmSystemPrompt(gmCtx);
+  // These change every turn (weather ticks, morale shifts); inside the system block any change misses
+  // the whole prompt cache, so `gameLoreInTail` renders them on the final message instead.
+  const volatileInTail = args.chatMetadata.gameLoreInTail === true;
+  const volatileTail = volatileInTail
+    ? [
+        gmCtx.weatherContext ? `<weather_update>\n${gmCtx.weatherContext}\n</weather_update>` : "",
+        gmCtx.perceptionHints ?? "",
+        gmCtx.moraleContext ?? "",
+      ]
+        .filter(Boolean)
+        .join("\n")
+    : "";
+  const builtGmPrompt = buildGmSystemPrompt(
+    volatileInTail
+      ? { ...gmCtx, weatherContext: undefined, perceptionHints: undefined, moraleContext: undefined }
+      : gmCtx,
+  );
   const customGmPrompt =
     typeof args.chatMetadata.customGmPrompt === "string" ? args.chatMetadata.customGmPrompt.trim() : "";
   let fullGmPrompt = customGmPrompt ? `${builtGmPrompt}\n\n${customGmPrompt}` : builtGmPrompt;
@@ -453,5 +472,6 @@ export async function injectGameGmPromptRuntime(args: {
     gameTime,
     gameMap,
     hasSceneModel,
+    volatileTail,
   };
 }

@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
-import { placeGameWorldInfo } from "../../packages/server/src/routes/generate/generate-route-utils.js";
+import {
+  placeGameWorldInfo,
+  selectGameWindow,
+} from "../../packages/server/src/routes/generate/generate-route-utils.js";
 
 const before = "<lore>\nBEFORE\n</lore>";
 const after = "<lore>\nAFTER\n</lore>";
@@ -56,3 +59,18 @@ const history = () => [
 }
 
 console.log("Game lore placement: default positions preserved, tail placement leaves the system message stable.");
+
+// History window: head holds while the cache is warm, re-cuts when cold or past the slack.
+{
+  const msgs = (n: number) => Array.from({ length: n }, (_, i) => ({ id: `m${i}` }));
+  const opts = { limit: 10, slack: 4, cacheCold: false };
+  assert.equal(selectGameWindow(msgs(8), { ...opts }).messages.length, 8);
+  const first = selectGameWindow(msgs(12), { ...opts });
+  assert.equal(first.headId, "m2");
+  const warm = selectGameWindow(msgs(14), { ...opts, headId: first.headId });
+  assert.equal(warm.headId, "m2");
+  assert.equal(warm.messages.length, 12);
+  assert.equal(selectGameWindow(msgs(17), { ...opts, headId: "m2" }).headId, "m7");
+  assert.equal(selectGameWindow(msgs(14), { ...opts, headId: "m2", cacheCold: true }).headId, "m4");
+  assert.equal(selectGameWindow(msgs(14), { ...opts, headId: "gone" }).headId, "m4");
+}
