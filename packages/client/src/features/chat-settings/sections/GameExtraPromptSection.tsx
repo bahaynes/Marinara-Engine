@@ -3,6 +3,7 @@ import { RotateCcw, Sliders } from "lucide-react";
 import { useTranslation as useUiTranslation } from "react-i18next";
 import { DEFAULT_GAME_SYSTEM_PROMPT, type AgentPromptTemplateOption } from "@marinara-engine/shared";
 import { MacroTextarea } from "../../../components/ui/MacroTextarea";
+import { ToggleSetting } from "../../../components/panels/settings/SettingControls";
 import { ChatSettingsSection } from "../ChatSettingsSection";
 
 interface PromptPresetOption {
@@ -15,6 +16,8 @@ interface GameExtraPromptSectionProps {
   storedValue: string;
   specialInstructionsValue: string;
   sessionHistoryMode?: string | null;
+  cacheFriendlyPrompt?: boolean;
+  windowSlack?: number | null;
   promptPresetId: string | null;
   promptPresets: PromptPresetOption[];
   selectedPresetPrompt: string;
@@ -24,6 +27,8 @@ interface GameExtraPromptSectionProps {
   onSpecialInstructionsCommit: (value: string | null) => void;
   onSpecialInstructionsChange: (value: string) => void;
   onSessionHistoryModeChange?: (mode: string | null) => void;
+  onCacheFriendlyPromptChange?: (enabled: boolean) => void;
+  onWindowSlackChange?: (slack: number | null) => void;
   onPromptPresetChange: (presetId: string | null) => void;
   onGmPromptTemplateChange: (templateId: string | null) => void;
 }
@@ -32,6 +37,8 @@ export function GameExtraPromptSection({
   storedValue,
   specialInstructionsValue,
   sessionHistoryMode,
+  cacheFriendlyPrompt = false,
+  windowSlack,
   promptPresetId,
   promptPresets,
   selectedPresetPrompt,
@@ -41,6 +48,8 @@ export function GameExtraPromptSection({
   onSpecialInstructionsCommit,
   onSpecialInstructionsChange,
   onSessionHistoryModeChange,
+  onCacheFriendlyPromptChange,
+  onWindowSlackChange,
   onPromptPresetChange,
   onGmPromptTemplateChange,
 }: GameExtraPromptSectionProps) {
@@ -152,6 +161,34 @@ export function GameExtraPromptSection({
             {localizeUi("ui.chatSettings.gameextrapromptsection.controlsHowPastSessionSummariesAreCompressedInThe")}
           </span>
         </label>
+
+        <ToggleSetting
+          label={localizeUi("ui.chatSettings.gameextrapromptsection.cacheFriendlyPrompt")}
+          checked={cacheFriendlyPrompt}
+          onChange={(enabled) => onCacheFriendlyPromptChange?.(enabled)}
+          help={localizeUi("ui.chatSettings.gameextrapromptsection.cacheFriendlyPromptHelp")}
+        />
+        {cacheFriendlyPrompt && (
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[0.6875rem] font-medium text-[var(--muted-foreground)]">
+              {localizeUi("ui.chatSettings.gameextrapromptsection.windowSlack")}
+            </span>
+            <input
+              type="number"
+              min={0}
+              step={5}
+              defaultValue={windowSlack ?? 30}
+              onBlur={(event) => {
+                const value = Number.parseInt(event.target.value, 10);
+                onWindowSlackChange?.(Number.isFinite(value) && value >= 0 && value !== 30 ? value : null);
+              }}
+              className="w-full rounded-lg bg-[var(--secondary)] px-3 py-2 text-xs text-[var(--foreground)] outline-none ring-1 ring-[var(--border)] transition-shadow focus:ring-[var(--primary)]/40"
+            />
+            <span className="text-[0.575rem] leading-relaxed text-[var(--muted-foreground)]">
+              {localizeUi("ui.chatSettings.gameextrapromptsection.windowSlackHelp")}
+            </span>
+          </label>
+        )}
 
         <div className="flex items-center justify-between gap-2">
           <span className="text-[0.6875rem] font-medium text-[var(--foreground)]">
