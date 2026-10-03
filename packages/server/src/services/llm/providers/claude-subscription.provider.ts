@@ -42,6 +42,7 @@ import {
   splitHistoryForResume,
   type SdkUserMessageForPrompt,
 } from "./claude-subscription/jsonl-entries.js";
+import { ensureFreshOAuthCredentials } from "./claude-subscription/oauth-refresh.js";
 import { ResumeSessionStore, resumeScratchCwd } from "./claude-subscription/session-store.js";
 import { claudeCodeExecutableOption } from "./claude-subscription/installed-cli.js";
 
@@ -574,6 +575,27 @@ export class ClaudeSubscriptionProvider extends BaseLLMProvider {
       sdkOptionRecord["resume"] = resumeSessionId;
       sdkOptionRecord["cwd"] = resumeCwd;
       sdkOptionRecord["sessionStore"] = sessionStore;
+      // The resume copy of the credentials cannot persist a refresh; renew the real file first.
+      const env = sdkOptions.env;
+      await ensureFreshOAuthCredentials(
+        async () => {
+          for await (const _ of query({
+            prompt: "Reply with ok",
+            options: {
+              abortController,
+              model: "haiku",
+              tools: [],
+              skills: [],
+              maxTurns: 1,
+              permissionMode: "bypassPermissions",
+              allowDangerouslySkipPermissions: true,
+              settingSources: [],
+              env,
+            },
+          }));
+        },
+        { env },
+      );
     }
 
     let inputTokens = 0;
