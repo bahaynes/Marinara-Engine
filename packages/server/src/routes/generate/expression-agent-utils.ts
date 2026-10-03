@@ -3,6 +3,7 @@ import {
   inferExpressionCandidates,
   isSpriteTalkOrBlinkFrame,
   normalizeSpriteExpressionKey as normalizeUnicodeSpriteExpressionKey,
+  normalizeSpriteExpressionLabel,
   normalizeSpriteLookupToken,
   spriteExpressionFacetKey,
 } from "@marinara-engine/shared";
@@ -375,10 +376,15 @@ export function completeRequiredSpriteExpressionEntries<T extends SpriteExpressi
   return { expressions: completed, warnings };
 }
 
+export type SpriteExpressionValidationOptions = {
+  resolvedHandles?: boolean;
+  allowDynamicExpressions?: boolean;
+};
+
 export function validateSpriteExpressionEntries<T extends SpriteExpressionEntry>(
   expressions: T[] | undefined,
   availableSprites: AvailableSpriteCharacter[] | undefined,
-  options: { resolvedHandles?: boolean } = {},
+  options: SpriteExpressionValidationOptions = {},
 ): ExpressionValidationResult<T> {
   const warnings: ExpressionValidationWarning[] = [];
   if (!Array.isArray(expressions) || !Array.isArray(availableSprites)) {
@@ -419,6 +425,17 @@ export function validateSpriteExpressionEntries<T extends SpriteExpressionEntry>
       ? (character.expressions.find((handle) => handle.toLowerCase() === requestedHandle) ?? null)
       : resolveExpression(entry.expression, character.expressions, character.expressionAliases);
     if (!expression) {
+      if (options.allowDynamicExpressions) {
+        const rawExpr = typeof entry.expression === "string" ? entry.expression.trim() : "";
+        if (rawExpr) {
+          const normalizedLabel = normalizeSpriteExpressionLabel(rawExpr);
+          entry.characterId = character.characterId;
+          entry.characterName = character.characterName;
+          entry.expression = normalizedLabel;
+          validated.push(entry);
+          continue;
+        }
+      }
       warnings.push({
         message: `Expression agent chose "${entry.expression}" for ${character.characterName} which doesn't exist — removing`,
       });
