@@ -545,8 +545,9 @@ export type CharacterCallVideoGenerationInput = {
 };
 
 export const spriteKeys = {
-  list: (characterId: string) => ["sprites", characterId] as const,
-  capabilities: () => ["sprites", "capabilities"] as const,
+  all: ["sprites"] as const,
+  list: (characterId: string) => [...spriteKeys.all, characterId] as const,
+  capabilities: () => [...spriteKeys.all, "capabilities"] as const,
 };
 
 export function useSpriteCapabilities() {
