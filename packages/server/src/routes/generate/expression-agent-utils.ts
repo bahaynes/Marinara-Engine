@@ -1,6 +1,7 @@
 import {
   inferExpressionCandidates,
   normalizeSpriteExpressionKey as normalizeUnicodeSpriteExpressionKey,
+  normalizeSpriteExpressionLabel,
   normalizeSpriteLookupToken,
 } from "@marinara-engine/shared";
 import { buildSpriteExpressionChoices } from "../../services/game/sprite.service.js";
@@ -294,9 +295,14 @@ export function completeRequiredSpriteExpressionEntries<T extends SpriteExpressi
   return { expressions: completed, warnings };
 }
 
+export type SpriteExpressionValidationOptions = {
+  allowDynamicExpressions?: boolean;
+};
+
 export function validateSpriteExpressionEntries<T extends SpriteExpressionEntry>(
   expressions: T[] | undefined,
   availableSprites: AvailableSpriteCharacter[] | undefined,
+  options?: SpriteExpressionValidationOptions,
 ): ExpressionValidationResult<T> {
   const warnings: ExpressionValidationWarning[] = [];
   if (!Array.isArray(expressions) || !Array.isArray(availableSprites)) {
@@ -334,6 +340,17 @@ export function validateSpriteExpressionEntries<T extends SpriteExpressionEntry>
 
     const expression = resolveExpression(entry.expression, character.expressions);
     if (!expression) {
+      if (options?.allowDynamicExpressions) {
+        const rawExpr = typeof entry.expression === "string" ? entry.expression.trim() : "";
+        if (rawExpr) {
+          const normalizedLabel = normalizeSpriteExpressionLabel(rawExpr);
+          entry.characterId = character.characterId;
+          entry.characterName = character.characterName;
+          entry.expression = normalizedLabel;
+          validated.push(entry);
+          continue;
+        }
+      }
       warnings.push({
         message: `Expression agent chose "${entry.expression}" for ${character.characterName} which doesn't exist — removing`,
       });
