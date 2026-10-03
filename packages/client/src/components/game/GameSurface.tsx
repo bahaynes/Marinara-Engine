@@ -308,6 +308,7 @@ import { PinnedImageOverlay } from "../chat/PinnedImageOverlay";
 import { CHAT_TOOLBAR_ICON_GAP_CLASS } from "../chat/ChatToolbarControls";
 import { HISTORY_PAGER_BUTTON_CLASS } from "../chat/TranscriptWindowControls";
 import { NEUTRAL_PANEL_SCROLL_AREA, NEUTRAL_PANEL_SUBTITLE } from "../ui/neutral-surface-styles";
+import { GameIllustrationCard } from "./GameIllustrationCard";
 import type { ReadableTag } from "../../lib/game-tag-parser";
 import type { DirectionCommand, GameNpc, GameStoryboardViewerDisplayMode } from "@marinara-engine/shared";
 
@@ -11972,11 +11973,17 @@ function GameSurfaceComponent({
       return undefined;
     }
 
-    if (effectiveBackgroundTag && scopedAssetMap) {
-      // Special value: "black" means no background (e.g. character waking up)
+    if (effectiveBackgroundTag) {
       if (effectiveBackgroundTag === "black" || effectiveBackgroundTag === "none") {
         return "black";
       }
+      // custom-mods: support direct image URLs as game scene backgrounds
+      if (effectiveBackgroundTag.startsWith("/") || effectiveBackgroundTag.startsWith("http")) {
+        return effectiveBackgroundTag;
+      }
+    }
+
+    if (effectiveBackgroundTag && scopedAssetMap) {
       // 1. Exact tag match
       let entry = scopedAssetMap[effectiveBackgroundTag];
       // 2. Fuzzy match: try to find a tag that ends with or contains the given value
@@ -13915,6 +13922,20 @@ function GameSurfaceComponent({
               />
 
               <PinnedImageOverlay activeChatId={activeChatId} includeSceneVideos />
+              {/* custom-mods: Event CG / Illustration Card for Game Mode */}
+              <GameIllustrationCard
+                chatId={activeChatId}
+                message={latestAssistantMsg}
+                onSetBackground={(url) => {
+                  useGameAssetStore.getState().setCurrentBackground(url);
+                  toast.success(localizeUi("ui.game.gamesurfacecomponent.sceneIllustrated"));
+                }}
+                onAnimate={
+                  gameSceneVideosEnabled
+                    ? (galleryId) => handleGenerateSceneVideo(galleryId ? { galleryImageId: galleryId } : undefined)
+                    : undefined
+                }
+              />
 
               {/* Inventory overlay */}
               <GameInventory
