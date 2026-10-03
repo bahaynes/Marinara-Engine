@@ -3156,7 +3156,15 @@ function buildAvailableSpritesBlock(context: AgentContext): string {
   for (const char of sprites) {
     const choices = char.expressionChoices?.length ? char.expressionChoices : char.expressions;
     const label = char.characterId === personaId ? " [active user persona]" : "";
-    parts.push(`${char.characterName} (${char.characterId})${label}: ${choices.join(", ")}`);
+    if (choices.length > 0) {
+      parts.push(
+        `${char.characterName} (${char.characterId})${label}: ${choices.join(", ")} (or any fitting dynamic expression)`,
+      );
+    } else {
+      parts.push(
+        `${char.characterName} (${char.characterId})${label}: [dynamic generation — select any fitting facial expression]`,
+      );
+    }
   }
   parts.push(`</available_sprites>`);
   return parts.join("\n");

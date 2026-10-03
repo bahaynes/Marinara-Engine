@@ -688,7 +688,7 @@ import {
   preserveRecentMessageContentEdit,
   rememberRecentMessageContentEdit,
 } from "./use-chats";
-import { characterKeys } from "./use-characters";
+import { characterKeys, spriteKeys } from "./use-characters";
 import { connectionKeys } from "./use-connections";
 import { lorebookKeys } from "./use-lorebooks";
 import { presetKeys } from "./use-presets";
@@ -2237,6 +2237,12 @@ export function useGenerate() {
               break;
             }
 
+            case "sprite_generated": {
+              qc.invalidateQueries({ queryKey: spriteKeys.all });
+              invalidateCurrentMessagesIfSafe();
+              break;
+            }
+
             case "agent_result": {
               const result = event.data as AgentResultEventPayload;
               if (result.chatId && result.chatId !== params.chatId) break;
@@ -2270,6 +2276,7 @@ export function useGenerate() {
                 if (result.resultType === "sprite_change") {
                   spriteChangeReceived = true;
                   invalidateCurrentMessagesIfSafe();
+                  qc.invalidateQueries({ queryKey: spriteKeys.all });
                 }
                 if (result.resultType === "spotify_control") {
                   qc.invalidateQueries({ queryKey: ["spotify", "player"] });
@@ -4010,6 +4017,12 @@ export function useGenerate() {
               break;
             }
 
+            case "sprite_generated": {
+              qc.invalidateQueries({ queryKey: spriteKeys.all });
+              qc.invalidateQueries({ queryKey: chatKeys.messages(chatId) });
+              break;
+            }
+
             case "agent_result": {
               const result = event.data as AgentResultEventPayload;
               if (result.chatId && result.chatId !== chatId) break;
@@ -4047,6 +4060,7 @@ export function useGenerate() {
                 if (result.resultType === "sprite_change") {
                   spriteChangeReceived = true;
                   qc.invalidateQueries({ queryKey: chatKeys.messages(chatId) });
+                  qc.invalidateQueries({ queryKey: spriteKeys.all });
                 }
                 if (result.resultType === "spotify_control") {
                   qc.invalidateQueries({ queryKey: ["spotify", "player"] });

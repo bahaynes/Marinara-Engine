@@ -716,6 +716,10 @@ import {
   normalizeSpriteDisplayModes,
   validateSpriteExpressionEntries,
 } from "./generate/expression-agent-utils.js";
+import {
+  findExistingCharacterSprite,
+  resolveOrGenerateCharacterSprite,
+} from "../services/image/ephemeral-sprite.service.js";
 import { logger, logDebugOverride } from "../lib/logger.js";
 import {
   buildHistoricalLorebookKeeperContext,
@@ -6750,9 +6754,17 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
             for (const char of agentContext.characters) {
               if (restrictToSelectedSprites && !selectedSpriteIds.has(char.id)) continue;
               const sprites = listCharacterSprites(char.id);
-              if (!sprites) continue;
-              const spriteCharacter = buildAvailableSpriteCharacter(char.id, char.name, sprites, spriteDisplayModes);
-              if (spriteCharacter) perChar.push(spriteCharacter);
+              if (sprites) {
+                const spriteCharacter = buildAvailableSpriteCharacter(char.id, char.name, sprites, spriteDisplayModes);
+                if (spriteCharacter) perChar.push(spriteCharacter);
+              } else if (char.avatarPath) {
+                perChar.push({
+                  characterId: char.id,
+                  characterName: char.name,
+                  expressions: [],
+                  expressionChoices: [],
+                });
+              }
             }
             const includePersonaSprite =
               !!userIdentityId &&
@@ -6774,6 +6786,13 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                   spriteDisplayModes,
                 );
                 if (spritePersona) perChar.push(spritePersona);
+              } else {
+                perChar.push({
+                  characterId: userIdentityId,
+                  characterName: personaName,
+                  expressions: [],
+                  expressionChoices: [],
+                });
               }
             }
             if (perChar.length > 0) {
@@ -12825,7 +12844,9 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
             const availableSprites = agentContext.memory._availableSprites as
               Array<{ characterId: string; characterName: string; expressions: string[] }> | undefined;
             const rawExpressions = Array.isArray(spriteData.expressions) ? spriteData.expressions : [];
-            const validation = validateSpriteExpressionEntries(rawExpressions, availableSprites);
+            const validation = validateSpriteExpressionEntries(rawExpressions, availableSprites, {
+              allowDynamicExpressions: true,
+            });
             let validatedExpressions = validation.expressions as typeof spriteData.expressions;
             if (!Array.isArray(spriteData.expressions) && rawExpressions.length === 0) {
               logger.warn("[generate] Expression agent returned no expression entries — filling required targets");
@@ -13393,7 +13414,9 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
               const availableSprites = agentContext.memory._availableSprites as
                 Array<{ characterId: string; characterName: string; expressions: string[] }> | undefined;
               if (Array.isArray(spriteData.expressions)) {
-                const validation = validateSpriteExpressionEntries(spriteData.expressions, availableSprites);
+                const validation = validateSpriteExpressionEntries(spriteData.expressions, availableSprites, {
+                  allowDynamicExpressions: true,
+                });
                 let validatedExpressions = validation.expressions as typeof spriteData.expressions;
                 for (const warning of validation.warnings) {
                   logger.warn("[generate] %s", warning.message);
@@ -13469,6 +13492,47 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                   }
                 } catch {
                   /* non-critical */
+                }
+
+                // If any expression is not yet cached on disk, generate it dynamically via ComfyUI
+                for (const e of persistedExpressions) {
+                  const existing = findExistingCharacterSprite(e.characterId, e.expression);
+                  if (!existing) {
+                    try {
+                      const charObj = agentContext.characters.find((c) => c.id === e.characterId);
+                      const genResult = await resolveOrGenerateCharacterSprite(app.db, {
+                        characterId: e.characterId,
+                        expression: e.expression,
+                        appearance: charObj?.appearance,
+                        avatarPath: charObj?.avatarPath,
+                        signal: agentSignal,
+                      });
+                      if (genResult) {
+                        sendSseEvent(reply, {
+                          type: "sprite_generated",
+                          data: {
+                            characterId: e.characterId,
+                            expression: e.expression,
+                            url: genResult.url,
+                          },
+                        });
+                        sendAgentResultEvent({
+                          ...result,
+                          data: {
+                            expressions: [
+                              {
+                                characterId: e.characterId,
+                                expression: e.expression,
+                                transition: "crossfade",
+                              },
+                            ],
+                          },
+                        });
+                      }
+                    } catch (genErr) {
+                      logger.warn(genErr, "[ephemeral-sprite] Dynamic sprite generation error for %s", e.characterId);
+                    }
+                  }
                 }
               }
             }
