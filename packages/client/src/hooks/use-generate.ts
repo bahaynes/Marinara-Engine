@@ -671,6 +671,7 @@ import { useAgentStore } from "../stores/agent.store";
 import { agentResultMatchesVisibleSwipe } from "../lib/agent-result-ownership";
 import { isDiceRollResult } from "../lib/dice-roll-result";
 import { useGameModeStore } from "../stores/game-mode.store";
+import { useGameAssetStore } from "../stores/game-asset.store";
 import { useGameStateStore } from "../stores/game-state.store";
 import { useUIStore } from "../stores/ui.store";
 import {
@@ -2991,8 +2992,21 @@ export function useGenerate() {
                 messageId: string;
                 imageUrl: string;
                 reason?: string;
+                prompt?: string;
+                galleryId?: string;
               };
               toast(illData.reason ? `🎨 ${illData.reason}` : "🎨 Scene illustration generated");
+              if (isGameGeneration) {
+                // custom-mods: make the generated scene illustration immediately available on the Game surface
+                useGameAssetStore.getState().setLatestIllustration({
+                  url: illData.imageUrl,
+                  prompt: illData.prompt,
+                  reason: illData.reason,
+                  galleryId: illData.galleryId,
+                  messageId: illData.messageId,
+                });
+                void qc.invalidateQueries({ queryKey: chatKeys.messages(params.chatId) });
+              }
               // Roleplay can already have handed off to the durable row while other
               // agents still own this stream. Show its saved image immediately;
               // only defer when the live message presentation still owns the row.
