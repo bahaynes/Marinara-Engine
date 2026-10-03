@@ -802,6 +802,7 @@ import {
   normalizeSpriteDisplayModes,
   validateSpriteExpressionEntries,
 } from "./generate/expression-agent-utils.js";
+import { generateMissingCharacterSprites } from "../services/image/ephemeral-sprite.service.js";
 import { logger, logDebugOverride } from "../lib/logger.js";
 import {
   buildHistoricalLorebookKeeperContext,
@@ -7178,9 +7179,17 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
             for (const char of agentContext.characters) {
               if (restrictToSelectedSprites && !selectedSpriteIds.has(char.id)) continue;
               const sprites = listCharacterSprites(char.id);
-              if (!sprites) continue;
-              const spriteCharacter = buildAvailableSpriteCharacter(char.id, char.name, sprites, spriteDisplayModes);
-              if (spriteCharacter) perChar.push(spriteCharacter);
+              if (sprites) {
+                const spriteCharacter = buildAvailableSpriteCharacter(char.id, char.name, sprites, spriteDisplayModes);
+                if (spriteCharacter) perChar.push(spriteCharacter);
+              } else if (char.avatarPath) {
+                perChar.push({
+                  characterId: char.id,
+                  characterName: char.name,
+                  expressions: [],
+                  expressionChoices: [],
+                });
+              }
             }
             const includePersonaSprite =
               !!userIdentityId &&
@@ -7202,6 +7211,13 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                   spriteDisplayModes,
                 );
                 if (spritePersona) perChar.push(spritePersona);
+              } else {
+                perChar.push({
+                  characterId: userIdentityId,
+                  characterName: personaName,
+                  expressions: [],
+                  expressionChoices: [],
+                });
               }
             }
             if (perChar.length > 0) {
@@ -13615,7 +13631,9 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
             const availableSprites = agentContext.memory._availableSprites as
               Array<{ characterId: string; characterName: string; expressions: string[] }> | undefined;
             const rawExpressions = Array.isArray(spriteData.expressions) ? spriteData.expressions : [];
-            const validation = validateSpriteExpressionEntries(rawExpressions, availableSprites);
+            const validation = validateSpriteExpressionEntries(rawExpressions, availableSprites, {
+              allowDynamicExpressions: true,
+            });
             let validatedExpressions = validation.expressions as typeof spriteData.expressions;
             if (!Array.isArray(spriteData.expressions) && rawExpressions.length === 0) {
               logger.warn("[generate] Expression agent returned no expression entries — filling required targets");
@@ -14437,6 +14455,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
               if (Array.isArray(spriteData.expressions)) {
                 const validation = validateSpriteExpressionEntries(spriteData.expressions, availableSprites, {
                   resolvedHandles: true,
+                  allowDynamicExpressions: true,
                 });
                 let validatedExpressions = validation.expressions as typeof spriteData.expressions;
                 for (const warning of validation.warnings) {
@@ -14514,6 +14533,15 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                 } catch {
                   /* non-critical */
                 }
+
+                // custom-mods: generate any expression not yet cached on disk (ephemeral-sprite.service.ts).
+                await generateMissingCharacterSprites(app.db, {
+                  expressions: persistedExpressions,
+                  characters: agentContext.characters,
+                  signal: agentSignal,
+                  onSprite: (event) => sendSseEvent(reply, event),
+                  onExpression: (data) => sendAgentResultEvent({ ...result, data }),
+                });
               }
             }
 

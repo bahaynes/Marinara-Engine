@@ -299,7 +299,6 @@ import {
   isIllustratorNpcCastId,
   loadIllustratorNpcCast,
 } from "../../services/image/illustrator-npc-cast.js";
-import { generateTrackerPortrait, trackerPortraitStyleProfileId } from "../../services/image/tracker-portrait.js";
 import {
   explicitlyRequestsTextRewrite,
   isBuiltInTextRewriteAgentType,
@@ -5925,7 +5924,9 @@ export async function registerRetryAgentsRoute(
             Array<{ characterId: string; characterName: string; expressions: string[] }> | undefined;
           if (Array.isArray(availableSprites)) {
             const rawExpressions = Array.isArray(spriteData.expressions) ? spriteData.expressions : [];
-            const validation = validateSpriteExpressionEntries(rawExpressions, availableSprites);
+            const validation = validateSpriteExpressionEntries(rawExpressions, availableSprites, {
+              allowDynamicExpressions: true,
+            });
             let validatedExpressions = validation.expressions;
             if (!Array.isArray(spriteData.expressions) && rawExpressions.length === 0) {
               logger.warn("[retry-agents] Expression agent returned no expression entries — filling required targets");
