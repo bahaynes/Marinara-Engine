@@ -1331,6 +1331,25 @@ export function resolveGroupGenerationMode(
   return normalizeGroupChatMode(configuredMode);
 }
 
+/**
+ * Fork: individual roleplay groups whose responders share one prompt. Every responder then sees the
+ * same system prompt (all cards) and the same history roles, and only a trailing user instruction
+ * names who replies, so consecutive responders read each other's prompt cache.
+ */
+export function usesSharedGroupPromptCache(
+  chatMode: string | null | undefined,
+  groupMode: GroupGenerationMode,
+  characterCount: number,
+  chatMeta: Record<string, unknown>,
+): boolean {
+  return (
+    chatMode === "roleplay" &&
+    groupMode === "individual" &&
+    characterCount > 1 &&
+    chatMeta.groupSharedPromptCache === true
+  );
+}
+
 export function shouldRestoreRegenerationCharacterTarget(
   chatMode: string | null | undefined,
   configuredMode: unknown,
