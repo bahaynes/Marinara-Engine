@@ -716,6 +716,7 @@ import {
   resolveBaseUrl,
   resolveGroupGenerationMode,
   resolveGroupIndividualHistorySpeaker,
+  usesSharedGroupPromptCache,
   resolveRoleplaySummaryTail,
   resolveCharacterIdentityMap,
   resolveCharacterNameMap,
@@ -1046,6 +1047,7 @@ import {
   filterPromptHistoryByMessageIds,
   scopeIndividualGroupMessagesForTarget,
   selectHistoryMessagesForRecall,
+  scopeSharedGroupMessagesForTarget,
   type GenerationPromptMessage,
 } from "../services/generation/prompt-message-scope.js";
 import {
@@ -3624,9 +3626,16 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
           });
         const promptGroupResponseOrder = effectiveGroupResponseOrder;
         const promptGroupChatMode = groupGenerationMode;
+        const sharedGroupPrompt = usesSharedGroupPromptCache(
+          chatMode,
+          promptGroupChatMode,
+          allCharacterIds.length,
+          chatMeta,
+        );
         // Each responder sees other characters as user input. Keep shared history
         // untouched until those roles are scoped, including replies within this turn.
         const deferGroupPromptRegex =
+          !sharedGroupPrompt &&
           chatMode === "roleplay" &&
           allCharacterIds.length > 1 &&
           promptGroupChatMode === "individual" &&
@@ -3672,15 +3681,17 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
           input.impersonate !== true;
         const characterAdvancedPromptIds = resolveCharacterAdvancedPromptIds(promptCharacterIds, chatMode, chatMeta);
         const deferCharacterMacros =
+          !sharedGroupPrompt &&
           characterIds.length > 1 &&
           promptGroupChatMode === "individual" &&
           (promptGroupResponseOrder !== "manual" || chatMode === "conversation") &&
           input.impersonate !== true;
         const shouldPrefixGroupHistorySpeakers =
-          characterIds.length > 1 &&
-          chatMode !== "game" &&
-          promptGroupChatMode === "individual" &&
-          (chatMode === "conversation" || chatMeta.groupSpeakerNamesInHistory === true);
+          sharedGroupPrompt ||
+          (characterIds.length > 1 &&
+            chatMode !== "game" &&
+            promptGroupChatMode === "individual" &&
+            (chatMode === "conversation" || chatMeta.groupSpeakerNamesInHistory === true));
         // The preset's level counts only where the preset assembles the prompt, matching the parameters sent below.
         const promptReasoning = resolveReasoningMacroValue({
           connection: conn,
@@ -9327,7 +9338,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
           );
           if (
             usesIndividualGroupGeneration &&
-            deferCharacterMacros &&
+            (deferCharacterMacros || sharedGroupPrompt) &&
             promptCharacterIds.length > 1 &&
             targetCharId &&
             lorebookPromptScanResult
@@ -9374,8 +9385,17 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
             targetCharacterId: targetCharId,
             targetPromptPresetId: presetId ?? null,
           };
+          // A shared group prompt carries the responder's card and turn instruction in its final
+          // user message instead (scopeSharedGroupMessagesForTarget), so responders share one cache.
+          if (sharedGroupPrompt && targetCharId && !input.impersonate) {
+            gameAwareMessagesForGen = scopeSharedGroupMessagesForTarget(
+              gameAwareMessagesForGen,
+              targetCharId,
+              charInfo,
+            );
+          }
           const scopedMessagesForGen =
-            isGroupChat && usesIndividualGroupGeneration && targetCharId
+            isGroupChat && usesIndividualGroupGeneration && targetCharId && !sharedGroupPrompt
               ? scopeIndividualGroupMessagesForTarget(
                   gameAwareMessagesForGen,
                   targetCharId,
@@ -9421,7 +9441,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
               }),
             );
           }
-          if (!deferGroupPromptRegex && !promptTargetCharacterId && targetCharId) {
+          if (!deferGroupPromptRegex && !sharedGroupPrompt && !promptTargetCharacterId && targetCharId) {
             applyRegexScriptsToPromptMessages(targetScopedMessagesForGen, regexScripts, {
               ...targetRegexOptions,
               targetedOnly: true,
@@ -12636,7 +12656,9 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
 
         const generationGuideInstruction = buildGenerationGuideInstruction(input.generationGuide, promptMacroContext);
         const buildRoleplayCharacterInstruction = (charName: string) =>
-          groupTurnPromptEnabled && chatMode === "roleplay" ? `Respond ONLY as ${charName}.` : null;
+          groupTurnPromptEnabled && chatMode === "roleplay" && !sharedGroupPrompt
+            ? `Respond ONLY as ${charName}.`
+            : null;
 
         const mergedSpeaksOnlyTarget =
           !isGroupChat || Boolean(regenGroupChatIndividual) || mentionedConversationCharacters.length === 1;
