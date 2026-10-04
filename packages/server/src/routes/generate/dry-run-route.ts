@@ -143,6 +143,7 @@ import {
   filterPromptMessagesForCharacterAudience,
   keptWindowStart,
   scopeIndividualGroupMessagesForTarget,
+  scopeSharedGroupMessagesForTarget,
 } from "../../services/generation/prompt-message-scope.js";
 import { applyAllSegmentEdits } from "../../services/game/segment-edits.js";
 import { applyRegexScriptsToPromptMessages } from "../../services/regex/regex-application.js";
@@ -172,6 +173,7 @@ import {
   resolveCharacterNameMap,
   resolveChatSpeakerNames,
   resolveGroupGenerationMode,
+  usesSharedGroupPromptCache,
   resolveRegenerationGameStateAnchor,
   resolveProviderTopK,
   resolveRoleplayChatSummaryForPrompt,
@@ -905,7 +907,14 @@ export async function registerDryRunRoute(app: FastifyInstance) {
           ? (characterIds[0] ?? null)
           : null;
     const promptCharacterIds = resolvePromptCharacterIdsForTarget(characterIds, promptTargetCharacterId);
+    const sharedGroupPrompt = usesSharedGroupPromptCache(
+      chatMode,
+      dryRunGroupChatMode,
+      allCharacterIds.length,
+      chatMeta,
+    );
     const deferGroupPromptRegex =
+      !sharedGroupPrompt &&
       chatMode === "roleplay" &&
       allCharacterIds.length > 1 &&
       dryRunGroupChatMode === "individual" &&
@@ -913,6 +922,7 @@ export async function registerDryRunRoute(app: FastifyInstance) {
       !impersonate;
     const promptGroupResponseOrder = (chatMeta.groupResponseOrder as string) ?? "sequential";
     const deferCharacterMacros =
+      !sharedGroupPrompt &&
       characterIds.length > 1 &&
       dryRunGroupChatMode === "individual" &&
       (promptGroupResponseOrder !== "manual" || chatMode === "conversation") &&
@@ -1376,10 +1386,11 @@ export async function registerDryRunRoute(app: FastifyInstance) {
     }
     mappedMessages = resolveHistoryMessageMacros(mappedMessages);
     const shouldPrefixGroupHistorySpeakers =
-      characterIds.length > 1 &&
-      chatMode !== "game" &&
-      dryRunGroupChatMode === "individual" &&
-      (chatMode === "conversation" || chatMeta.groupSpeakerNamesInHistory === true);
+      sharedGroupPrompt ||
+      (characterIds.length > 1 &&
+        chatMode !== "game" &&
+        dryRunGroupChatMode === "individual" &&
+        (chatMode === "conversation" || chatMeta.groupSpeakerNamesInHistory === true));
     if (shouldPrefixGroupHistorySpeakers && !deferGroupPromptRegex) {
       const characterNamesById = await resolveCharacterNameMap(allCharacterIds, (id) => chars.getById(id, chatId));
       mappedMessages = prefixGroupIndividualHistorySpeakers(mappedMessages, {
@@ -2142,6 +2153,13 @@ export async function registerDryRunRoute(app: FastifyInstance) {
     );
     clearUnusedRuntimeAgentSections(finalMessages, trackerSectionTokens);
 
+    if (sharedGroupPrompt && promptTargetCharacterId && !impersonate) {
+      finalMessages = scopeSharedGroupMessagesForTarget(
+        finalMessages,
+        promptTargetCharacterId,
+        [...historyMacroProfilesById].map(([id, profile]) => ({ ...profile, id, mesExample: profile.example })),
+      );
+    }
     if (deferGroupPromptRegex) {
       const regexScripts = await regexScriptsStore.list();
       const regexSpeakerNames = shouldPrefixGroupHistorySpeakers
