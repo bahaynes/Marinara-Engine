@@ -489,6 +489,8 @@ export interface ChatMetadata {
   groupSpeakerColors?: boolean;
   /** Group individual mode: prefix chat history turns with the speaker name before prompt merging. */
   groupSpeakerNamesInHistory?: boolean;
+  /** Fork: individual roleplay turns share one prompt (all cards, fixed roles) so responders reuse one prompt cache. */
+  groupSharedPromptCache?: boolean;
   /** Group individual mode response order: "sequential" or "smart" (agent-decided) */
   groupResponseOrder?: GroupResponseOrder;
   /** When true/omitted, individual group turns append a responding-character instruction to the prompt. */

@@ -7187,6 +7187,26 @@ export function ChatSettingsDrawer({
                       labelClassName="text-[0.6875rem] font-medium"
                     />
                   )}
+                  {!isConversation && (
+                    <SettingsSwitch
+                      label={localizeUi("ui.chat.chatsettingsdrawer.sharedGroupPromptCache")}
+                      description={
+                        metadata.groupSharedPromptCache === true
+                          ? localizeUi("ui.chat.chatsettingsdrawer.sharedGroupPromptCacheOn")
+                          : localizeUi("ui.chat.chatsettingsdrawer.sharedGroupPromptCacheOff")
+                      }
+                      checked={metadata.groupSharedPromptCache === true}
+                      onChange={(checked) => updateMeta.mutate({ id: chat.id, groupSharedPromptCache: checked })}
+                      labelPosition="start"
+                      className={cn(
+                        "justify-between rounded-md px-3 py-2.5 text-left",
+                        metadata.groupSharedPromptCache === true
+                          ? "bg-[var(--primary)]/10 ring-1 ring-[var(--primary)]/30"
+                          : "bg-[var(--secondary)] hover:bg-[var(--accent)]",
+                      )}
+                      labelClassName="text-[0.6875rem] font-medium"
+                    />
+                  )}
                 </div>
               )}
 
