@@ -136,7 +136,17 @@ Types: `string` (≤200 chars), `number` (clamped to `min`/`max`), `boolean`, `e
 
 ---
 
-## 6. Related Resources
+## 6. Shared prompt cache for individual group roleplay
+
+Chat setting **Shared Prompt Cache** (`groupSharedPromptCache`, individual roleplay groups only, off by default). Stock individual mode builds a different prompt per responder: other characters' cards are stripped from the system prompt and history roles are reassigned (the responder's turns become `assistant`, everyone else's `user`). Each character therefore has its own prompt cache, and every reply rewrites what the others said since its last turn (a 4-character Opus test chat cost ~1.6x its uncached size).
+
+With the toggle on (`scopeSharedGroupMessagesForTarget` in `prompt-message-scope.ts`), every character's card is stripped from the prompt, history keeps its stored roles with speaker names, and the responder's own card plus `Respond ONLY as <name>.` go in a final user message. Everything before that message is identical for all responders, so each responder reads the previous one's prompt from cache, and no character ever sees another's card. Character-bound lorebook entries and Advanced Memory stay scoped to the responder (they can differ after the history); targeted regex scripts are not applied per responder.
+
+Trade-offs: characters know who they are from the final instruction and their card, not from history roles; the card is billed every call (at 1x only with the passthrough's tail-marker drop). Gated by `usesSharedGroupPromptCache` in `generate-route-utils.ts`, mirrored in `dry-run-route.ts`. Measure with `chat_cache_report.py` (minecraftdocker) before and after.
+
+---
+
+## 7. Related Resources
 
 - **Agent Skill**: [`.agents/skills/custom-mods/SKILL.md`](.agents/skills/custom-mods/SKILL.md)
 - **Repo Agent Rules**: [`AGENTS.md`](AGENTS.md)
