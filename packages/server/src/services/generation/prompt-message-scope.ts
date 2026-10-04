@@ -451,6 +451,56 @@ export function scopeIndividualGroupMessagesForTarget(
   return nonEmpty;
 }
 
+/** The span of `withProfile` that `without` lacks (one profile, or shared text between its pieces). */
+function removedProfileText(withProfile: string, without: string): string {
+  let start = 0;
+  while (start < without.length && withProfile[start] === without[start]) start++;
+  let end = 0;
+  while (
+    end < without.length - start &&
+    withProfile[withProfile.length - 1 - end] === without[without.length - 1 - end]
+  ) {
+    end++;
+  }
+  return withProfile.slice(start, withProfile.length - end).trim();
+}
+
+/**
+ * Fork (shared group prompt cache): one prompt for every responder of an individual group turn.
+ * Every character's profile is stripped from the prompt, so it is identical for all responders and
+ * they share one prompt cache; history keeps its stored roles. Only the target's own profile is
+ * appended in a final user message with the turn instruction, so no responder sees another's card.
+ */
+export function scopeSharedGroupMessagesForTarget(
+  messages: GenerationPromptMessage[],
+  targetCharacterId: string,
+  characters: CharacterPromptScopeInfo[],
+): GenerationPromptMessage[] {
+  const target = characters.find((character) => character.id === targetCharacterId);
+  if (!target) return messages;
+  const others = characters.filter((character) => character.id !== targetCharacterId);
+  const profiles: string[] = [];
+  const shared = messages
+    .map((message) => {
+      const isHistoryMessage =
+        message.contextKind === "history" ||
+        (message.contextKind === undefined && message.role !== "system" && message.characterId != null);
+      if (isHistoryMessage) return message;
+      const withOwn = removeOtherCharacterProfileContent(message.content, others);
+      const withNone = removeOtherCharacterProfileContent(message.content, characters);
+      if (withOwn !== withNone) profiles.push(removedProfileText(withOwn, withNone));
+      return { ...message, content: withNone };
+    })
+    .filter((message) => message.content.trim() || message.images?.length || message.files?.length);
+  pruneEmptyPromptWrappers(shared);
+  shared.push({
+    role: "user",
+    contextKind: "injection",
+    content: [...profiles.filter(Boolean), `Respond ONLY as ${target.name}.`].join("\n\n"),
+  });
+  return shared;
+}
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
