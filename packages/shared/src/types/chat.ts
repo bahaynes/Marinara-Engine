@@ -528,6 +528,8 @@ export interface ChatMetadata {
   groupSpeakerNamesInHistory?: boolean;
   /** Roleplay individual mode: add the other active characters' Public Faces to each responder's prompt (#9425). */
   groupPublicFacesEnabled?: boolean;
+  /** Fork: individual roleplay turns share one prompt (all cards, fixed roles) so responders reuse one prompt cache. */
+  groupSharedPromptCache?: boolean;
   /** Group individual mode response order: "sequential" or "smart" (agent-decided) */
   groupResponseOrder?: GroupResponseOrder;
   /** When true/omitted, individual group turns append a responding-character instruction to the prompt. */
