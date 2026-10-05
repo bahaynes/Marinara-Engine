@@ -257,20 +257,26 @@ function presentNames(presentCharacters: unknown): string[] {
 
 /**
  * Keep only names the tracker lists as present (the persona always passes). With no tracker data
- * nothing is filtered, so the agent degrades to normal behaviour when no tracker runs.
+ * nothing is filtered, so the agent degrades to normal behaviour when no tracker runs. A name the
+ * latest response spells out also passes: the tracker lags and misses characters who just arrived.
  */
 export function filterToPresentCharacters(
   names: string[],
   presentCharacters: unknown,
   personaName?: string | null,
+  responseText?: string | null,
 ): { kept: string[]; dropped: string[] } {
   const present = presentNames(presentCharacters);
   if (present.length === 0) return { kept: names, dropped: [] };
+  const response = ` ${normalizeName(responseText ?? "")} `;
   const kept: string[] = [];
   const dropped: string[] = [];
   for (const name of names) {
+    const key = normalizeName(name);
     const allowed =
-      (personaName && namesMatch(personaName, name)) || present.some((presentName) => namesMatch(presentName, name));
+      (personaName && namesMatch(personaName, name)) ||
+      present.some((presentName) => namesMatch(presentName, name)) ||
+      (key !== "" && response.includes(` ${key} `));
     (allowed ? kept : dropped).push(name);
   }
   return { kept, dropped };

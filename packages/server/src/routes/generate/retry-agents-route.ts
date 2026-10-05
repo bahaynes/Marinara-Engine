@@ -3819,6 +3819,7 @@ async function applyRetryResultEffects(args: {
                 requestedReferenceNames,
                 agentContext.gameState?.presentCharacters,
                 retryIdentitySource === "persona" ? agentContext.persona?.name : null,
+                agentContext.mainResponse,
               );
               if (presence.dropped.length > 0) {
                 logger.debug("[retry-agents] Illustrator dropped absent characters: %s", presence.dropped.join(", "));
