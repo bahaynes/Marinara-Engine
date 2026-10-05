@@ -61,7 +61,20 @@ export async function rerollRoleplayRoll(
       type: "function",
       function: {
         name: "roll_dice",
-        arguments: JSON.stringify({ notation: failed.roll.notation, reason: failed.reason, dc: failed.roll.dc }),
+        arguments: JSON.stringify({
+          notation: failed.roll.notation,
+          reason: failed.reason,
+          dc: failed.roll.dc,
+          ...(failed.roll.character ? { character: failed.roll.character } : {}),
+          ...(failed.roll.skill ? { skill: failed.roll.skill } : {}),
+          ...(failed.roll.attribute ? { attribute: failed.roll.attribute } : {}),
+          ...(failed.roll.attributeModifier !== undefined ? { attributeModifier: failed.roll.attributeModifier } : {}),
+          ...(failed.roll.proficiency !== undefined ? { proficiency: failed.roll.proficiency } : {}),
+          ...(failed.roll.situationalModifier !== undefined
+            ? { situationalModifier: failed.roll.situationalModifier }
+            : {}),
+          ...(failed.roll.bonus !== undefined ? { bonus: failed.roll.bonus } : {}),
+        }),
       },
     },
   ]);
@@ -133,7 +146,7 @@ export function buildRerolledSwipeExtra(
   );
   const diceRollResults =
     rollIndex >= 0 ? [...previousRolls.slice(0, rollIndex), rerolled.roll] : [...previousRolls, rerolled.roll];
-  return { roleplayCommandActivity: activity, diceRollResults, diceRollResult: rerolled.roll };
+  return { roleplayCommandActivity: activity, diceRollResults, diceRollResult: null };
 }
 
 /** Add an award to the chat's stored Inspiration, capped. Returns the new total, or null when nothing changed. */
