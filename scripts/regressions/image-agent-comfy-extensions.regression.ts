@@ -139,6 +139,11 @@ assert.deepEqual(filterToPresentCharacters(["Ann Lee", "Dex", "Bea", "Robin"], p
   kept: ["Ann Lee", "Dex", "Robin"],
   dropped: ["Bea"],
 });
+// A character the tracker missed still passes when the latest response names them in full.
+assert.deepEqual(filterToPresentCharacters(["Ann", "Bea", "Cy"], present, null, "Bea floats in; Cyrus watches."), {
+  kept: ["Ann", "Bea"],
+  dropped: ["Cy"],
+});
 assert.deepEqual(filterToPresentCharacters(["Ann", "Bea"], [], null), { kept: ["Ann", "Bea"], dropped: [] });
 assert.deepEqual(filterToPresentCharacters(["Ann", "Bea"], undefined, null), { kept: ["Ann", "Bea"], dropped: [] });
 
