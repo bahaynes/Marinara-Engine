@@ -98,17 +98,38 @@ function readCommand(type: string, body: string): RoleplayCommand | null {
       return mood ? { type, mood } : null;
     }
     case "roll": {
-      const notation = field("notation", 80) || field("dice", 80);
-      const character = field("character", 200);
-      const attribute = field("attribute", 100);
+      let notation = field("notation", 80) || field("dice", 80);
+      if (!notation) {
+        const unquotedMatch = body.match(/(?:^|\s|,)(?:notation|dice)\s*=\s*([^\s,\]]+)/i);
+        if (unquotedMatch) {
+          notation = unquotedMatch[1]!;
+        } else {
+          const bareMatch = body.match(/^\s*(?:(["'])([^\s"']+)\1|([0-9]*d[0-9]+(?:[+-][0-9]+)?))/i);
+          if (bareMatch) {
+            notation = bareMatch[2] || bareMatch[3] || "";
+          }
+        }
+      }
+      const character =
+        field("character", 200) ||
+        body.match(/(?:^|\s|,)character\s*=\s*([^\s,\]]+)/i)?.[1]?.replace(/^["']|["']$/g, "");
+      const attribute =
+        field("attribute", 100) ||
+        body.match(/(?:^|\s|,)attribute\s*=\s*([^\s,\]]+)/i)?.[1]?.replace(/^["']|["']$/g, "");
+      const skill =
+        field("skill", 100) || body.match(/(?:^|\s|,)skill\s*=\s*([^\s,\]]+)/i)?.[1]?.replace(/^["']|["']$/g, "");
       const numbers: { modifier?: number; dc?: number } = {};
       for (const key of ["modifier", "dc"] as const) {
-        const raw = parseQuotedParam(body, key, true);
+        let raw = parseQuotedParam(body, key, true);
+        if (raw === undefined) {
+          const match = body.match(new RegExp(`(?:^|\\s|,)${key}\\s*=\\s*([^\\s,\\]]+)`, "i"));
+          if (match) raw = match[1];
+        }
         if (raw === undefined) continue;
-        if (!/^[+-]?\d+$/u.test(raw.trim()) || !Number.isSafeInteger(Number(raw))) return null;
-        numbers[key] = Number(raw);
+        const cleaned = key === "dc" ? raw.trim().replace(/^dc\s*/i, "") : raw.trim();
+        if (!/^[+-]?\d+$/u.test(cleaned) || !Number.isSafeInteger(Number(cleaned))) return null;
+        numbers[key] = Number(cleaned);
       }
-      const skill = field("skill", 100);
       return notation
         ? {
             type,

@@ -74,7 +74,21 @@ export function parseRollDiceToolResult(raw: string): DiceRollResult | null {
   const dc = payload.dc;
   if (dc !== undefined && (typeof dc !== "number" || !Number.isSafeInteger(dc))) return null;
 
-  return { notation, rolls, modifier, total, ...(dc !== undefined ? { dc } : {}) };
+  return {
+    notation,
+    rolls,
+    modifier,
+    total,
+    ...(dc !== undefined ? { dc } : {}),
+    ...(typeof payload.character === "string" ? { character: payload.character } : {}),
+    ...(typeof payload.skill === "string" ? { skill: payload.skill } : {}),
+    ...(typeof payload.attribute === "string" ? { attribute: payload.attribute } : {}),
+    ...(typeof payload.attributeModifier === "number" ? { attributeModifier: payload.attributeModifier } : {}),
+    ...(typeof payload.proficiency === "number" ? { proficiency: payload.proficiency } : {}),
+    ...(typeof payload.situationalModifier === "number" ? { situationalModifier: payload.situationalModifier } : {}),
+    ...(typeof payload.bonus === "number" ? { bonus: payload.bonus } : {}),
+    ...(typeof payload.reason === "string" && payload.reason ? { reason: payload.reason } : {}),
+  };
 }
 
 /** Fresh regex so callers can collect or remove the same narration roll records. */

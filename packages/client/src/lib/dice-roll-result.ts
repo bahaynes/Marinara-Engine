@@ -37,7 +37,14 @@ export function readRoleplayDiceRolls(text: string, extra: Record<string, unknow
       } catch {
         return [];
       }
-      return [{ index, offset: getRoleplayCommandContentOffset(text, item), result: item.result }];
+      return [
+        {
+          index,
+          offset: getRoleplayCommandContentOffset(text, item),
+          result: item.result,
+          command: item.command,
+        },
+      ];
     })
     .sort((a, b) => a.offset - b.offset || a.index - b.index);
 }

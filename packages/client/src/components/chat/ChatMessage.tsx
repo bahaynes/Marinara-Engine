@@ -7,6 +7,7 @@ import { cn, copyToClipboard, getAvatarCropStyle, isLegacyAvatarCrop } from "../
 import {
   normalizeAvatarCrop,
   getRoleplayWhispers,
+  getRoleplayCommandActivity,
   getRoleplayCommandContentOffset,
   type AvatarCrop,
 } from "@marinara-engine/shared";
@@ -2367,7 +2368,13 @@ export const ChatMessage = memo(function ChatMessage({
   const showStreamingThinkingAction = !!isStreaming && showThinkingAction;
   const reasoningDurationMs = readPositiveNumber(extra.generationInfo?.reasoningDurationMs);
   const generationReplay = hasGenerationReplayDetails(extra.generationReplay) ? extra.generationReplay : null;
-  const diceRollResult = isDiceRollResult(extra.diceRollResult) ? extra.diceRollResult : null;
+  const hasRoleplayRolls =
+    isRoleplay &&
+    !isUser &&
+    getRoleplayCommandActivity(extra).some(
+      (item) => item.command.type === "roll" && !item.error && !item.deleted && typeof item.result === "string",
+    );
+  const diceRollResult = isDiceRollResult(extra.diceRollResult) && !hasRoleplayRolls ? extra.diceRollResult : null;
   const diceReplacesContent = diceRollReplacesMessageContent(message.role, diceRollResult);
   const canCreateNextSwipe = Boolean(onRegenerate && !isUser);
   const rewriteVersions = resolveMessageRewriteVersions(message.content, extra, isUser);
@@ -3049,6 +3056,7 @@ export const ChatMessage = memo(function ChatMessage({
         <RoleplayDiceRoll
           key={`roll-${message.id}-${message.activeSwipeIndex}-${command.index}`}
           result={command.result}
+          command={command.command}
           createdAt={message.createdAt}
           rerollTarget={
             command.index === rerollableRollIndex ? { chatId: message.chatId, messageId: message.id } : undefined
