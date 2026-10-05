@@ -5217,16 +5217,23 @@ export function createAdvancedMemoryService(db: DB, { includeExcerptsInStatus = 
     const scenes = available
       .filter((record) => record.kind === "scene" && record.id === record.sceneId && record.status === "closed")
       .sort((a, b) => indexes.get(b.endMessageId)! - indexes.get(a.endMessageId)!);
-    for (const scene of scenes) {
-      if (historySize(ctx, live) + tokenSize(chatSummary) <= budget) break;
-      const end = indexes.get(scene.endMessageId);
-      if (end === undefined || end <= boundaryIndex || end >= (indexes.get(visible.at(-1)?.id ?? "") ?? -1)) continue;
-      boundaryIndex = end;
+    // Fork: with advancedMemoryRollingScenes, roll over to the second-newest closed scene's end so
+    // live history keeps the last finished scene plus the open one; upstream jumps to the newest
+    // end, which can leave only a few messages.
+    const rollingScenes = ctx.metadata.advancedMemoryRollingScenes === true;
+    const rolloverEnds = scenes
+      .map((scene) => indexes.get(scene.endMessageId))
+      .filter(
+        (end): end is number =>
+          end !== undefined && end > boundaryIndex && end < (indexes.get(visible.at(-1)?.id ?? "") ?? -1),
+      );
+    const rolloverEnd = rolloverEnds[rollingScenes ? 1 : 0];
+    if (rolloverEnd !== undefined && historySize(ctx, live) + tokenSize(chatSummary) > budget) {
+      boundaryIndex = rolloverEnd;
       live = visible.filter((message) => indexes.get(message.id)! > boundaryIndex);
       chatSummary = constantText();
-      if (!receipt.reasons.includes("scene-boundary-rollover")) receipt.reasons.push("scene-boundary-rollover");
-      // Reset to the newest known scene, then let this window grow again.
-      break;
+      // Then let this window grow again; an oversized result is trimmed below.
+      receipt.reasons.push("scene-boundary-rollover");
     }
     const boundary = boundaryIndex >= 0 ? sources[boundaryIndex]!.id : null;
     // Keep enabled constants while any needed consolidation runs after the reply.
