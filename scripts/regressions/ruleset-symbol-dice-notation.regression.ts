@@ -113,7 +113,12 @@ try {
   // ── Carried through the tool result and the dice card ──
   assert.ok(isDiceRollResult(named), "the card draws a symbol roll");
   const stored = parseRollDiceToolResult(JSON.stringify({ ...named, reason: "Stealth" }));
-  assert.deepEqual(stored, { ...named, label: "Stealth" }, "a tool roll keeps its symbols and verdict");
+  // Fork: the card also keeps the roll's reason for the line under it (roleplay dice breakdown).
+  assert.deepEqual(
+    stored,
+    { ...named, label: "Stealth", reason: "Stealth" },
+    "a tool roll keeps its symbols and verdict",
+  );
   for (const broken of [
     { ...named, thrown: named.thrown.slice(1) },
     { ...named, symbolFaces: undefined },
