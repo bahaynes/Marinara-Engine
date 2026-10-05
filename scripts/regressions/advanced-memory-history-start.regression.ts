@@ -622,6 +622,52 @@ try {
   );
   await memory.reset(chat.id);
   assert.equal((await memory.status(chat.id)).job.contextStarts, undefined, "reset clears automatic markers");
+
+  // Fork: advancedMemoryRollingScenes rolls over to the last finished scene plus the open one.
+  const rollingChat = await chats.create({
+    name: "Rolling two scenes",
+    mode: "roleplay",
+    characterIds: ["first", "second"],
+    connectionId: connection.id,
+  });
+  assert(rollingChat);
+  await chats.patchMetadata(rollingChat.id, { groupChatMode: "individual", advancedMemoryRollingScenes: true });
+  await chats.createMessagesBatch(
+    rollingChat.id,
+    Array.from({ length: 30 }, (_, index) => ({
+      role: "user" as const,
+      content: `${index === 10 || index === 20 ? "SCENE_CHANGE " : ""}The brass compass journey continues. `.repeat(12),
+    })),
+  );
+  await memory.updateSettings(rollingChat.id, {
+    enabled: true,
+    maxContextTokens: 16_384,
+    summaryBudgetTokens: 512,
+    retrieveMaxScenes: 0,
+    knowledgeStarts: { first: null, second: null },
+  });
+  await memory.initialize(rollingChat.id);
+  const rollingSource = await chats.listMessages(rollingChat.id);
+  const rollingAll = await memory.prepare({
+    chatId: rollingChat.id,
+    messages: rollingSource,
+    audienceCharacterIds: ["first"],
+    budgetTokens: 100_000,
+    readOnly: true,
+  });
+  const rolled = await memory.prepare({
+    chatId: rollingChat.id,
+    messages: rollingSource,
+    audienceCharacterIds: ["first"],
+    budgetTokens: Math.floor(rollingAll.receipt.estimatedTokensAfter * 0.8),
+    readOnly: true,
+  });
+  assert(rolled.receipt.reasons.includes("scene-boundary-rollover"));
+  assert.deepEqual(
+    rolled.messageIds,
+    rollingSource.slice(10).map((message) => message.id),
+    "rollover keeps the last finished scene and the open scene",
+  );
   process.stdout.write(
     "Advanced Memory full-history archive, context cutoff and visibility regression passed (1000 messages).\n",
   );
