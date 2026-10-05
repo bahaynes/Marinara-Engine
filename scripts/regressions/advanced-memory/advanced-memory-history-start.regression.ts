@@ -668,6 +668,48 @@ try {
     rollingSource.slice(10).map((message) => message.id),
     "rollover keeps the last finished scene and the open scene",
   );
+
+  // Fork: advancedMemoryLooseScenes allows endings inside a message and passes tracked location changes.
+  const { gameStateSnapshots } = await import("../../packages/server/src/db/schema/game-state.js");
+  const snapshotAt = (index: number, location: string) =>
+    db.insert(gameStateSnapshots).values({
+      id: `rolling-${index}`,
+      chatId: rollingChat.id,
+      messageId: rollingSource[index]!.id,
+      swipeIndex: 0,
+      location,
+      createdAt: new Date(Date.UTC(2026, 0, 1, 0, index)).toISOString(),
+    });
+  await snapshotAt(20, "Market");
+  await snapshotAt(27, "Harbor");
+  const strictCheck = await memory.getSceneCheck(rollingChat.id, { force: true });
+  assert(strictCheck && !strictCheck.prompt.includes("location tracker"), "the strict check is unchanged");
+  await chats.patchMetadata(rollingChat.id, { advancedMemoryLooseScenes: true });
+  const looseCheck = await memory.getSceneCheck(rollingChat.id, { force: true });
+  assert(looseCheck);
+  assert(looseCheck.previous, "the loose check also shows the message the last check ended on");
+  assert(looseCheck.prompt.includes("partway through"), "a move inside a message can end the scene");
+  assert(looseCheck.prompt.includes('#28: "Market" -> "Harbor"'), "tracked location changes are passed as hints");
+  const looseScan = await chats.create({
+    name: "Loose history scan",
+    mode: "roleplay",
+    characterIds: ["first"],
+    connectionId: connection.id,
+  });
+  assert(looseScan);
+  await chats.patchMetadata(looseScan.id, { advancedMemoryLooseScenes: true });
+  await chats.createMessagesBatch(looseScan.id, [
+    { role: "user", content: "The compass points north." },
+    { role: "assistant", content: "They walk out of the market and reach the harbor." },
+    { role: "user", content: "SCENE_CHANGE At the harbor, the ship waits." },
+  ]);
+  await memory.updateSettings(looseScan.id, { enabled: true, knowledgeStarts: { first: null } });
+  requests.length = 0;
+  await memory.initialize(looseScan.id);
+  assert(
+    requests.some((request) => request.kind === "classify" && request.text.includes("list the NEXT message")),
+    "the whole-history scan uses the loose prompt too",
+  );
   process.stdout.write(
     "Advanced Memory full-history archive, context cutoff and visibility regression passed (1000 messages).\n",
   );
