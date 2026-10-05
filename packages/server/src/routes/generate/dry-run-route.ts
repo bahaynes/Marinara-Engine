@@ -2436,6 +2436,10 @@ export async function registerDryRunRoute(app: FastifyInstance) {
             userMessage ||
             [...advancedMemorySourceMessages].reverse().find((message) => message.role === "user")?.content,
           readOnly: true,
+          cacheTtlMs:
+            chatMeta.advancedMemoryCacheWindow === true
+              ? (conn?.anthropicExtendedCacheTtl === "true" ? 60 : 5) * 60_000
+              : undefined,
           toProviderMessages: (messages) =>
             prepareProviderMessages(limitPastReasoningMetadata(toProviderMessages(messages), chatMeta)),
         });
