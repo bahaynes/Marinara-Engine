@@ -14670,6 +14670,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                             ? parseGameStateRow(turnSnapshot as Record<string, unknown>).presentCharacters
                             : null,
                           identity?.source === "persona" ? personaName : null,
+                          completedResponse,
                         );
                         if (presence.dropped.length > 0) {
                           logger.debug("[illustrator] Dropped absent characters: %s", presence.dropped.join(", "));

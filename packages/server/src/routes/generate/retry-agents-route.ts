@@ -4063,6 +4063,7 @@ async function applyRetryResultEffects(args: {
                 requestedReferenceNames,
                 agentContext.gameState?.presentCharacters,
                 clipCast.persona?.name ?? null,
+                agentContext.mainResponse,
               );
               if (presence.dropped.length > 0) {
                 logger.debug("[retry-agents] Illustrator dropped absent characters: %s", presence.dropped.join(", "));
