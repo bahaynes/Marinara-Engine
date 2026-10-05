@@ -22,13 +22,25 @@ export function prepareRoleplayRoll(
   if (args.character !== undefined && typeof args.character !== "string")
     throw new Error("The roll character must be a participant name.");
   const requested = typeof args.character === "string" ? args.character.trim() : "";
-  const matches = requested
+  let matches = requested
     ? characters.filter(
         (character) =>
           character.id === requested ||
           normalizeCharacterLookupName(character.name) === normalizeCharacterLookupName(requested),
       )
     : characters.filter((character) => character.id === fallbackCharacterId);
+  if (requested && matches.length === 0) {
+    const normReq = normalizeCharacterLookupName(requested);
+    const candidates = characters.filter((character) => {
+      const normChar = normalizeCharacterLookupName(character.name);
+      if (normChar.startsWith(normReq) || normReq.startsWith(normChar)) return true;
+      const tokens = normChar.split(/[\s\-_]+/);
+      return tokens.includes(normReq);
+    });
+    if (candidates.length === 1) {
+      matches = candidates;
+    }
+  }
   if (requested && matches.length !== 1) throw new Error(`The roll must name one chat participant: ${requested}`);
   const character = matches[0];
   const requestedSkill = typeof args.skill === "string" ? args.skill.trim() : "";
@@ -36,7 +48,7 @@ export function prepareRoleplayRoll(
   const parsed = typeof args.notation === "string" ? parseDiceNotation(args.notation) : null;
   if (!parsed || !character) return args;
   const stats = character.rpgStats;
-  let bonus = 0;
+  let attributeBonus = 0;
 
   // Resolve skill and governing attribute using the same service as Game Mode. A name already on
   // the sheet (including homebrew abilities like "Luck") always wins over the skill table - only
@@ -59,15 +71,17 @@ export function prepareRoleplayRoll(
       (canonical
         ? mapSheetAttributesToRPG(stats.attributes)[canonical as keyof ReturnType<typeof mapSheetAttributesToRPG>]
         : undefined);
-    if (typeof score === "number" && Number.isFinite(score)) bonus = attributeModifier(score);
+    if (typeof score === "number" && Number.isFinite(score)) attributeBonus = attributeModifier(score);
   }
   // Proficiency (doubled for expertise) comes from the same sheet reader Game Mode uses.
+  let proficiencyBonus = 0;
   if (skillName) {
     const skills = resolveSheetSkillMap(stats, character.description);
     const key = skillName.toLowerCase();
     const proficiency = Number(skills?.[key.replace(/[^a-z0-9]+/g, "_")] ?? skills?.[key] ?? 0);
-    if (Number.isFinite(proficiency)) bonus += proficiency;
+    if (Number.isFinite(proficiency)) proficiencyBonus = proficiency;
   }
+  const bonus = attributeBonus + proficiencyBonus;
   const modifier = parsed.modifier + bonus;
   const notation = bonus ? `${parsed.dice}${modifier > 0 ? "+" : ""}${modifier || ""}` : parsed.notation;
   if (!parseDiceNotation(notation)) throw new Error("The attribute-adjusted roll exceeds the supported numeric range.");
@@ -78,6 +92,11 @@ export function prepareRoleplayRoll(
     ...args,
     character: character.name,
     notation,
+    ...(skillName ? { skill: skillName } : {}),
+    ...(attributeToLookup ? { attribute: attributeToLookup.toUpperCase() } : {}),
+    ...(stats?.enabled && attributeToLookup ? { attributeModifier: attributeBonus } : {}),
+    ...(skillName ? { proficiency: proficiencyBonus } : {}),
+    bonus,
     reason: [character.name, displayLabel, typeof args.reason === "string" ? args.reason : ""]
       .filter(Boolean)
       .join(" · "),

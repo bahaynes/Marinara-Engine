@@ -77,7 +77,22 @@ export function parseRollDiceToolResult(raw: string): DiceRollResult | null {
   const named = typeof payload.label === "string" ? payload.label : payload.reason;
   const label = typeof named === "string" ? cleanRollLabel(named) : "";
 
-  return { notation, rolls, modifier, total, ...(dc !== undefined ? { dc } : {}), ...(label ? { label } : {}) };
+  return {
+    notation,
+    rolls,
+    modifier,
+    total,
+    ...(dc !== undefined ? { dc } : {}),
+    ...(label ? { label } : {}),
+    ...(typeof payload.character === "string" ? { character: payload.character } : {}),
+    ...(typeof payload.skill === "string" ? { skill: payload.skill } : {}),
+    ...(typeof payload.attribute === "string" ? { attribute: payload.attribute } : {}),
+    ...(typeof payload.attributeModifier === "number" ? { attributeModifier: payload.attributeModifier } : {}),
+    ...(typeof payload.proficiency === "number" ? { proficiency: payload.proficiency } : {}),
+    ...(typeof payload.situationalModifier === "number" ? { situationalModifier: payload.situationalModifier } : {}),
+    ...(typeof payload.bonus === "number" ? { bonus: payload.bonus } : {}),
+    ...(typeof payload.reason === "string" && payload.reason ? { reason: payload.reason } : {}),
+  };
 }
 
 /** A roller's name or a roll's reason as the card shows it: one line, nothing that could close a tag. */

@@ -472,6 +472,22 @@ export interface DiceRollResult {
   /** Who rolled, or who and why, as the roll was asked for: a `[dice:]` tag's `who=`, or a tool
    *  roll's reason. Absent on rolls that named nobody. */
   label?: string;
+  /** Character the roll was resolved for */
+  character?: string;
+  /** Skill name if rolled as a skill check */
+  skill?: string;
+  /** Governing attribute code/name, e.g. "CHA" or "DEX" */
+  attribute?: string;
+  /** Attribute modifier from character sheet */
+  attributeModifier?: number;
+  /** Proficiency or expertise bonus from character sheet */
+  proficiency?: number;
+  /** Situational or DM-declared modifier */
+  situationalModifier?: number;
+  /** Total sheet bonus added before situational modifier */
+  bonus?: number;
+  /** Original roll reason / description */
+  reason?: string;
 }
 
 /** Result of a skill check resolution. */
