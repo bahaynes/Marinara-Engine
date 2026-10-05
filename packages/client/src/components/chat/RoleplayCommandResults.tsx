@@ -194,21 +194,44 @@ export function RoleplayDiceRoll({
   result,
   createdAt,
   rerollTarget,
+  command,
 }: {
   result: string;
   createdAt: string;
   /** Set only on the latest reply's last missed roll, the one an Inspiration reroll targets. */
   rerollTarget?: { chatId: string; messageId: string };
+  command?: RoleplayCommandActivity["command"];
 }) {
   const { t } = useTranslation();
   const roll = useMemo(() => {
     try {
       const value: unknown = JSON.parse(result);
-      return isDiceRollResult(value) ? value : null;
+      if (!isDiceRollResult(value)) return null;
+      const parsedRoll = { ...value };
+      if (!parsedRoll.skill && command && command.type === "roll") {
+        if (command.skill) parsedRoll.skill = command.skill;
+        if (command.character) parsedRoll.character = command.character;
+        if (command.attribute) parsedRoll.attribute = command.attribute;
+        if (command.modifier !== undefined && parsedRoll.situationalModifier === undefined) {
+          parsedRoll.situationalModifier = command.modifier;
+        }
+      }
+      if (!parsedRoll.skill && parsedRoll.reason) {
+        const parts = parsedRoll.reason.split(" · ");
+        if (parts.length >= 2) {
+          if (!parsedRoll.character && parts[0]) parsedRoll.character = parts[0].trim();
+          const skillMatch = parts[1]?.match(/^(.+?)(?:\s*\(([A-Z]+)\))?$/i);
+          if (skillMatch) {
+            parsedRoll.skill = skillMatch[1]!.trim();
+            if (skillMatch[2] && !parsedRoll.attribute) parsedRoll.attribute = skillMatch[2].toUpperCase();
+          }
+        }
+      }
+      return parsedRoll;
     } catch {
       return null;
     }
-  }, [result]);
+  }, [result, command]);
   const [animate] = useState(() => Date.parse(createdAt) >= loadedAt && shouldAnimateDiceRollMessage(createdAt));
   const rawMetadata = useChatStore((state) =>
     rerollTarget && state.activeChat?.id === rerollTarget.chatId ? state.activeChat.metadata : null,

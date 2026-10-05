@@ -513,6 +513,13 @@ function rollDice(args: Record<string, unknown>): Record<string, unknown> {
 
   // Arguments were schema-validated before Roleplay added the assigned attribute bonus.
   const situationalModifier = args.modifier as number | undefined;
+  // A reroll passes situationalModifier for the breakdown only: its notation already includes it.
+  const reportedSituationalModifier =
+    typeof situationalModifier === "number"
+      ? situationalModifier
+      : typeof args.situationalModifier === "number"
+        ? args.situationalModifier
+        : undefined;
   const dc = args.dc as number | undefined;
   if (situationalModifier) {
     const combined = parsed.modifier + situationalModifier;
@@ -542,6 +549,13 @@ function rollDice(args: Record<string, unknown>): Record<string, unknown> {
     total,
     reason,
     ...(dc !== undefined ? { dc, success: total >= dc } : {}),
+    ...(args.character ? { character: String(args.character) } : {}),
+    ...(args.skill ? { skill: String(args.skill) } : {}),
+    ...(args.attribute ? { attribute: String(args.attribute) } : {}),
+    ...(typeof args.attributeModifier === "number" ? { attributeModifier: args.attributeModifier } : {}),
+    ...(typeof args.proficiency === "number" ? { proficiency: args.proficiency } : {}),
+    ...(reportedSituationalModifier !== undefined ? { situationalModifier: reportedSituationalModifier } : {}),
+    ...(typeof args.bonus === "number" ? { bonus: args.bonus } : {}),
     display: `🎲 ${parsed.notation}${reason ? ` (${reason})` : ""}: [${rolls.join(", ")}]${modifier ? ` ${modifier > 0 ? "+" : ""}${modifier}` : ""} = **${total}**${dc !== undefined ? ` (DC ${dc})` : ""}`,
   };
 }

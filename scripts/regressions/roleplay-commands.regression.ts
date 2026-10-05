@@ -794,6 +794,20 @@ assert.throws(
 );
 assert.throws(() => dice({ notation: "1d20+9007199254740971", attribute: "STR" }), /numeric range/u);
 
+// Fuzzy participant matching resolves unambiguous prefix or token match (e.g. "Hera" -> "Hera-Zaire")
+const fuzzyParticipants = [
+  { id: "hera-id", name: "Hera-Zaire", rpgStats: diceCharacters[0]!.rpgStats },
+  { id: "loim-id", name: "Hero Loïm", rpgStats: diceCharacters[0]!.rpgStats },
+];
+assert.equal(
+  prepareRoleplayRoll({ notation: "1d20", character: "Hera" }, fuzzyParticipants, "hera-id").character,
+  "Hera-Zaire",
+);
+assert.equal(
+  prepareRoleplayRoll({ notation: "1d20", character: "Loïm" }, fuzzyParticipants, "hera-id").character,
+  "Hero Loïm",
+);
+
 // Skill checks add proficiency like Game Mode: structured rpgStats first, description line as fallback.
 const trained = (rpgStats: Partial<RPGStatsConfig>, description?: string, skill = "Athletics") =>
   prepareRoleplayRoll(
@@ -816,6 +830,27 @@ assert.equal(
   "expertise doubles, on a multi-word skill (DEX 8 is -1)",
 );
 assert.equal(trained({}, "Proficiencies: Athletics"), "d20+3", "the legacy description line still counts");
+
+// Formula breakdown properties are attached to the prepared roll object
+const preparedBreakdown = prepareRoleplayRoll(
+  { notation: "d20", skill: "Athletics", character: "T" },
+  [
+    {
+      id: "t",
+      name: "T",
+      rpgStats: {
+        ...diceCharacters[0]!.rpgStats!,
+        proficiencies: { athletics: "proficient" },
+      },
+    },
+  ],
+  "t",
+);
+assert.equal(preparedBreakdown.skill, "Athletics");
+assert.equal(preparedBreakdown.attribute, "STR");
+assert.equal(preparedBreakdown.attributeModifier, 1);
+assert.equal(preparedBreakdown.proficiency, 2);
+assert.equal(preparedBreakdown.bonus, 3);
 
 // The native tool and text command reach the same real roller. Fix only the
 // random face, so the production path must supply every modifier and the DC.
@@ -884,6 +919,40 @@ try {
     assert.equal(parseRollDiceToolResult(JSON.stringify(malformed)), null);
     assert.equal(isDiceRollResult(malformed), false);
   }
+
+  // Flexible and unquoted parameters parse correctly without silently discarding values
+  for (const flexible of [
+    '[roll: 1d20 dc=15 modifier=+2 skill=Stealth attribute=DEX character="Hera"]',
+    '[roll: notation=1d20 dc="DC 15" modifier=2 skill=Stealth attribute=DEX character=Hera]',
+  ]) {
+    const parsed = parseRoleplayCommands(flexible).roll?.command;
+    assert.ok(parsed);
+    assert.equal(parsed.notation, "1d20");
+    assert.equal(parsed.dc, 15);
+    assert.equal(parsed.modifier, 2);
+    assert.equal(parsed.skill, "Stealth");
+    assert.equal(parsed.attribute, "DEX");
+    assert.equal(parsed.character, "Hera");
+  }
+  assert.equal(parseRoleplayCommands("[roll: 1d20]").roll?.command.notation, "1d20");
+  assert.equal(parseRoleplayCommands('[roll: "1d20+4"]').roll?.command.notation, "1d20+4");
+
+  const withBreakdown = await executeRoll({
+    notation: "d20",
+    character: "Dottore",
+    skill: "Stealth",
+    attribute: "DEX",
+    situationalModifier: -2,
+  });
+  assert.equal(withBreakdown.success, true);
+  const parsedBreakdown = parseRollDiceToolResult(withBreakdown.result);
+  assert.equal(parsedBreakdown?.character, "Dottore");
+  assert.equal(parsedBreakdown?.skill, "Stealth");
+  assert.equal(parsedBreakdown?.attribute, "DEX");
+  assert.equal(parsedBreakdown?.attributeModifier, -1);
+  assert.equal(parsedBreakdown?.proficiency, 0);
+  assert.equal(parsedBreakdown?.situationalModifier, -2);
+  assert.equal(parsedBreakdown?.bonus, -1);
 } finally {
   Math.random = random;
 }
@@ -944,6 +1013,34 @@ try {
   assert.equal(swipeActivity.length, 2, "records from the rewritten tail are dropped");
   assert.equal(parseRollDiceToolResult(swipeActivity[1]!.result!)?.total, 23);
   assert.deepEqual(swipeExtra.diceRollResults, [rerolled.roll], "the missed card is replaced, later cards dropped");
+  assert.equal(swipeExtra.diceRollResult, null, "inspiration reroll must not leave a duplicate single-card field");
+
+  const failedWithBreakdown = {
+    ...failedRoll!,
+    roll: {
+      ...failedRoll!.roll,
+      character: "Hera-Zaire",
+      skill: "Stealth",
+      attribute: "DEX",
+      attributeModifier: 2,
+      proficiency: 5,
+      situationalModifier: -4,
+      bonus: 7,
+    },
+  };
+  const rerolledWithBreakdown = await rerollRoleplayRoll(failedWithBreakdown);
+  assert.equal(rerolledWithBreakdown.roll.character, "Hera-Zaire");
+  assert.equal(rerolledWithBreakdown.roll.skill, "Stealth");
+  assert.equal(rerolledWithBreakdown.roll.attribute, "DEX");
+  assert.equal(rerolledWithBreakdown.roll.attributeModifier, 2);
+  assert.equal(rerolledWithBreakdown.roll.proficiency, 5);
+  assert.equal(rerolledWithBreakdown.roll.situationalModifier, -4);
+  assert.equal(rerolledWithBreakdown.roll.bonus, 7);
+  assert.equal(
+    rerolledWithBreakdown.roll.modifier,
+    failedRoll!.roll.modifier,
+    "a reroll does not apply the situational modifier its notation already includes",
+  );
 } finally {
   Math.random = random;
 }
