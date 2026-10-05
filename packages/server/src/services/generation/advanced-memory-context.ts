@@ -110,6 +110,7 @@ export async function prepareAdvancedMemoryContext(
     query?: string;
     readOnly?: boolean;
     continueMessageId?: string;
+    cacheTtlMs?: number;
     /** Oldest swipe first; legacy replies acquire a snapshot on their next generation. */
     cachedSnapshots?: readonly unknown[];
     toProviderMessages: (messages: GenerationPromptMessage[]) => ChatMessage[];
@@ -182,6 +183,7 @@ export async function prepareAdvancedMemoryContext(
       readOnly: input.readOnly,
       continueMessageId: input.continueMessageId,
       decisionDeadline,
+      cacheTtlMs: input.cacheTtlMs,
       signal: input.signal,
       debugMode: input.debugMode,
       onProgress: input.onProgress,
