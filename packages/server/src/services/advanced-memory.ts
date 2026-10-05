@@ -170,7 +170,12 @@ export interface PrepareAdvancedMemoryInput extends AdvancedMemoryOperationOptio
   budgetTokens: number;
   query?: string;
   readOnly?: boolean;
+  /** Fork: provider prompt-cache lifetime. When set, an open scene's trim point holds while the cache is warm. */
+  cacheTtlMs?: number;
 }
+
+/** Fork: share of the live budget a re-cut open-scene window leaves free to grow into before it must move again. */
+const CACHE_WINDOW_REGROW_SHARE = 0.25;
 
 type StoredRecord = Omit<AdvancedMemoryRecord, "startIndex" | "endIndex" | "embeddingStatus"> & {
   embedding: number[] | null;
@@ -4990,17 +4995,49 @@ export function createAdvancedMemoryService(db: DB, { includeExcerptsInStatus = 
       const liveBudget = budget - summaryTokens - excerptBudget;
       // Removing a prefix only reduces the estimate. Find the same first fitting
       // suffix without re-tokenizing almost the whole chat once per old message.
-      let prefixLength = 0;
-      let upper = live.length - 1;
-      while (prefixLength < upper) {
-        const middle = Math.floor((prefixLength + upper) / 2);
-        if (historySize(ctx, live.slice(middle)) > liveBudget) prefixLength = middle + 1;
-        else upper = middle;
-      }
+      const firstFittingPrefix = (tokens: number) => {
+        let lower = 0;
+        let upper = live.length - 1;
+        while (lower < upper) {
+          const middle = Math.floor((lower + upper) / 2);
+          if (historySize(ctx, live.slice(middle)) > tokens) lower = middle + 1;
+          else upper = middle;
+        }
+        return lower;
+      };
+      let prefixLength = firstFittingPrefix(liveBudget);
       if (!prefixLength || historySize(ctx, live.slice(prefixLength)) > liveBudget)
         throw new Error(
           "The latest message cannot fit without losing necessary context; increase the Advanced Memory context limit",
         );
+      if (input.cacheTtlMs !== undefined) {
+        // Fork: the minimal cut moves every turn, which rewrites the whole history in the
+        // provider's prompt cache. Hold the cut while the cache is warm and it still fits;
+        // otherwise re-cut with room to grow, so the next turns stay append-only.
+        const holdKey = input.audienceMode ?? audience.join(",");
+        const heldId = object(ctx.metadata.advancedMemoryWindowHeads)[holdKey];
+        const held = typeof heldId === "string" ? live.findIndex((message) => message.id === heldId) : -1;
+        const lastReplyAt = [...sources].reverse().find((message) => message.role === "assistant")?.createdAt;
+        const warm = !!lastReplyAt && Date.now() - new Date(lastReplyAt).getTime() < input.cacheTtlMs;
+        if (warm && held >= prefixLength) {
+          prefixLength = held;
+          receipt.reasons.push("cache-held-window");
+        } else {
+          const roomy = firstFittingPrefix(Math.floor(liveBudget * (1 - CACHE_WINDOW_REGROW_SHARE)));
+          if (historySize(ctx, live.slice(roomy)) <= liveBudget) prefixLength = roomy;
+          receipt.reasons.push("cache-window-recut");
+        }
+        const headId = live[prefixLength]!.id;
+        if (!input.readOnly && !historical && headId !== heldId) {
+          await chats.patchMetadata(
+            ctx.chatId,
+            (fresh) => ({
+              advancedMemoryWindowHeads: { ...object(fresh.advancedMemoryWindowHeads), [holdKey]: headId },
+            }),
+            { touchUpdatedAt: false },
+          );
+        }
+      }
       // An unfinished scene stays open. Keep bounded original text without invoking
       // a summarizer before the reply or saving a truncated replacement summary.
       currentSceneSummary = fitText(logMessages(ctx, live.slice(0, prefixLength)), excerptBudget);

@@ -8707,6 +8707,11 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
               placements: advancedMemoryPlacements,
               audienceCharacterIds,
               audienceMode: input.impersonate ? "owner" : undefined,
+              // Fork: opt-in per chat; a lapsed cache re-cuts below the cap, which suits only cached chats.
+              cacheTtlMs:
+                chatMeta.advancedMemoryCacheWindow === true
+                  ? (conn.anthropicExtendedCacheTtl === "true" ? 60 : 5) * 60_000
+                  : undefined,
               maxContext: effectiveMaxContext ?? connectionMaxContext,
               maxTokens,
               tools: gameToolConnection ? undefined : responderToolDefs,

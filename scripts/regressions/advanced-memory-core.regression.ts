@@ -244,6 +244,22 @@ try {
   assert(prepared.messageIds.includes(source.at(-1)!.id), "the latest message remains exact history");
   assert(prepared.receipt.estimatedTokensAfter <= 1200);
   await memory.validatePrepared(chat.id, source, prepared.receipt);
+  // Fork: with a prompt cache, the open-scene cut holds while warm instead of moving with the budget.
+  const cacheWindow = (budgetTokens: number, cacheTtlMs: number) =>
+    memory.prepare({ chatId: chat.id, messages: source, audienceCharacterIds: [], budgetTokens, cacheTtlMs });
+  const recut = await cacheWindow(1200, 3_600_000);
+  assert(recut.receipt.reasons.includes("cache-window-recut"), "the first cached cut has no held head");
+  assert(recut.messageIds.length < prepared.messageIds.length, "a re-cut leaves room for the window to grow");
+  const jittered = await cacheWindow(1150, 3_600_000);
+  assert(jittered.receipt.reasons.includes("cache-held-window"));
+  assert.equal(jittered.messageIds[0], recut.messageIds[0], "a warm cache keeps the head as the budget jitters");
+  assert(jittered.receipt.estimatedTokensAfter <= 1150, "a held head never exceeds the cap");
+  const cold = await cacheWindow(1150, 0);
+  assert(cold.receipt.reasons.includes("cache-window-recut"), "an expired cache moves the cut");
+  assert.notEqual(cold.messageIds[0], recut.messageIds[0]);
+  const overflow = await cacheWindow(700, 3_600_000);
+  assert(overflow.receipt.reasons.includes("cache-window-recut"), "a held head that no longer fits is re-cut");
+  assert(overflow.receipt.estimatedTokensAfter <= 700);
   assert(
     (await memory.status(chat.id)).records.some((record) => record.kind === "scene" && record.status === "open"),
     "prefix compression leaves the scene open",
