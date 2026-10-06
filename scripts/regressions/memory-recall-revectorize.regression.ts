@@ -35,7 +35,9 @@ try {
     logger.warn = priorWarn;
   }
   const embeddingCalls: string[][] = [];
-  const ordered = await embedMemoryRecallTexts(["א".repeat(70_000), "é".repeat(60_000), "third"], {
+  // custom-mods: inputs stay under the 18k per-input cap; six of them still exceed one 100k request.
+  const large = Array.from({ length: 6 }, (_, index) => (index % 2 ? "é" : "א").repeat(17_000));
+  const ordered = await embedMemoryRecallTexts([...large, "third"], {
     embeddingSource: {
       spaceId: "test:batching",
       label: "batching",
@@ -49,7 +51,7 @@ try {
   assert.ok(embeddingCalls.every((texts) => texts.reduce((total, text) => total + text.length, 0) <= 100_000));
   assert.deepEqual(
     ordered.map((vector) => vector[0]),
-    [70_000, 60_000, 5],
+    [...large.map(() => 17_000), 5],
     "vectors are flattened back into input order across embedding batches",
   );
   const countCalls: number[] = [];
