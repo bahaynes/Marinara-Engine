@@ -373,6 +373,7 @@ import {
   appendRoleplayPromptTail,
   appendRoleplayWhispers,
   buildRoleplayCommandsReminder,
+  latestRoleplaySceneTitle,
   buildRoleplayPersonalContext,
   parseRoleplayCommands,
   parseRoleplayUserCommands,
@@ -9346,6 +9347,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
               roleplayPersonalContext,
               buildRoleplayCommandsReminder({
                 metadata: chatMeta,
+                sceneTitle: latestRoleplaySceneTitle(roleplayTimeline),
                 privateAvailable: roleplayPrivateAvailable,
                 availableAgentIds: new Set(resolvedAgents.map((agent) => agent.type)),
                 format: wrapFormat,
