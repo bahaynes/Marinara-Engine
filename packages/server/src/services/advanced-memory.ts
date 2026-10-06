@@ -4504,7 +4504,7 @@ export function createAdvancedMemoryService(db: DB, { includeExcerptsInStatus = 
     if (fresh.messages.at(-1)?.id !== request.asOfMessageId) return;
     const { boundaryIndex } = contextBoundary(ctx, null);
     const indexes = new Map(ctx.messages.map((message, index) => [message.id, index]));
-    const end = (await records(ctx.chatId))
+    const ends = (await records(ctx.chatId))
       .filter(
         (record) =>
           record.kind === "scene" &&
@@ -4512,10 +4512,11 @@ export function createAdvancedMemoryService(db: DB, { includeExcerptsInStatus = 
           record.status === "closed" &&
           recordValid(ctx, record),
       )
-      .reduce((latest, record) => {
-        const index = indexes.get(record.endMessageId) ?? -1;
-        return index < ctx.messages.length - 1 ? Math.max(latest, index) : latest;
-      }, boundaryIndex);
+      .map((record) => indexes.get(record.endMessageId) ?? -1)
+      .filter((index) => index > boundaryIndex && index < ctx.messages.length - 1)
+      .sort((a, b) => b - a);
+    // Fork: advancedMemoryRollingScenes keeps the last finished scene here too.
+    const end = ends[ctx.metadata.advancedMemoryRollingScenes === true ? 1 : 0] ?? boundaryIndex;
     if (end <= boundaryIndex) return; // No newer scene boundary: do not invent a cutoff inside an ongoing scene.
     if (await saveContextStart(ctx, ctx.messages[end + 1]!.id, options))
       await progress(ctx, { status: "ready", stage: "ready", error: null }, options);
