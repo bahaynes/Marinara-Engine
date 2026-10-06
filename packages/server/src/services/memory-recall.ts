@@ -27,6 +27,21 @@ const MAX_EMBEDDING_CHUNK_CHARS = 18_000;
 // corresponds to the original input.
 const MAX_EMBEDDING_BATCH_TEXTS = 64;
 const MAX_EMBEDDING_BATCH_CHARS = 100_000;
+/**
+ * Per-input caps. One text longer than the model's window fails the whole batch. Queries keep their end,
+ * the latest turn; documents keep their start.
+ * ponytail: character caps, not token counts; prose runs ~3 chars/token, so 18k chars fits an 8k-token
+ * window. Count tokens through the provider if denser input still overflows.
+ */
+const MAX_EMBEDDING_DOCUMENT_CHARS = MAX_EMBEDDING_CHUNK_CHARS;
+const MAX_EMBEDDING_QUERY_CHARS = 3_000;
+
+function clampEmbeddingInput(text: string, inputType: MemoryRecallEmbeddingInputType): string {
+  if (inputType === "query") {
+    return text.length > MAX_EMBEDDING_QUERY_CHARS ? text.slice(-MAX_EMBEDDING_QUERY_CHARS) : text;
+  }
+  return text.length > MAX_EMBEDDING_DOCUMENT_CHARS ? text.slice(0, MAX_EMBEDDING_DOCUMENT_CHARS) : text;
+}
 
 /** Minimum similarity score to include a memory in results. */
 const SIMILARITY_THRESHOLD = 0.25;
@@ -145,7 +160,9 @@ export async function embedMemoryRecallTexts(
   const batches: string[][] = [];
   let current: string[] = [];
   let currentChars = 0;
-  for (const text of texts) {
+  const inputType = options.inputType ?? "document";
+  for (const rawText of texts) {
+    const text = clampEmbeddingInput(rawText, inputType);
     const wouldExceedChars = current.length > 0 && currentChars + text.length > MAX_EMBEDDING_BATCH_CHARS;
     const wouldExceedCount = current.length >= MAX_EMBEDDING_BATCH_TEXTS;
     if (wouldExceedChars || wouldExceedCount) {
@@ -166,7 +183,7 @@ export async function embedMemoryRecallTexts(
     }
 
     const embeddings = options.embeddingSource
-      ? await options.embeddingSource.embed(batch, options.signal, options.inputType ?? "document")
+      ? await options.embeddingSource.embed(batch, options.signal, inputType)
       : await (options.localEmbedder ?? localEmbed)(batch, options.signal);
     if (options.signal?.aborted) {
       throw options.signal.reason ?? new DOMException("Embedding was aborted", "AbortError");
