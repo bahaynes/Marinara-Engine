@@ -232,10 +232,18 @@ export async function loadLorebookKeeperExistingEntries(
     content?: string | null;
     keys?: string[] | null;
     locked?: unknown;
+    updatedAt?: string | null;
+    createdAt?: string | null;
   }>;
 
+  // Least recently edited first. The Keeper edits entries in place and this list sits ahead of the message
+  // window in the prompt, so recently edited entries go last to keep the untouched block a byte-identical
+  // prefix between runs for the local llama-server prompt cache.
+  const editedAt = (entry: { updatedAt?: string | null; createdAt?: string | null }) =>
+    entry.updatedAt ?? entry.createdAt ?? "";
   return entries
     .filter((entry) => typeof entry.name === "string" && entry.name.trim().length > 0)
+    .sort((a, b) => editedAt(a).localeCompare(editedAt(b)) || (a.id ?? "").localeCompare(b.id ?? ""))
     .map((entry) => ({
       id: typeof entry.id === "string" ? entry.id : "",
       name: entry.name!.trim(),
@@ -392,17 +400,28 @@ function dedupeKeeperContentParagraphs(content: string): string {
   return deduped.join("\n\n");
 }
 
+/**
+ * Keeper models sometimes return every key as one comma-joined string ("hotel, room 412, morning"),
+ * which only matches that exact phrase. Split those; regex keys (/.../) stay whole.
+ */
+function splitKeeperKey(key: string): string[] {
+  const trimmed = key.trim();
+  return trimmed.startsWith("/") ? [trimmed] : trimmed.split(",");
+}
+
 function mergeLorebookKeys(existingKeys: unknown, newKeys: string[]): string[] {
   const merged: string[] = [];
   const seen = new Set<string>();
   const add = (key: unknown) => {
     if (typeof key !== "string") return;
-    const trimmed = key.trim();
-    if (!trimmed) return;
-    const comparable = trimmed.toLowerCase();
-    if (seen.has(comparable)) return;
-    seen.add(comparable);
-    merged.push(trimmed);
+    for (const part of splitKeeperKey(key)) {
+      const trimmed = part.trim();
+      if (!trimmed) continue;
+      const comparable = trimmed.toLowerCase();
+      if (seen.has(comparable)) continue;
+      seen.add(comparable);
+      merged.push(trimmed);
+    }
   };
 
   if (Array.isArray(existingKeys)) {
@@ -468,7 +487,10 @@ function readKeeperUpdateContent(update: Record<string, unknown>): string {
 function readKeeperUpdateKeys(update: Record<string, unknown>): string[] {
   const nestedEntry = readNestedEntry(update);
   const rawKeys = Array.isArray(update.keys) ? update.keys : Array.isArray(nestedEntry.keys) ? nestedEntry.keys : [];
-  return rawKeys.filter((key): key is string => typeof key === "string");
+  return mergeLorebookKeys(
+    [],
+    rawKeys.filter((key): key is string => typeof key === "string"),
+  );
 }
 
 function readKeeperUpdateTag(update: Record<string, unknown>): string {
@@ -724,6 +746,9 @@ export async function persistLorebookKeeperUpdates(args: {
         keys,
         tag,
         enabled: true,
+        // Keeper memory changes every few turns. Position 1 (world info after) keeps it out of the
+        // world-info-before slot in the stable system prompt, which would break the prompt cache.
+        position: 1,
         ...(order !== undefined ? { order } : {}),
         ...(provenance ?? {}),
       },
@@ -740,6 +765,16 @@ export async function persistLorebookKeeperUpdates(args: {
         keys,
         tag,
       });
+      // New entries need vectors too, or vector lorebooks can only find them by keyword.
+      if (revectorizeEntry) {
+        try {
+          await revectorizeEntry(created as LorebookEntry);
+          signal?.throwIfAborted();
+        } catch (err) {
+          signal?.throwIfAborted();
+          logger.warn(err, "[lorebook-keeper] Failed to embed new entry %s", createdEntry.id);
+        }
+      }
     }
   }
 

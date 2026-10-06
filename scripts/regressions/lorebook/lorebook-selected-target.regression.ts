@@ -54,6 +54,11 @@ assert.deepEqual(
   ["chosen", "chosen"],
 );
 assert.equal(createdBooks.length, 0, "An explicit target must not create model-proposed lorebooks");
+assert.deepEqual(
+  writes.map((write) => write.position),
+  [1, 1],
+  "Keeper entries must not land in world info before, inside the cached system prompt",
+);
 
 writes.length = 0;
 await persistLorebookKeeperUpdates({ ...options, updates: updates.slice(0, 2) });
@@ -62,4 +67,23 @@ assert.deepEqual(
   ["other", "new-book"],
 );
 assert.equal(createdBooks[0]?.name, "Campaign Scenes", "Automatic routing must remain available without a selection");
-console.log("Lorebook Keeper explicit target, approval, locks and automatic routing regressions passed.");
+// New entries are embedded as well as updated ones, so vector lorebooks can find them.
+const embedded: string[] = [];
+await persistLorebookKeeperUpdates({
+  ...options,
+  lorebooksStore: {
+    ...store,
+    async createEntry(input: Record<string, unknown>) {
+      return { id: `entry-${String(input.name)}`, ...input };
+    },
+  } as unknown as Parameters<typeof persistLorebookKeeperUpdates>[0]["lorebooksStore"],
+  allowTargetRouting: false,
+  updates: updates.slice(0, 1),
+  revectorizeEntry: async (entry) => {
+    embedded.push(entry.id);
+  },
+});
+assert.deepEqual(embedded, ["entry-Memory"]);
+console.log(
+  "Lorebook Keeper explicit target, approval, locks and automatic routing and new-entry embedding and key-splitting regressions passed.",
+);
