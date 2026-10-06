@@ -776,6 +776,16 @@ try {
     memory.closeScenesAfter(rollingChat.id, [rollingSource.at(-1)!.id]),
     /before its latest message/u,
   );
+  // An oversized real request resets the context too; with rolling scenes it keeps the last finished one.
+  await memory.checkScenesAfterGeneration(rollingChat.id, {
+    maxRequestInputTokens: 1_000_000,
+    asOfMessageId: rollingSource.at(-1)!.id,
+  });
+  assert.equal(
+    (await memory.status(rollingChat.id)).job.contextStarts?.[0]?.messageId,
+    rollingSource[20]!.id,
+    "an oversized request resets to the last two scenes, not the newest scene end",
+  );
   process.stdout.write(
     "Advanced Memory full-history archive, context cutoff and visibility regression passed (1000 messages).\n",
   );
