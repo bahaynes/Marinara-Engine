@@ -757,6 +757,25 @@ try {
     titledScenes.some((record) => record.status === "closed" && record.endMessageId === titledSource[8]!.id),
     "a changed title ends the scene before that reply; rewording the same title does not",
   );
+
+  // Fork: hard-close a scene retroactively, keeping the endings already found.
+  requests.length = 0;
+  assert(await memory.closeScenesAfter(rollingChat.id, [rollingSource[24]!.id]));
+  const closedEnds = new Set(
+    (await memory.status(rollingChat.id)).records
+      .filter((record) => record.kind === "scene" && record.status === "closed")
+      .map((record) => record.endMessageId),
+  );
+  for (const index of [9, 19, 24])
+    assert(closedEnds.has(rollingSource[index]!.id), `the scene ending after message ${index + 1} exists`);
+  assert(
+    requests.some((request) => request.kind === "summary"),
+    "the newly closed scene gets a recap",
+  );
+  await assert.rejects(
+    memory.closeScenesAfter(rollingChat.id, [rollingSource.at(-1)!.id]),
+    /before its latest message/u,
+  );
   process.stdout.write(
     "Advanced Memory full-history archive, context cutoff and visibility regression passed (1000 messages).\n",
   );

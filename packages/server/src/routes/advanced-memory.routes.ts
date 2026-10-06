@@ -110,6 +110,14 @@ export async function advancedMemoryRoutes(app: FastifyInstance) {
     }),
   );
   app.post<{ Params: { id: string } }>(`${prefix}/cancel`, async (req) => service.cancel(req.params.id));
+  // Fork: hard-close scenes after the given messages, then write their recaps.
+  app.post<{ Params: { id: string } }>(`${prefix}/scene-ends`, async (req, reply) =>
+    withMemoryDomainErrors(reply, async () => {
+      const { messageIds } = z.object({ messageIds: z.array(z.string().min(1)).min(1).max(100) }).parse(req.body);
+      const closed = await service.closeScenesAfter(req.params.id, messageIds, { blocking: true });
+      return { closed, ...(await service.status(req.params.id)) };
+    }),
+  );
   app.post<{ Params: { id: string } }>(`${prefix}/reindex`, async (req, reply) =>
     withMemoryDomainErrors(reply, async () => {
       const options = operationSchema.parse(req.body ?? {});
