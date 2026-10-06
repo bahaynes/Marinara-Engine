@@ -32,6 +32,7 @@ import {
   appendRoleplayPromptTail,
   appendRoleplayWhispers,
   buildRoleplayCommandsReminder,
+  latestRoleplaySceneTitle,
   buildRoleplayPersonalContext,
   parseRoleplayUserCommands,
   prepareUserRoleplayCommands,
@@ -2276,6 +2277,7 @@ export async function registerDryRunRoute(app: FastifyInstance) {
         }),
         buildRoleplayCommandsReminder({
           metadata: chatMeta,
+          sceneTitle: latestRoleplaySceneTitle(endIndex >= 0 ? scopedMessages.slice(0, endIndex) : scopedMessages),
           characterId: allCharacterIds.length === 1 || individual ? target : null,
           privateAvailable: Boolean(target) && (allCharacterIds.length === 1 || individual),
           availableAgentIds,

@@ -157,6 +157,10 @@ function readCommand(type: string, body: string): RoleplayCommand | null {
       return { type };
     case "inspire":
       return { type };
+    case "scene": {
+      const title = field("title", 160) || (body.match(/^\s*["“]([^"”\n]{1,160})["”]/u)?.[1]?.trim() ?? "");
+      return title ? { type, title } : null;
+    }
     case "interrupt": {
       const part = field("part", 8_000);
       return part ? { type, part } : null;
@@ -826,6 +830,21 @@ export function buildRoleplayPersonalContext(args: {
   ].join("\n\n");
 }
 
+/** Fork: the newest [scene] title in these messages, oldest first. */
+export function latestRoleplaySceneTitle(messages: readonly { extra?: unknown }[]): string | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const extra = messages[i]!.extra;
+    const activity = getRoleplayCommandActivity(
+      (typeof extra === "string" ? JSON.parse(extra || "{}") : (extra ?? {})) as Record<string, unknown>,
+    );
+    const command = activity
+      .filter((item) => item.command.type === "scene" && !item.deleted && !item.error)
+      .at(-1)?.command;
+    if (command?.type === "scene") return command.title;
+  }
+  return null;
+}
+
 export function buildRoleplayCommandsReminder(args: {
   metadata: Record<string, unknown>;
   privateAvailable: boolean;
@@ -837,6 +856,8 @@ export function buildRoleplayCommandsReminder(args: {
   /** Set when a clip may be made now: a video connection exists and the Video Run Interval has passed. */
   video?: { instructions: string } | null;
   activeSkills?: readonly GameSkillDefinition[];
+  /** Fork: the latest [scene] title, so the model can repeat it exactly while the scene continues. */
+  sceneTitle?: string | null;
 }): string {
   const lines: string[] = [];
   const enabled = (key: RoleplayCommandKey) => isRoleplayCommandAllowed(args.metadata, key, args.characterId);
@@ -861,6 +882,11 @@ export function buildRoleplayCommandsReminder(args: {
       '- [document: kind="note|letter|journal|report|poster|terminal" title="title" content="full text"] creates an in-world document. Supply plain text only; the Engine applies the built-in style for that kind. Do not generate HTML or CSS or repeat the document contents in narration.',
     );
   if (enabled("sound")) lines.push('- [sound: description="a brief sound effect"] plays a sound cue. Use sparingly.');
+  if (enabled("scene"))
+    lines.push(
+      '- [scene: title="short scene title"] ends every reply: name the scene as it stands at the end of your reply, by place and situation (e.g. "Interrogation in the east vestry"). Repeat the exact same title while the scene continues. Change it only when the scene truly ends: a new location, a major time skip, or a resolved episode.' +
+        (args.sceneTitle ? ` The current title is "${args.sceneTitle}".` : ""),
+    );
   if (enabled("music") && args.availableAgentIds.has("spotify"))
     lines.push(
       '- [music: mood="scene mood and musical direction"] asks Music DJ to change the soundtrack when the scene calls for it.',

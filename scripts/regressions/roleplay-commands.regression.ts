@@ -17,6 +17,7 @@ import {
   appendRoleplayPromptTail,
   buildRoleplayCommandsReminder,
   buildRoleplayPersonalContext,
+  latestRoleplaySceneTitle,
   parseRoleplayCommands,
   placeAfterPrefix,
   placeRoleplayActivityInParts,
@@ -828,6 +829,41 @@ assert.throws(
   /one chat participant/u,
 );
 assert.throws(() => dice({ notation: "1d20+9007199254740971", attribute: "STR" }), /numeric range/u);
+
+// Fork: scene titles parse quoted or bare, and the reminder carries the current title so it can repeat.
+{
+  const titled = parseRoleplayCommands('She shuts the door. [scene: title="Interrogation in the east vestry"]');
+  assert.deepEqual(titled.activity[0]?.command, { type: "scene", title: "Interrogation in the east vestry" });
+  assert.equal(titled.content.includes("[scene"), false, "the title is removed from the reply text");
+  assert.deepEqual(parseRoleplayCommands('Dawn. [scene: "Long barracks"]').activity[0]?.command, {
+    type: "scene",
+    title: "Long barracks",
+  });
+  const sceneMeta = { roleplayCommandsEnabled: true, roleplayCommandToggles: { scene: true } };
+  const history = [{ extra: { roleplayCommandActivity: titled.activity } }, { extra: {} }];
+  assert.equal(latestRoleplaySceneTitle(history), "Interrogation in the east vestry");
+  const sceneReminder = buildRoleplayCommandsReminder({
+    metadata: sceneMeta,
+    privateAvailable: false,
+    availableAgentIds: new Set(),
+    format: "xml",
+    characterNames: ["Alice"],
+    sceneTitle: latestRoleplaySceneTitle(history),
+  });
+  assert.match(sceneReminder, /\[scene: title=/u);
+  assert.match(sceneReminder, /The current title is "Interrogation in the east vestry"\./u);
+  assert.doesNotMatch(
+    buildRoleplayCommandsReminder({
+      metadata: { roleplayCommandsEnabled: true },
+      privateAvailable: false,
+      availableAgentIds: new Set(),
+      format: "xml",
+      characterNames: ["Alice"],
+    }),
+    /\[scene:/u,
+    "scene titles stay opt-in",
+  );
+}
 
 // Fuzzy participant matching resolves unambiguous prefix or token match (e.g. "Hera" -> "Hera-Zaire")
 const fuzzyParticipants = [

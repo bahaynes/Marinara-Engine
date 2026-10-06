@@ -4643,6 +4643,8 @@
   "roleplay.commands.roll.label": "Rolls",
   "roleplay.commands.roll.limit": "This turn reached its roll limit. Continue the reply to resolve another action.",
   "roleplay.commands.roll.result": "{{notation}}: {{total}}",
+  "roleplay.commands.scene.description": "Characters name the current scene at the end of each reply. With Advanced Memory, a new name starts a new scene.",
+  "roleplay.commands.scene.label": "Scene titles",
   "roleplay.commands.sound.connection": "Sound effects connection",
   "roleplay.commands.sound.defaultConnection": "Default Music & Sound Effects connection",
   "roleplay.commands.sound.description": "Generate a brief sound effect when it fits the scene.",
