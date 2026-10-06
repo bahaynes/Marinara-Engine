@@ -710,6 +710,53 @@ try {
     requests.some((request) => request.kind === "classify" && request.text.includes("list the NEXT message")),
     "the whole-history scan uses the loose prompt too",
   );
+
+  // Fork: [scene] titles from the story model end scenes without a helper call.
+  const titledChat = await chats.create({
+    name: "Titled scenes",
+    mode: "roleplay",
+    characterIds: ["first"],
+    connectionId: connection.id,
+  });
+  assert(titledChat);
+  await chats.patchMetadata(titledChat.id, {
+    roleplayCommandsEnabled: true,
+    roleplayCommandToggles: { scene: true },
+  });
+  await chats.createMessagesBatch(
+    titledChat.id,
+    Array.from({ length: 4 }, (_, index) => ({
+      role: index % 2 ? ("assistant" as const) : ("user" as const),
+      content: `Opening beat ${index}.`,
+    })),
+  );
+  await memory.updateSettings(titledChat.id, { enabled: true, knowledgeStarts: { first: null } });
+  await memory.initialize(titledChat.id);
+  const titledReply = (index: number, title: string) => ({
+    role: "assistant" as const,
+    content: `Reply ${index}.`,
+    extra: { roleplayCommandActivity: [{ command: { type: "scene", title }, raw: `[scene: "${title}"]` }] },
+  });
+  await chats.createMessagesBatch(titledChat.id, [
+    { role: "user", content: "We talk in the vestry." },
+    titledReply(1, "Talk in the vestry"),
+    { role: "user", content: "We keep talking." },
+    titledReply(2, "Talk in the Vestry!"),
+    { role: "user", content: "We walk to the barracks." },
+    titledReply(3, "Night at the barracks"),
+  ]);
+  requests.length = 0;
+  await memory.checkScenesAfterGeneration(titledChat.id);
+  assert(
+    !requests.some((request) => request.text.includes("Scene-check output format")),
+    "titled replies decide the check without the helper",
+  );
+  const titledSource = await chats.listMessages(titledChat.id);
+  const titledScenes = (await memory.status(titledChat.id)).records.filter((record) => record.kind === "scene");
+  assert(
+    titledScenes.some((record) => record.status === "closed" && record.endMessageId === titledSource[8]!.id),
+    "a changed title ends the scene before that reply; rewording the same title does not",
+  );
   process.stdout.write(
     "Advanced Memory full-history archive, context cutoff and visibility regression passed (1000 messages).\n",
   );
