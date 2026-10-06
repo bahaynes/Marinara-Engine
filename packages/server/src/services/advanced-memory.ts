@@ -3975,6 +3975,7 @@ export function createAdvancedMemoryService(db: DB, { includeExcerptsInStatus = 
     request: AdvancedMemorySceneCheck,
     decision: unknown,
     options: AdvancedMemoryOperationOptions,
+    manual = false,
   ): Promise<boolean> {
     abortIfNeeded(options.signal);
     const full = await context(chatId);
@@ -3983,7 +3984,10 @@ export function createAdvancedMemoryService(db: DB, { includeExcerptsInStatus = 
     const ctx = { ...full, messages: full.messages.slice(0, end + 1) };
     const state = object(ctx.metadata.advancedMemoryState);
     const checkedEnd = full.messages.findIndex((message) => message.id === state.sceneCheckMessageId);
-    if (checkedEnd > end || (checkedEnd === end && state.sceneCheckSourceFingerprint === request.sourceFingerprint))
+    if (
+      !manual &&
+      (checkedEnd > end || (checkedEnd === end && state.sceneCheckSourceFingerprint === request.sourceFingerprint))
+    )
       return false;
     if (
       request.sourceFingerprint !== advancedMemorySourceFingerprint(ctx.messages) ||
@@ -4099,6 +4103,61 @@ export function createAdvancedMemoryService(db: DB, { includeExcerptsInStatus = 
       },
       false,
     );
+    return committed;
+  }
+
+  /**
+   * Fork: close scenes after the given messages, retroactively, then write their recaps. Built on the
+   * scene-check commit: one window from the earliest requested end to the latest message, keeping the
+   * closed endings already inside it.
+   */
+  async function closeScenesAfter(
+    chatId: string,
+    messageIds: readonly string[],
+    options: AdvancedMemoryOperationOptions = {},
+  ): Promise<boolean> {
+    let committed = false;
+    await runMemoryOperation(
+      chatId,
+      options,
+      async (operationOptions) => {
+        const ctx = await context(chatId);
+        const indexes = messageIds.map((id) => ctx.messages.findIndex((message) => message.id === id));
+        if (!indexes.length || indexes.some((index) => index < 0 || index >= ctx.messages.length - 1))
+          throw new Error("Each scene end must be a message of this chat before its latest message");
+        const first = Math.min(...indexes);
+        const window = ctx.messages
+          .slice(first)
+          .filter(
+            (message) =>
+              ["user", "assistant", "narrator"].includes(message.role) && messageExtra(message).commandOnly !== true,
+          );
+        const sent = new Set(window.map((message) => message.id));
+        const kept = sceneRecords(await operationRecords(ctx))
+          .filter((record) => record.kind === "scene" && record.status === "closed" && sent.has(record.endMessageId))
+          .map((record) => record.endMessageId);
+        const ends = [...new Set([...messageIds, ...kept])]
+          .filter((id) => sent.has(id))
+          .map((id) => ({ messageNumber: ctx.messages.findIndex((message) => message.id === id) + 1 }));
+        const request: AdvancedMemorySceneCheck = {
+          chatId,
+          asOfMessageId: ctx.messages.at(-1)!.id,
+          windowStartMessageId: window[0]!.id,
+          sourceFingerprint: advancedMemorySourceFingerprint(ctx.messages),
+          policyRevision: preparationPolicyRevision(ctx),
+          messages: window.map((message) => ({
+            messageId: message.id,
+            messageNumber: ctx.messages.indexOf(message) + 1,
+            role: message.role,
+            content: message.content,
+          })),
+          prompt: "",
+        };
+        committed = await commitSceneCheckImpl(chatId, request, { ends }, operationOptions, true);
+      },
+      false,
+    );
+    if (committed) await maintain(chatId, options);
     return committed;
   }
 
@@ -6972,6 +7031,7 @@ export function createAdvancedMemoryService(db: DB, { includeExcerptsInStatus = 
     maintain,
     getSceneCheck,
     commitSceneCheck,
+    closeScenesAfter,
     checkScenesAfterGeneration,
     settleMessageVisibility,
     prepare,
