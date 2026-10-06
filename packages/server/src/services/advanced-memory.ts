@@ -30,6 +30,8 @@ import {
   characterCustomFieldTrackerLockKey,
   extractLeadingThinkingBlocks,
   normalizeCharacterLookupName,
+  getRoleplayCommandActivity,
+  isRoleplayCommandEnabled,
   type AdvancedMemoryJob,
   type AdvancedMemoryDecisionDiagnostics,
   type AdvancedMemoryRecord,
@@ -3957,6 +3959,44 @@ export function createAdvancedMemoryService(db: DB, { includeExcerptsInStatus = 
       : "";
   }
 
+  /**
+   * Fork: endings from [scene: title] commands. A reply whose title differs from the previous titled
+   * reply starts a new scene, so the old one ends at the message before it. Null without titles.
+   */
+  function sceneTitleEnds(ctx: Context, request: AdvancedMemorySceneCheck): { messageNumber: number }[] | null {
+    if (!isRoleplayCommandEnabled(ctx.metadata, "scene")) return null;
+    const titleOf = (message: AdvancedMemoryMessage) => {
+      const command = getRoleplayCommandActivity(messageExtra(message))
+        .filter((item) => item.command.type === "scene" && !item.deleted && !item.error)
+        .at(-1)?.command;
+      const title = command?.type === "scene" ? command.title : "";
+      return (
+        title
+          .toLowerCase()
+          .replace(/[^\p{L}\p{N}]+/gu, " ")
+          .trim() || null
+      );
+    };
+    const sent = new Map(request.messages.map((message) => [message.messageId, message.messageNumber]));
+    const first = ctx.messages.findIndex((message) => sent.has(message.id));
+    if (first < 0) return null;
+    let previous: string | null = null;
+    for (let i = first - 1; i >= 0 && !previous; i--) previous = titleOf(ctx.messages[i]!);
+    const ends: { messageNumber: number }[] = [];
+    let titled = false;
+    for (const message of ctx.messages.slice(first)) {
+      const number = sent.get(message.id);
+      if (number === undefined) continue;
+      const title = titleOf(message);
+      if (!title) continue;
+      titled = true;
+      if (previous && title !== previous && sent.has(ctx.messages[number - 2]?.id ?? ""))
+        ends.push({ messageNumber: number - 1 });
+      previous = title;
+    }
+    return titled ? ends : null;
+  }
+
   async function getSceneCheck(
     chatId: string,
     options: { force?: boolean; asOfMessageId?: string } = {},
@@ -4188,7 +4228,9 @@ export function createAdvancedMemoryService(db: DB, { includeExcerptsInStatus = 
                 results: [],
               }
             : undefined;
-          const backend = await memoryDecisionBackend(ctx, operationOptions);
+          // Fork: scene titles from the story model decide the endings when the window has any.
+          const titleEnds = sceneTitleEnds(ctx, request);
+          const backend = titleEnds ? null : await memoryDecisionBackend(ctx, operationOptions);
           if (backend) {
             // Who perceives the new messages shares this scene request when it fits (#7192).
             const presence = plan?.ctx.settings.decisionEnabled ? presenceAsk(plan, backend.maxStateTokens) : undefined;
@@ -4223,7 +4265,9 @@ export function createAdvancedMemoryService(db: DB, { includeExcerptsInStatus = 
                 presence.answers && hiddenFromScores(plan, presence.answers, backend.calibration.defaultThreshold);
             }
           }
-          if (decisionStarts !== null) {
+          if (titleEnds) {
+            decision = { ends: titleEnds };
+          } else if (decisionStarts !== null) {
             // A scene that starts on a checked message ends on the checked message before it, or, for the
             // first one, on the message just before the check.
             const starts = new Set(decisionStarts);

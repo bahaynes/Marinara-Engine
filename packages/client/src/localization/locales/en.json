@@ -4780,6 +4780,8 @@
   "roleplay.commands.roll.outcomeTone.outcome": "Success and failure",
   "roleplay.commands.roll.outcomeTone.outcomeCrits": "Success, failure and criticals",
   "roleplay.commands.roll.result": "{{notation}}: {{total}}",
+  "roleplay.commands.scene.description": "Characters name the current scene at the end of each reply. With Advanced Memory, a new name starts a new scene.",
+  "roleplay.commands.scene.label": "Scene titles",
   "roleplay.commands.sound.connection": "Sound effects connection",
   "roleplay.commands.sound.defaultConnection": "Default Music & Sound Effects connection",
   "roleplay.commands.sound.description": "Generate a brief sound effect when it fits the scene.",

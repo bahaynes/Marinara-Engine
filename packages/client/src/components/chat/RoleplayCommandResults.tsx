@@ -593,11 +593,14 @@ export function RoleplayCommandResults({
           attachment.url.startsWith("/api/game-assets/file/sfx/"),
       )
     : [];
-  if (!activity.some((item) => item.command.type !== "whisper" || item.error) && !sounds.length) return null;
+  // Fork: a scene title rides on every reply; it is bookkeeping for Advanced Memory, not a visible event.
+  const hidden = (item: RoleplayCommandActivity) =>
+    (item.command.type === "whisper" || item.command.type === "scene") && !item.error;
+  if (!activity.some((item) => !hidden(item)) && !sounds.length) return null;
   return (
     <div className="mt-3 space-y-2" data-roleplay-command-results onDoubleClick={(event) => event.stopPropagation()}>
       {activity.map((item, index) =>
-        item.command.type === "whisper" && !item.error ? null : (
+        hidden(item) ? null : (
           <CommandNotice
             key={`${messageId}:${swipeIndex}:${index}`}
             item={item}
