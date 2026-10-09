@@ -1,7 +1,8 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import type { Chat, MultiplayerHostAction, MultiplayerPlayer } from "@marinara-engine/shared";
+import type { Character, Chat, MultiplayerHostAction, MultiplayerPlayer } from "@marinara-engine/shared";
 import { useCharacters } from "../../hooks/use-characters";
+import { parseCharacterDisplayData } from "../../lib/character-display";
 import type { GameSetupWizardProps } from "../../components/game/GameSetupWizard";
 
 const GameSetupWizard = lazy(() =>
@@ -24,7 +25,21 @@ export function PreparedMultiplayerGameSetup({
   busy?: boolean;
 }) {
   const { t } = useTranslation();
-  const { data: characters = [], isLoading } = useCharacters();
+  const { data: rawCharacters, isLoading } = useCharacters();
+  const characters: GameSetupWizardProps["characters"] = useMemo(
+    () =>
+      ((rawCharacters ?? []) as unknown as Character[]).map((c) => {
+        const display = parseCharacterDisplayData(c);
+        return {
+          id: c.id,
+          name: display.name,
+          comment: display.comment,
+          avatarUrl: c.avatarPath ?? undefined,
+          avatarCrop: display.avatarCrop ?? null,
+        };
+      }),
+    [rawCharacters],
+  );
   const loading = (
     <p role="status" className="p-4 text-sm text-[var(--muted-foreground)]">
       {t("multiplayer.loading")}
@@ -37,7 +52,7 @@ export function PreparedMultiplayerGameSetup({
         activeChatId={chat.id}
         isNewGame
         chatMetadata={chat.metadata as Record<string, unknown>}
-        characters={characters as GameSetupWizardProps["characters"]}
+        characters={characters}
         multiplayerPlayers={players}
         onSetupError={() => false}
         isLoading={busy}
