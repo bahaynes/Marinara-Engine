@@ -1,5 +1,6 @@
 import { CSRF_HEADER, CSRF_HEADER_VALUE } from "@marinara-engine/shared";
 import { toast } from "sonner";
+import { ADMIN_SECRET_STORAGE_KEY } from "./api-client";
 
 const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
@@ -79,17 +80,21 @@ export function installCsrfFetchShim() {
   const nativeFetch = window.fetch.bind(window);
   window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     const method = (init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
-    const unsafeSameOriginApi = UNSAFE_METHODS.has(method) && isSameOriginApi(input);
+    const sameOriginApi = isSameOriginApi(input);
+    const unsafeSameOriginApi = UNSAFE_METHODS.has(method) && sameOriginApi;
+    // Package clients call their /api routes with plain fetch, so attach the stored admin secret for them.
+    const adminSecret = sameOriginApi ? window.localStorage.getItem(ADMIN_SECRET_STORAGE_KEY)?.trim() : "";
 
-    if (!unsafeSameOriginApi) {
+    if (!unsafeSameOriginApi && !adminSecret) {
       return nativeFetch(input, init);
     }
 
     const request = new Request(input, init);
-    request.headers.set(CSRF_HEADER, CSRF_HEADER_VALUE);
+    if (unsafeSameOriginApi) request.headers.set(CSRF_HEADER, CSRF_HEADER_VALUE);
+    if (adminSecret && !request.headers.has("X-Admin-Secret")) request.headers.set("X-Admin-Secret", adminSecret);
     const response = await nativeFetch(request);
     // Fire-and-forget — never block the caller on toast logic.
-    void inspectForCsrf(response);
+    if (unsafeSameOriginApi) void inspectForCsrf(response);
     return response;
   };
 }
