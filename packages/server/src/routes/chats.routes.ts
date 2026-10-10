@@ -3175,8 +3175,23 @@ export async function chatsRoutes(app: FastifyInstance) {
   app.patch<{ Params: { chatId: string; messageId: string } }>("/:chatId/messages/:messageId", async (req, reply) => {
     const { content } = req.body as { content: string };
     if (typeof content !== "string") return reply.status(400).send({ error: "content is required" });
+    const before = await storage.getMessage(req.params.messageId);
     const updated = await storage.updateMessageContent(req.params.messageId, content, { authored: true });
     if (!updated) return notFound(reply, "Message not found");
+    // Fork: hand edits are continuity data (how often a player had to fix the text). Keep the text from
+    // before the first hand edit, plus a count and the last time; the current text is the message itself.
+    if (before && before.content !== updated.content) {
+      const prior = parseExtra(before.extra).handEdit as { original?: string; count?: number } | undefined;
+      return (
+        (await storage.updateMessageExtra(updated.id, {
+          handEdit: {
+            original: prior?.original ?? before.content,
+            count: (prior?.count ?? 0) + 1,
+            lastAt: new Date().toISOString(),
+          },
+        })) ?? updated
+      );
+    }
     return updated;
   });
 

@@ -1,4 +1,5 @@
 import type {
+  GenerationInfo,
   Message,
   AvatarCrop,
   CombatIconChoice,
@@ -83,6 +84,7 @@ export type PeekPromptData = {
     requestCount?: number;
     tokensCachedPrompt?: number | null;
     tokensCacheWritePrompt?: number | null;
+    cacheBreak?: GenerationInfo["cacheBreak"];
     durationMs?: number | null;
     finishReason?: string | null;
   } | null;
