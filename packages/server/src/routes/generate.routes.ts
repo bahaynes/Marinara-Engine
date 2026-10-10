@@ -65,6 +65,7 @@ import {
   type AdvancedMemorySnapshot,
 } from "../services/generation/advanced-memory-context.js";
 import { measureContextBudget } from "../services/llm/base-provider.js";
+import { canRefreshLocalContext } from "../services/llm/local-context-limit.js";
 import {
   resolveAdvancedMemoryPrompt,
   createAdvancedMemoryPlacement,
@@ -12008,6 +12009,16 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
           deferParallelAgentEvents = true;
           parallelAgentStartPending = true;
           if (!agentContext.sequentialExecution) parallelPromise = pipeline.runParallel();
+        }
+
+        // Warm a local server's prompt cache for post-processing agents while a hosted model
+        // writes. With a local main model the prefill would compete with the reply itself.
+        if (
+          !generationSignal.aborted &&
+          !agentContext.sequentialExecution &&
+          !canRefreshLocalContext({ ...conn, baseUrl })
+        ) {
+          pipeline.prefillPostAgents(resolveAgentContext);
         }
 
         // ── Run generation ──
