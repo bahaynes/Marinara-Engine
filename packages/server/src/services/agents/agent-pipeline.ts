@@ -15,6 +15,8 @@ import type { BaseLLMProvider } from "../llm/base-provider.js";
 import {
   executeAgent,
   executeAgentBatch,
+  prefillAgent,
+  prefillAgentBatch,
   resolveAgentResultType,
   type AgentExecConfig,
   type AgentToolContext,
@@ -23,6 +25,7 @@ import { logger } from "../../lib/logger.js";
 import { failureLevel } from "../../lib/log-context.js";
 import { createAgentConcurrencyLimiter, settleAgentJobsWithConcurrencyLimit } from "./agent-concurrency.js";
 import { getCustomLorebookReadBehindMessages } from "../../routes/generate/lorebook-keeper-utils.js";
+import { prepareCapabilityAgentContexts } from "../capability-packages/capability-agent-runtime.service.js";
 export { settleAgentJobsWithConcurrencyLimit } from "./agent-concurrency.js";
 
 /** A fully resolved agent ready for execution. */
@@ -35,6 +38,8 @@ export interface ResolvedAgent extends AgentExecConfig {
   toolContext?: AgentToolContext;
   /** Request-local context identity used to keep incompatible agent batches separate. */
   batchContextKey?: string;
+  /** The agent's connection is a self-hosted server (local URL or "treat as local"). */
+  localEndpoint?: boolean;
 }
 
 export interface AgentInjection {
@@ -443,6 +448,14 @@ export async function runParallelAgents(
   return executePhase(agents, "parallel", context, onResult, resolveAgentContext);
 }
 
+/**
+ * Speculative prefill only pays off on a self-hosted server with a prompt cache
+ * (llama.cpp); on a hosted API it would be an extra billed request.
+ */
+export function isAgentEligibleForPrefill(agent: ResolvedAgent): boolean {
+  return agent.phase === "post_processing" && agent.localEndpoint === true;
+}
+
 // ──────────────────────────────────────────────
 // Full Pipeline (convenience wrapper)
 // ──────────────────────────────────────────────
@@ -505,6 +518,50 @@ export function createAgentPipeline(
       const results = await runParallelAgents(agents, baseContext, wrappedOnResult, resolveAgentContext);
       parallelPhaseResults.push(...results);
       return results;
+    },
+
+    /**
+     * Phase 2b: While the main response is written, prefill the prompts the local
+     * post-processing agents will send, grouped exactly like executePhase, so their
+     * real calls reuse the server's cached prefix. Fire-and-forget.
+     */
+    prefillPostAgents(resolveContext?: AgentContextResolver): void {
+      const eligibleAgents = agents.filter(isAgentEligibleForPrefill);
+      if (eligibleAgents.length === 0) return;
+      logger.info(
+        "[agent-pipeline] Prefilling %d local post-processing agent(s): [%s]",
+        eligibleAgents.length,
+        eligibleAgents.map((a) => a.type).join(", "),
+      );
+      // custom-mods: the real post-processing call carries capability runtime context (NPC Registry's
+      // roster) in its system prompt. Without it here the prefilled prompt diverges early and caches nothing.
+      const prefillContext = prepareCapabilityAgentContexts(eligibleAgents, baseContext);
+      const contextFor = async (agent: ResolvedAgent) => {
+        const context = buildAgentContext(agent, await prefillContext);
+        return resolveContext ? resolveContext(agent, context) : context;
+      };
+      void Promise.all(
+        groupByProviderModel(eligibleAgents)
+          .flatMap(splitGroupForParallelJobs)
+          .map(async (group) => {
+            const toolAgents = group.agents.filter((a) => shouldUseToolsDuringAgentExecution(a));
+            const batchAgents = group.agents.filter((a) => !shouldUseToolsDuringAgentExecution(a));
+            await Promise.all([
+              batchAgents.length > 0
+                ? prefillAgentBatch(
+                    batchAgents,
+                    await contextFor(group.agents[0]!),
+                    group.provider,
+                    group.model,
+                    resolveContext,
+                  )
+                : undefined,
+              ...toolAgents.map(async (agent) =>
+                prefillAgent(agent, await contextFor(agent), agent.provider, agent.model, agent.toolContext?.tools),
+              ),
+            ]);
+          }),
+      ).catch((err) => logger.debug(err, "[agent-pipeline] Prefill failed"));
     },
 
     /**

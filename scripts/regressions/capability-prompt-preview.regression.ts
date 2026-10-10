@@ -192,6 +192,32 @@ try {
           );
           assert.ok(!text.includes("__MARINARA_RUNTIME_AGENT_SECTION__"), "No internal placement tokens escape");
         }
+      else
+        for (const text of [previewText, received]) {
+          assert.ok(
+            text.indexOf("AFTER_PACKAGE") < text.indexOf(marker) &&
+              text.indexOf(marker) < text.indexOf("Continue our scene."),
+            "Unplaced package context sits after the preset sections, before the last message",
+          );
+        }
+      if (!positioned) {
+        // Impersonate ends on an assistant reply; the provider caches history up to it.
+        await chats.createMessage({ chatId: chat.id, role: "assistant", content: "The scene goes on." });
+        const afterReply = await app.inject({
+          method: "POST",
+          url: "/api/generate/dryRun",
+          payload: { chatId: chat.id, returnPrompt: true },
+        });
+        assert.equal(afterReply.statusCode, 200, afterReply.body);
+        const replyText = afterReply
+          .json()
+          .prompt.messages.map((message: { content: string }) => message.content)
+          .join("\n");
+        assert.ok(
+          replyText.indexOf("The scene goes on.") < replyText.indexOf(marker),
+          "Unplaced package context stays after a final assistant reply",
+        );
+      }
       release();
       const withoutPackage = await app.inject({
         method: "POST",
