@@ -69,6 +69,7 @@ import { wrapContent } from "../prompt/format-engine.js";
 import { sanitizePromptLeaf } from "../prompt/prompt-escaping.js";
 import { settleAgentJobsWithConcurrencyLimit } from "./agent-concurrency.js";
 import { completeAgentCall } from "./agent-progress.js";
+import { sendAgentPrefill } from "./agent-prefill-request.js";
 import { normalizeCyoaChoiceOutput } from "./cyoa-choice-normalization.js";
 import { getAssetManifest } from "../game/asset-manifest.service.js";
 import { toolRoundsAsText } from "../tools/tool-executor.js";
@@ -1728,6 +1729,124 @@ export async function executeAgentBatch(
     logger[failureLevel(err)](err, "[agent-batch] Batch call FAILED: %s", errMsg);
     return configs.map((c) => makeError(c, errMsg, startTime));
   }
+}
+
+// ponytail: the prefill builders copy executeAgent/executeAgentBatch prompt assembly
+// instead of refactoring upstream code. Drift only costs a cache miss; if it starts
+// drifting, extract shared message builders upstream.
+
+/**
+ * Speculatively prefill one agent's prompt while the main response is still being
+ * written. The real call shares everything up to the <assistant_response> block, so
+ * it should reuse the cached prefix. Mirrors executeAgent's prompt and request options.
+ */
+export async function prefillAgent(
+  config: AgentExecConfig,
+  context: AgentContext,
+  provider: BaseLLMProvider,
+  model: string,
+  tools?: LLMToolDefinition[],
+): Promise<void> {
+  if (!roomAgentAllowed(config.type, config.settings)) return;
+  try {
+    if (getAgentContextSources(config).previousOutput) {
+      const data = await context.loadPreviousOutput?.(config.id);
+      context = { ...context, previousOutput: { agentType: config.type, text: previousAgentOutputText(data) } };
+    }
+    const template = renderAgentPromptTemplate(
+      config.promptTemplate || getDefaultPromptForAgent(config),
+      config.settings,
+      context,
+      { escapeValues: normalizeAgentContextWrapFormat(context.wrapFormat) === "xml" },
+    );
+    if (!template) return;
+    // Beholder lane passes send one prompt per lane; not worth mirroring.
+    if (config.type === "beholder" && parseBeholderLanePrompts(template)) return;
+
+    const messages = prepareAgentProviderMessages(
+      config.type === "expression"
+        ? buildExpressionAgentMessages(config, template, context)
+        : config.type === "knowledge-retrieval"
+          ? buildKnowledgeRetrievalAgentMessages(config, template, context)
+          : config.type === "spotify"
+            ? buildSpotifyAgentMessages(config, template, context)
+            : config.type === "beholder"
+              ? buildBeholderMessages(config, template, context)
+              : buildStandardAgentMessages(config, template, context),
+    );
+    const requestOptions = agentRequestOptions(config, agentResponseIsJson(config));
+    await sendAgentPrefill(config.type, provider, messages, {
+      model,
+      ...(tools?.length
+        ? { ...requestOptions, tools }
+        : { ...requestOptions, ...jsonAgentResponseFormatOverride(config, model) }),
+      signal: agentCallSignal(context.signal),
+    });
+  } catch (err) {
+    logger.debug(err, "[agent-prefill] %s skipped", config.type);
+  }
+}
+
+/** Prefill the requests executeAgentBatch would send for these agents, split the same way. */
+export async function prefillAgentBatch(
+  configs: AgentExecConfig[],
+  context: AgentContext,
+  provider: BaseLLMProvider,
+  model: string,
+  resolveAgentContext?: (config: AgentExecConfig, context: AgentContext) => AgentContext | Promise<AgentContext>,
+): Promise<void> {
+  configs = configs.filter((config) => roomAgentAllowed(config.type, config.settings));
+  const individually = async (config: AgentExecConfig) =>
+    prefillAgent(config, resolveAgentContext ? await resolveAgentContext(config, context) : context, provider, model);
+  const batched = configs.filter((config) => !shouldRunAgentIndividually(config));
+  const jobs = configs.filter(shouldRunAgentIndividually).map(individually);
+
+  const bySignature = new Map<string, AgentExecConfig[]>();
+  for (const config of batched) {
+    const signature = agentBatchRequestSignature(config);
+    bySignature.set(signature, [...(bySignature.get(signature) ?? []), config]);
+  }
+  if (batched.length === 1) {
+    jobs.push(individually(batched[0]!));
+  } else if (bySignature.size > 1) {
+    for (const group of bySignature.values()) {
+      jobs.push(prefillAgentBatch(group, context, provider, model, resolveAgentContext));
+    }
+  } else if (batched.length > 1) {
+    try {
+      const renderedTemplates = renderAgentTemplatesForOutput(batched, context, { escapeValues: true });
+      const batchContextSize = Math.max(
+        0,
+        ...batched.map((config) =>
+          getAgentContextSources(config).chatHistory ? normalizeAgentContextSize(config.settings.contextSize) : 0,
+        ),
+      );
+      const messages = prepareAgentProviderMessages(
+        buildAgentMessages(
+          buildBatchSystemPrompt(batched, context, renderedTemplates),
+          context,
+          "__batch__",
+          batchContextSize,
+          batched.map((config) => config.type),
+          {
+            includeTrackerData: getBatchContextSources(batched).trackerData,
+            outputFormatBlock: buildAgentOutputFormatBlock(batched, context, renderedTemplates),
+          },
+        ),
+      );
+      jobs.push(
+        sendAgentPrefill(`batch [${batched.map((c) => c.type).join(", ")}]`, provider, messages, {
+          model,
+          ...agentRequestOptions(batched[0]!, true),
+          ...localSidecarJsonResponseFormat(model),
+          signal: agentCallSignal(context.signal),
+        }),
+      );
+    } catch (err) {
+      logger.debug(err, "[agent-prefill] batch skipped");
+    }
+  }
+  await Promise.all(jobs);
 }
 
 /**
