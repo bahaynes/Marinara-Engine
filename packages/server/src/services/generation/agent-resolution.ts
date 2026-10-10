@@ -1,5 +1,5 @@
 import { roomAgentAllowed } from "../multiplayer/generation-policy.js";
-import { allowsDefaultChatModel } from "../llm/local-context-limit.js";
+import { allowsDefaultChatModel, canRefreshLocalContext } from "../llm/local-context-limit.js";
 import {
   BUILT_IN_AGENTS,
   DEFAULT_AGENT_TOOLS,
@@ -96,6 +96,7 @@ type AgentProviderCacheEntry = {
   anthropicExtendedCacheTtl: boolean;
   cachingAtDepth: number;
   generation?: AgentGenerationParameters;
+  localEndpoint?: boolean;
 };
 
 type AgentConnectionResolution = {
@@ -376,6 +377,7 @@ async function resolveAgentConnectionProvider(args: {
     enableCaching: agentConn.enableCaching === "true",
     anthropicExtendedCacheTtl: agentConn.anthropicExtendedCacheTtl === "true",
     cachingAtDepth: Number(agentConn.cachingAtDepth) || 5,
+    localEndpoint: canRefreshLocalContext({ ...agentConn, baseUrl: agentBaseUrl }),
   };
   args.agentProviderCache.set(args.connectionId, resolved);
   return { entry: resolved };
@@ -593,6 +595,7 @@ export async function resolveAgentPipelineAgents({
       anthropicExtendedCacheTtl: resolvedProvider.entry.anthropicExtendedCacheTtl,
       cachingAtDepth: resolvedProvider.entry.cachingAtDepth,
       generation: resolvedProvider.entry.generation,
+      localEndpoint: resolvedProvider.entry.localEndpoint,
     });
   }
 
