@@ -98,17 +98,16 @@ Verify that TypeScript compilation, linting, and tests pass cleanly.
 
 ## 5. Illustrator 2 (custom image agent)
 
-`custom-agents/illustrator-2/` is a custom agent for local multi-reference edit models (FLUX.2 [klein], Qwen-Image-Edit) on ComfyUI. It reuses the stock `image_prompt` pipeline (gallery, swipes, camera button, retry) and relies on the engine hooks in `packages/server/src/services/image/image-agent-comfy-extensions.ts`.
+Illustrator 2 is an agent package for local multi-reference edit models (FLUX.2 [klein], Qwen-Image-Edit) on ComfyUI. Its definition lives in the agents fork (`bahaynes/Marinara-Agents`, branch `custom-mods`, `fork/packages/illustrator-2`) with all our other custom agents; see that repo's `CUSTOM_MODS.md`. It reuses the stock `image_prompt` pipeline (gallery, swipes, camera button, retry) and relies on the engine hooks in `packages/server/src/services/image/image-agent-comfy-extensions.ts`, which stay here.
 
 **Install**
-1. Settings → Advanced → Danger Zone → **Allow custom Agent imports**.
-2. Agents → **Import agent folder** → pick `custom-agents/illustrator-2`. Review the permission request (Image generation).
-3. Open the imported agent and set its image connection (connection IDs are stripped on import), then add it to a chat. It needs a text model for the prompt writer; a cheap one is fine.
-4. Enable **Character Tracker** in the same chat for present-character gating (optional — without tracker data nothing is filtered).
+1. Point the instance at the fork catalog (`MARINARA_AGENT_CATALOG_URL`, see the agents fork's `CUSTOM_MODS.md`) and install **Illustrator 2** from Agents.
+2. Set its image connection, then add it to a chat. It needs a text model for the prompt writer; a cheap one is fine.
+3. Enable **Character Tracker** in the same chat for present-character gating (optional — without tracker data nothing is filtered).
 
 Give Illustrator 2 chats one short image **style profile** (5-8 tags). The template writes no style words, so the profile is the only source of style and it appears once. Also keep the image connection's `imagePromptInstructions` short and consistent with the template (e.g. "One frozen moment, 30-70 words, at most two people, placed left/right."); instructions like "fully describing the desired outcome" push the prompt writer back to long, crowded prompts. The editor keeps the agent's `presentCharactersOnly` / `referenceOrder` options on save even though it has no fields for them.
 
-Import gives the agent a `custom-import-illustrator-2-<uuid>` type, so per-chat `customAgentImageSettings` overrides are keyed by that type, not `illustrator-2`.
+The package agent's type is `illustrator-2`, so per-chat `customAgentImageSettings` overrides are keyed by that. The older folder import used `custom-import-illustrator-2-<uuid>`; chats bound to that type must be re-pointed when switching.
 
 **Agent settings it uses (all opt-in, inert for the stock Illustrator)**
 - `presentCharactersOnly`: trims character cards to the tracker's `presentCharacters` (plus anyone named in the reply) and drops absent names from references using this turn's tracker snapshot. The agent also gets its own batch so the trim never reaches other agents.
