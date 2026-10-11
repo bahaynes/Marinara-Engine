@@ -128,11 +128,23 @@ export function resolveEmbeddingEndpointUrl(baseUrl: string): string {
 }
 
 /**
+ * A 429 whose body says a billing quota is used up (NanoGPT's weekly subscription limit, OpenAI's
+ * insufficient_quota). Waiting minutes cannot clear it, so it fails at once instead of pausing.
+ */
+export const QUOTA_EXHAUSTED_PATTERN =
+  /insufficient_quota|exceeded your current quota|\b(?:daily|weekly|monthly)\b[^.]{0,60}\blimit exceeded/i;
+
+export function isQuotaExhaustedError(error: unknown): error is LLMHttpError {
+  return error instanceof LLMHttpError && error.status === 429 && QUOTA_EXHAUSTED_PATTERN.test(error.message);
+}
+
+/**
  * True when an error is a provider rate-limit / transient-overload the caller should pause and
  * retry rather than surface: HTTP 429 (rate limited) or 529 (Anthropic "overloaded").
  */
 export function isRateLimitError(error: unknown): error is LLMHttpError {
   if (!(error instanceof LLMHttpError)) return false;
+  if (QUOTA_EXHAUSTED_PATTERN.test(error.message)) return false;
   // 429 (rate limited) and 529 (Anthropic "overloaded") are always retryable. Some gateways signal
   // intentional throttling with 503 plus a Retry-After; treat that as retryable too, but let a bare
   // 503 (likely a real outage, not throttling) propagate.
