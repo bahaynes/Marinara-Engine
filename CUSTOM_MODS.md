@@ -145,7 +145,17 @@ Trade-offs: characters know who they are from the final instruction and their ca
 
 ---
 
-## 7. Related Resources
+## 7. Lorebook Keeper instance config (no code)
+
+The live `marinara` Keeper is tuned through config, not fork code. As of 2026-10-11: `agent_configs` Lorebook Keeper `settings.runInterval` is **1** (was 8) and `contextSize` stays 5; the prompt is the stock-shaped one with **no example names**. Never put story names in an agent prompt: the model treats them as vocabulary (a "Brother Tamsin" example sat in the prompt and the name kept resurfacing in new characters).
+
+Measured on the first 304 messages of one chat (one run per arm, so treat small differences as noise): the old cadence (every 8th message, 5-message window, prompt reads only the latest assistant message) left about 40% of assistant messages unread and the Keeper was only enabled 3 days into the story. Reading every message took tracker-NPC coverage from 7/16 to 13/16 and near-duplicate entry pairs from 6 to 2 with the same prompt. Adding dedup-by-containment, mandatory entries for named people, and "character never lore" rules did not beat it (broad version: 14/16 but 67 entries and 5 duplicate pairs; people-only version: 13/16, 50 entries, 5 duplicate pairs).
+
+Reproduce: branch the chat at a message, point the branch's `lorebookKeeperTargetLorebookId` and `activeLorebookIds` at an empty scratch lorebook, then `POST /api/generate/retry-agents` with `{ chatId, agentTypes: ["lorebook-keeper"], lorebookKeeperBackfill: true }` (one local-model call per assistant message, about 25 s each). The backfill cursor is the chat's last successful Keeper run, so it cannot reach history from before the first run; a fresh branch has no runs. Per-chat `agentOverrides` only toggles agents, so a candidate prompt can only be tested by patching the global config.
+
+---
+
+## 8. Related Resources
 
 - **Agent Skill**: [`.agents/skills/custom-mods/SKILL.md`](.agents/skills/custom-mods/SKILL.md)
 - **Repo Agent Rules**: [`AGENTS.md`](AGENTS.md)
