@@ -231,10 +231,18 @@ export async function loadLorebookKeeperExistingEntries(
     content?: string | null;
     keys?: string[] | null;
     locked?: unknown;
+    updatedAt?: string | null;
+    createdAt?: string | null;
   }>;
 
+  // Least recently edited first. The Keeper edits entries in place and this list sits ahead of the message
+  // window in the prompt, so recently edited entries go last to keep the untouched block a byte-identical
+  // prefix between runs for the local llama-server prompt cache.
+  const editedAt = (entry: { updatedAt?: string | null; createdAt?: string | null }) =>
+    entry.updatedAt ?? entry.createdAt ?? "";
   return entries
     .filter((entry) => typeof entry.name === "string" && entry.name.trim().length > 0)
+    .sort((a, b) => editedAt(a).localeCompare(editedAt(b)) || (a.id ?? "").localeCompare(b.id ?? ""))
     .map((entry) => ({
       id: typeof entry.id === "string" ? entry.id : "",
       name: entry.name!.trim(),
