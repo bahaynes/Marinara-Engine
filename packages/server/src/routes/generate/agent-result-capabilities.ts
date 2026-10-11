@@ -1,4 +1,5 @@
 import { customAgentHasCapability, getCustomAgentResultCapability, type AgentResult } from "@marinara-engine/shared";
+import { QUOTA_EXHAUSTED_PATTERN } from "../../services/llm/base-provider.js";
 
 import type { ResolvedAgent } from "../../services/agents/agent-pipeline.js";
 
@@ -12,7 +13,9 @@ export function isAbortLikeError(error: unknown): boolean {
 
 export function shouldAutomaticallyRetryAgentResult(result: Pick<AgentResult, "success" | "error">): boolean {
   if (result.success) return false;
-  return !/\b(?:timed?\s*out|timeout|etimedout|deadline exceeded)\b/i.test(result.error ?? "");
+  if (/\b(?:timed?\s*out|timeout|etimedout|deadline exceeded)\b/i.test(result.error ?? "")) return false;
+  if (QUOTA_EXHAUSTED_PATTERN.test(result.error ?? "")) return false;
+  return true;
 }
 
 export function customAgentCanApplyResult(
