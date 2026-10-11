@@ -24,11 +24,7 @@ assert.equal(parseRetryAfterMs("12"), 12_000, "delta-seconds parse to ms");
 assert.equal(parseRetryAfterMs("0"), 0, "zero seconds is a valid immediate retry");
 assert.equal(parseRetryAfterMs(null), undefined, "absent header yields undefined");
 assert.equal(parseRetryAfterMs("not-a-date"), undefined, "unparseable header yields undefined");
-assert.equal(
-  parseRetryAfterMs("Wed, 21 Oct 1999 07:28:00 GMT"),
-  0,
-  "a past HTTP-date clamps to 0, never negative",
-);
+assert.equal(parseRetryAfterMs("Wed, 21 Oct 1999 07:28:00 GMT"), 0, "a past HTTP-date clamps to 0, never negative");
 
 // ── isRateLimitError classification ───────────────────────────────
 assert.equal(isRateLimitError(new LLMHttpError("x", { status: 429 })), true, "429 is retryable");
@@ -45,6 +41,21 @@ assert.equal(
 );
 assert.equal(isRateLimitError(new LLMHttpError("x", { status: 400 })), false, "400 is not retryable");
 assert.equal(isRateLimitError(new Error("plain")), false, "a plain Error is never a rate limit");
+// A 429 that says a billing quota is used up cannot clear by waiting, so it is not retried.
+const NANOGPT_QUOTA =
+  'NanoGPT API error 429: Weekly included input token limit exceeded. Enable "Use balance after limits" in your subscription settings at nano-gpt.com/subscription';
+for (const message of [
+  NANOGPT_QUOTA,
+  'OpenAI API error 429: {"error":{"message":"You exceeded your current quota","code":"insufficient_quota"}}',
+]) {
+  assert.equal(isRateLimitError(new LLMHttpError(message, { status: 429 })), false, message);
+}
+for (const message of [
+  "Rate limit exceeded",
+  "Rate limit reached for gpt-4o on tokens per min (TPM): limit exceeded",
+]) {
+  assert.equal(isRateLimitError(new LLMHttpError(message, { status: 429 })), true, `still retried: ${message}`);
+}
 
 // ── registry ──────────────────────────────────────────────────────
 resetConnectionRateLimitsForTests();
@@ -67,7 +78,7 @@ const OK: ChatCompletionResult = {
 
 class ScriptedProvider extends BaseLLMProvider {
   public calls = 0;
-  constructor(private readonly plan: Array<"429" | "400" | "ok">) {
+  constructor(private readonly plan: Array<"429" | "400" | "quota" | "ok">) {
     super("", "", 1000, null, null);
   }
   // eslint-disable-next-line require-yield
@@ -79,6 +90,7 @@ class ScriptedProvider extends BaseLLMProvider {
     this.calls += 1;
     if (step === "429") throw new LLMHttpError("rate limited", { status: 429, retryAfterMs: 0 });
     if (step === "400") throw new LLMHttpError("bad request", { status: 400 });
+    if (step === "quota") throw new LLMHttpError(NANOGPT_QUOTA, { status: 429 });
     return OK;
   }
   async embed(): Promise<number[][]> {
@@ -102,6 +114,15 @@ await assert.rejects(
   "a 400 must not be retried",
 );
 assert.equal(nonRetryable.calls, 1, "non-retryable errors are attempted exactly once");
+
+// An exhausted quota fails on the first attempt instead of pausing up to six minutes.
+const outOfQuota = new ScriptedProvider(["quota", "ok"]);
+await assert.rejects(
+  () => withRateLimitAwareProvider(outOfQuota, "conn-quota").chatComplete([], options),
+  /Weekly included input token limit exceeded/,
+  "the provider's own quota message surfaces",
+);
+assert.equal(outOfQuota.calls, 1, "an exhausted quota is attempted exactly once");
 
 // Persistent 429s are bounded by MAX_RATE_LIMIT_RETRIES.
 const exhausted = new ScriptedProvider(["429"]);

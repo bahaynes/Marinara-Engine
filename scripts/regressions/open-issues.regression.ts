@@ -7361,6 +7361,15 @@ assert.equal(
   "timed-out agents should settle as failures instead of starting another full timeout window",
 );
 assert.equal(
+  shouldAutomaticallyRetryAgentResult({
+    success: false,
+    error:
+      'NanoGPT API error 429: Weekly included input token limit exceeded. Enable "Use balance after limits" in your subscription settings at nano-gpt.com/subscription',
+  }),
+  false,
+  "quota-exhausted agents should settle as failures instead of retrying immediately",
+);
+assert.equal(
   shouldAutomaticallyRetryAgentResult({ success: false, error: "Agent returned invalid JSON" }),
   true,
   "ordinary agent failures should retain the existing one-time automatic retry",
