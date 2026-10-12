@@ -906,6 +906,8 @@ export function matchRulesetCheckTarget(
   const saveWord = /\s(?:saving throw|save)$/.test(name);
   const base = name.replace(/\s(?:ability check|check|saving throw|save)$/, "").trim();
   const names = checkNames;
+  const aliased = (entry: { aliases?: string[] }) =>
+    (entry.aliases ?? []).some((alias) => [name, base].includes(normalizeCheckName(alias)));
   const override = withAbility ? matchAbilityId(definition, withAbility) : null;
   const trained = (type: "skill" | "save", entry: { id: string; label: string; ability?: string }) => ({
     type,
@@ -924,7 +926,8 @@ export function matchRulesetCheckTarget(
     if (forAbility.length === 1) return trained("save", forAbility[0]!);
     const byBase = sheet.saves.find((entry) => names(entry).includes(base));
     if (byBase) return trained("save", byBase);
-    return null;
+    const byAlias = sheet.saves.find(aliased);
+    return byAlias ? trained("save", byAlias) : null;
   }
   const skill = sheet.skills.find((entry) => names(entry).includes(name) || names(entry).includes(base));
   if (skill) return trained("skill", skill);
@@ -936,6 +939,12 @@ export function matchRulesetCheckTarget(
     if (rows.length === 1)
       return { ...trained("skill", { id: rows[0]!.key, label: rows[0]!.label, ability: rows[0]!.ability }), row: true };
   }
+  // Aliases only after every real name, and before abilities, so an alias can claim an ability's
+  // name ("Perception") but never another skill's.
+  const aliasedSkill = sheet.skills.find(aliased);
+  if (aliasedSkill) return trained("skill", aliasedSkill);
+  const aliasedSave = sheet.saves.find(aliased);
+  if (aliasedSave) return trained("save", aliasedSave);
   const ability = sheet.abilities.find((entry) => names(entry).includes(base));
   if (!ability) return null;
   const resolution = definition.resolution;
