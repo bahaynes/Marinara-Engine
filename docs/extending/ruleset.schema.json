@@ -1912,6 +1912,15 @@
                   }
                 ]
               },
+              "aliases": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 80
+                },
+                "maxItems": 12
+              },
               "$comment": {}
             },
             "required": [
@@ -2120,6 +2129,15 @@
                     "additionalProperties": false
                   }
                 ]
+              },
+              "aliases": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 80
+                },
+                "maxItems": 12
               },
               "$comment": {}
             },

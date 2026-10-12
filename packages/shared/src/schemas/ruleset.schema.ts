@@ -596,6 +596,9 @@ const skillSchema = z
     section: sheetId.optional(),
     /** Overrides the untrained rule of the section it sits in. */
     untrained: untrainedSchema.optional(),
+    /** Other names a check may call this by, such as another system's skill a model reaches for
+     *  ("Insight" for a Speech skill). A real skill or save name always wins over an alias. */
+    aliases: z.array(label).max(12).optional(),
   })
   .strict();
 const saveSchema = skillSchema;
