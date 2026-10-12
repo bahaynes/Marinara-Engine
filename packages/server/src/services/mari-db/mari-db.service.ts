@@ -6143,9 +6143,11 @@ export class MariDbService {
           });
         }
       }
+      // Illustrator's 0 is "manual only" (see agents.routes.ts), the one cadence below 1 that is valid.
+      const minRunInterval = row.type === "illustrator" ? 0 : 1;
       if (
         changedSettings.runInterval !== undefined &&
-        (!Number.isSafeInteger(changedSettings.runInterval) || Number(changedSettings.runInterval) < 1)
+        (!Number.isSafeInteger(changedSettings.runInterval) || Number(changedSettings.runInterval) < minRunInterval)
       ) {
         issues.push({
           level: "error",

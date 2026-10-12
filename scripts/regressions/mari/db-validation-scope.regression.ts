@@ -188,6 +188,22 @@ try {
       `explicit validation still reports legacy ${key}`,
     );
   }
+  // Illustrator's runInterval 0 is "manual only", not a bad cadence.
+  await db.insert(agentConfigs).values({
+    id: "illustrator",
+    type: "illustrator",
+    name: "Illustrator",
+    phase: "post_processing",
+    settings: JSON.stringify({ runInterval: 0 }),
+    createdAt: stamp,
+    updatedAt: stamp,
+  });
+  assert.equal(
+    (await mari.validate("agent_configs")).errors.some((issue) => issue.id === "illustrator"),
+    false,
+    "an Illustrator set to manual only is valid",
+  );
+  await db.delete(agentConfigs).where(eq(agentConfigs.id, "illustrator"));
   const memoryValidation = await mari.validate("agent_memory");
   assert.equal(
     memoryValidation.errors.some((issue) => issue.message.includes("not valid JSON")),
