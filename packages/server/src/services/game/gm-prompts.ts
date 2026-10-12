@@ -15,6 +15,7 @@ import type {
 import {
   DEFAULT_GAME_SYSTEM_PROMPT,
   gameInventoryBagKey,
+  matchRulesetCheckTarget,
   rulesetDefenseLabel,
   rulesetItemStatsRead,
   rulesetLayeredCurrencies,
@@ -1027,6 +1028,18 @@ function describeSheetValue(
     return `the ${column} of the sheet's ${list?.label ?? ref.listSum.list}${where} added up`;
   }
   return "a number on the sheet";
+}
+
+/** The one-request branch example in this ruleset's own words: its sneaking skill (or its first
+ *  skill) and the middle step of its ladder by name. A built-in "Stealth" at dc="15" is copied
+ *  verbatim, so a ruleset game would otherwise be taught another system's skill and number. */
+function rulesetBranchExampleCheck(ruleset: import("@marinara-engine/shared").RulesetDefinition): string {
+  const target = matchRulesetCheckTarget(ruleset, "Stealth");
+  const skill =
+    target?.type === "skill" ? target.label : (ruleset.sheet.skills[0]?.label ?? ruleset.sheet.abilities[0]?.label);
+  const ladder = ruleset.resolution.difficultyLadder;
+  const step = ladder[Math.floor((ladder.length - 1) / 2)];
+  return `skill="${skill ?? "Skill Name"}"${step ? ` difficulty="${step.label}"` : ` dc="N"`}`;
 }
 
 /** The ruleset's own check line, in place of the built-in one. Everything in it is the ruleset's
@@ -2210,7 +2223,7 @@ export function buildGmFormatReminder(
       `- When an outcome turns on chance, you have three ways to write it. Pick by what the outcome is, not by preference.`,
       ``,
       `- IF THE OUTCOME SPLITS TWO WAYS, WRITE A BRANCH BLOCK. Write the check without numbers, then write both halves. The engine rolls, keeps the half the roll selects, and deletes the other before anyone reads the turn. Neither half may contain a command.`,
-      `  [skill_check: skill="Stealth" dc="15" branch="crates"]`,
+      `  [skill_check: ${ctx.ruleset ? rulesetBranchExampleCheck(ctx.ruleset) : `skill="Stealth" dc="15"`} branch="crates"]`,
       `  [branch: crates]`,
       `  [on success] The guard's gaze slides over the crates and away. You are past him.`,
       `  [on failure] A boot scuffs stone. He turns, and his hand is already moving.`,

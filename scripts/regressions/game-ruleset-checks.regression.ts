@@ -590,6 +590,20 @@ try {
     const oneRequest = buildGmFormatReminder({ ...base, ruleset: fiveE, oneRequestDice: true });
     assert.doesNotMatch(oneRequest, /dc="1-20"/);
     assert.match(buildGmFormatReminder({ ...base, oneRequestDice: true }), /dc="1-20"/);
+    // The branch example is the ruleset's own skill and a named ladder step, never the built-in DC 15.
+    assert.match(oneRequest, /\[skill_check: skill="Stealth" difficulty="Medium" branch="crates"\]/);
+    assert.match(
+      buildGmFormatReminder({ ...base, oneRequestDice: true }),
+      /\[skill_check: skill="Stealth" dc="15" branch="crates"\]/,
+    );
+    const sneaky = structuredClone(fiveE);
+    sneaky.sheet.skills = sneaky.sheet.skills.filter((entry) => entry.id !== "stealth");
+    sneaky.sheet.skills.push({ id: "sneak", label: "Sneak", ability: "dex", aliases: ["Stealth"] });
+    assert.match(
+      buildGmFormatReminder({ ...base, ruleset: sneaky, oneRequestDice: true }),
+      /\[skill_check: skill="Sneak" difficulty="Medium" branch="crates"\]/,
+      "a ruleset's own name for sneaking, found through its alias",
+    );
 
     const submitted = buildGmFormatReminder({ ...base, ruleset: fiveE, playerDiceRollSubmitted: true });
     assert.match(submitted, /rolls="the player's d20 result"/);
