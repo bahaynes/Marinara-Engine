@@ -2,7 +2,7 @@
   "$schema": "https://raw.githubusercontent.com/Pasta-Devs/Marinara-Engine/staging/docs/extending/ruleset.schema.json",
   "schemaVersion": 1,
   "id": "wasteland-special",
-  "version": 3,
+  "version": 4,
   "name": "Wasteland SPECIAL",
   "edition": "A d20 take on SPECIAL for Fallout: New Vegas style play",
   "coverage": {
@@ -44,12 +44,12 @@
       {
         "id": "trained",
         "label": "Trained",
-        "flat": 2
+        "flat": 5
       },
       {
         "id": "expert",
         "label": "Expert",
-        "flat": 4
+        "flat": 8
       }
     ],
     "advantage": true,
@@ -60,23 +60,23 @@
       },
       {
         "label": "Easy",
-        "dc": 8
+        "dc": 10
       },
       {
-        "label": "Average",
-        "dc": 11
+        "label": "Medium",
+        "dc": 15
       },
       {
         "label": "Hard",
-        "dc": 14
+        "dc": 20
       },
       {
         "label": "Very Hard",
-        "dc": 17
+        "dc": 25
       },
       {
-        "label": "Heroic",
-        "dc": 20
+        "label": "Nearly Impossible",
+        "dc": 30
       }
     ]
   },
@@ -170,13 +170,15 @@
         "id": "barter",
         "label": "Barter",
         "ability": "charisma",
-        "section": "skills"
+        "section": "skills",
+        "aliases": ["Appraise", "Trade", "Haggle"]
       },
       {
         "id": "chance",
         "label": "Chance",
         "ability": "luck",
-        "section": "skills"
+        "section": "skills",
+        "aliases": ["Gambling"]
       },
       {
         "id": "energy_weapons",
@@ -188,7 +190,8 @@
         "id": "explosives",
         "label": "Explosives",
         "ability": "perception",
-        "section": "skills"
+        "section": "skills",
+        "aliases": ["Demolitions", "Traps"]
       },
       {
         "id": "guns",
@@ -200,55 +203,64 @@
         "id": "lockpick",
         "label": "Lockpick",
         "ability": "perception",
-        "section": "skills"
+        "section": "skills",
+        "aliases": ["Sleight of Hand", "Thieves' Tools", "Open Lock", "Disable Device"]
       },
       {
         "id": "medicine",
         "label": "Medicine",
         "ability": "intelligence",
-        "section": "skills"
+        "section": "skills",
+        "aliases": ["Heal", "First Aid", "Treat Wounds"]
       },
       {
         "id": "melee",
         "label": "Melee Weapons",
         "ability": "strength",
-        "section": "skills"
+        "section": "skills",
+        "aliases": ["Athletics", "Melee"]
       },
       {
         "id": "repair",
         "label": "Repair",
         "ability": "intelligence",
-        "section": "skills"
+        "section": "skills",
+        "aliases": ["Craft", "Engineering", "Mechanics", "Tinker"]
       },
       {
         "id": "science",
         "label": "Science",
         "ability": "intelligence",
-        "section": "skills"
+        "section": "skills",
+        "aliases": ["Investigation", "Arcana", "History", "Knowledge", "Computers", "Hacking"]
       },
       {
         "id": "sneak",
         "label": "Sneak",
         "ability": "agility",
-        "section": "skills"
+        "section": "skills",
+        "aliases": ["Stealth", "Hide", "Move Silently"]
       },
       {
         "id": "speech",
         "label": "Speech",
         "ability": "charisma",
-        "section": "skills"
+        "section": "skills",
+        "aliases": ["Insight", "Persuasion", "Deception", "Intimidation", "Performance", "Diplomacy", "Bluff", "Sense Motive"]
       },
       {
         "id": "survival",
         "label": "Survival",
         "ability": "endurance",
-        "section": "skills"
+        "section": "skills",
+        "aliases": ["Perception", "Nature", "Animal Handling", "Tracking", "Search", "Spot"]
       },
       {
         "id": "unarmed",
         "label": "Unarmed",
         "ability": "endurance",
-        "section": "skills"
+        "section": "skills",
+        "aliases": ["Brawl", "Brawling"]
       }
     ],
     "fields": [
@@ -2613,23 +2625,23 @@
         },
         {
           "label": "Easy",
-          "dc": 9
+          "dc": 11
         },
         {
-          "label": "Average",
-          "dc": 12
+          "label": "Medium",
+          "dc": 16
         },
         {
           "label": "Hard",
-          "dc": 15
+          "dc": 21
         },
         {
           "label": "Very Hard",
-          "dc": 18
+          "dc": 26
         },
         {
-          "label": "Heroic",
-          "dc": 21
+          "label": "Nearly Impossible",
+          "dc": 31
         }
       ]
     }
