@@ -143,6 +143,21 @@ try {
     assert.equal(target("Strength check"), "ability:str");
     assert.equal(target("Basket weaving"), null, "an unknown name is never mapped to a guessed ability");
     assert.equal(target("Luck save"), null);
+
+    // Aliases: after every real name, before abilities.
+    const aliased = structuredClone(fiveE);
+    const skill = (id: string) => aliased.sheet.skills.find((entry) => entry.id === id)!;
+    skill("insight").aliases = ["Sense Motive"];
+    skill("survival").aliases = ["Strength", "Stealth", "Wilderness Lore"];
+    const viaAlias = (name: string) => {
+      const match = matchRulesetCheckTarget(aliased, name);
+      return match ? `${match.type}:${match.id}` : null;
+    };
+    assert.equal(viaAlias("Sense Motive"), "skill:insight");
+    assert.equal(viaAlias("wilderness_lore check"), "skill:survival");
+    assert.equal(viaAlias("Stealth"), "skill:stealth", "a real skill name beats another skill's alias");
+    assert.equal(viaAlias("Strength"), "skill:survival", "an alias claims an ability's name");
+    assert.equal(viaAlias("Basket weaving"), null);
   }
 
   // ── The dice ──

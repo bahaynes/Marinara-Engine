@@ -7239,6 +7239,15 @@
                   }
                 ]
               },
+              "aliases": {
+                "maxItems": 12,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 80
+                }
+              },
               "$comment": {}
             },
             "required": [
@@ -7669,6 +7678,15 @@
                     "additionalProperties": false
                   }
                 ]
+              },
+              "aliases": {
+                "maxItems": 12,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 80
+                }
               },
               "$comment": {}
             },
