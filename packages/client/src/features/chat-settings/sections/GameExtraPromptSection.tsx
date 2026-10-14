@@ -54,7 +54,7 @@ export function GameExtraPromptSection({
   storedValue,
   specialInstructionsValue,
   sessionHistoryMode,
-  cacheFriendlyPrompt = false,
+  cacheFriendlyPrompt = true,
   windowSlack,
   promptPresetId,
   promptPresets,
