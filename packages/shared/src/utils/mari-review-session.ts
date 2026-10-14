@@ -22,6 +22,9 @@ export function chatIdForMariSession(sessionId: string | null | undefined): stri
 
 /** A review shows in its own chat, and one no chat owns shows everywhere. No chat named shows all. */
 export function isMariReviewVisibleInChat(sessionId: string, chatId: string | null | undefined): boolean {
+  // Fork: a `mari` CLI write is an agent's, reviewed in that agent's session; its card stays out of
+  // Mari's chats instead of following the user into all of them for the 14-day undo window.
+  if (chatId && sessionId.startsWith("cli:")) return false;
   const owner = chatIdForMariSession(sessionId);
   return owner === null || !chatId || owner === chatId;
 }
