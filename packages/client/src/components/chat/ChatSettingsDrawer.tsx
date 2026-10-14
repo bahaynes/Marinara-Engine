@@ -5982,7 +5982,7 @@ export function ChatSettingsDrawer({
                 storedValue={(metadata.gameSystemPrompt as string) ?? ""}
                 specialInstructionsValue={gameSpecialInstructionsDraft}
                 sessionHistoryMode={(metadata.gameSessionHistoryMode as string) ?? "tiered"}
-                cacheFriendlyPrompt={metadata.gameLoreInTail === true}
+                cacheFriendlyPrompt={metadata.gameLoreInTail !== false}
                 windowSlack={typeof metadata.gameWindowSlack === "number" ? metadata.gameWindowSlack : null}
                 promptPresetId={effectiveModePromptPresetId}
                 promptPresets={promptPresetOptions}
