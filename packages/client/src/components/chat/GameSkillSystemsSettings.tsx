@@ -71,7 +71,7 @@ export function GameSkillSystemsSettings({ chat }: { chat: Chat }) {
   );
 
   const activeSystemIds = useMemo(() => {
-    if (Array.isArray(metadata.gameSkillSystems) && metadata.gameSkillSystems.length > 0) {
+    if (Array.isArray(metadata.gameSkillSystems)) {
       return metadata.gameSkillSystems as string[];
     }
     return defaultSystems;
@@ -91,10 +91,6 @@ export function GameSkillSystemsSettings({ chat }: { chat: Chat }) {
       nextSystems = activeSystemIds.filter((id) => id !== systemId);
     } else {
       nextSystems = [...activeSystemIds, systemId];
-    }
-    // Prevent having zero active systems
-    if (nextSystems.length === 0) {
-      nextSystems = [systemId];
     }
     updateMeta.mutate({
       id: chat.id,
