@@ -468,8 +468,8 @@ export async function injectGameGmPromptRuntime(args: {
   };
 
   // These change every turn (weather ticks, morale shifts); inside the system block any change misses
-  // the whole prompt cache, so `gameLoreInTail` renders them on the final message instead.
-  const volatileInTail = args.chatMetadata.gameLoreInTail === true;
+  // the whole prompt cache, so `gameLoreInTail` renders them on the final message instead (default on).
+  const volatileInTail = args.chatMetadata.gameLoreInTail !== false;
   const volatileTail = volatileInTail
     ? [
         gmCtx.weatherContext ? `<weather_update>\n${gmCtx.weatherContext}\n</weather_update>` : "",
