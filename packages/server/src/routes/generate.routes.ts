@@ -2355,7 +2355,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
         contextMessageLimit > 0 &&
         chatMessages.length > contextMessageLimit
       ) {
-        if (chatMeta.gameLoreInTail === true) {
+        if (chatMeta.gameLoreInTail !== false) {
           // Game prompt caching: hold the window head steady until the cache has lapsed anyway.
           const lastReply = [...chatMessages].reverse().find((m) => m.role === "assistant");
           const ttlMs = (conn.anthropicExtendedCacheTtl === "true" ? 60 : 5) * 60_000;
@@ -5262,7 +5262,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
             const loreAfter = lorebookResult.worldInfoAfter ? `<lore>\n${lorebookResult.worldInfoAfter}\n</lore>` : "";
             // Default keeps world-info positions on either side of the GM's character and game context;
             // `gameLoreInTail` (chat metadata) moves them onto the final user message for prompt caching.
-            placeGameWorldInfo(finalMessages, loreBefore, loreAfter, chatMeta.gameLoreInTail === true);
+            placeGameWorldInfo(finalMessages, loreBefore, loreAfter, chatMeta.gameLoreInTail !== false);
             if (lorebookResult.depthEntries.length > 0) {
               finalMessages = injectAtDepth(finalMessages, lorebookResult.depthEntries);
             }

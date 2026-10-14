@@ -34,7 +34,7 @@ export async function planGameToolCalls(args: {
   // multi-round tool reasoning. Keep this opt-in pass independent and bounded.
   const fit = fitMessagesForModelAccess({
     messages: [
-      ...args.messages.map(({ role, content }): ChatMessage => ({ role: role === "tool" ? "user" : role, content })),
+      ...args.messages.map((m): ChatMessage => ({ ...m, role: m.role === "tool" ? "user" : m.role })),
       {
         // Anthropic and Google hoist system messages; keep this request-local
         // instruction in the final conversation turn on every provider.

@@ -283,18 +283,18 @@ export function AdvancedParametersSection({
             <SettingsSwitch
               label={localizeUi("ui.chatSettings.advancedparameterssection.holdHistoryStart")}
               description={localizeUi("ui.chatSettings.advancedparameterssection.holdHistoryStartHelp")}
-              checked={metadata.gameLoreInTail === true}
+              checked={metadata.gameLoreInTail !== false}
               onChange={(gameLoreInTail) => onCacheWindowChange({ gameLoreInTail })}
               labelPosition="start"
               className={cn(
                 "justify-between rounded-lg px-3 py-2.5 text-left",
-                metadata.gameLoreInTail === true
+                metadata.gameLoreInTail !== false
                   ? "bg-[var(--primary)]/10 ring-1 ring-[var(--primary)]/30"
                   : "bg-[var(--secondary)] hover:bg-[var(--accent)]",
               )}
               labelClassName="text-xs font-medium"
             />
-            {metadata.gameLoreInTail === true && (
+            {metadata.gameLoreInTail !== false && (
               <div className="flex items-center gap-2 px-1">
                 <DraftNumberInput
                   aria-label={localizeUi("ui.chatSettings.gameextrapromptsection.windowSlack")}
