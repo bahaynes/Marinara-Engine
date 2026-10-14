@@ -8141,7 +8141,8 @@ export function ChatSettingsDrawer({
               count={isGame ? gameAgentFeatureCount : visibleActiveAgentIds.length}
               help={localizeUi("ui.chat.chatsettingsdrawer.whenEnabledAiAgentsRunAutomaticallyDuringGenerationTo")}
             >
-              {(isGame || isRoleplayMode) && <GameSkillSystemsSettings chat={chat} />}
+              {/* A ruleset game checks the ruleset's own skills. */}
+              {((isGame && !metadata.gameRuleset) || isRoleplayMode) && <GameSkillSystemsSettings chat={chat} />}
               {isRoleplayMode && (
                 <RoleplayCommandsSettings
                   chat={chat}
