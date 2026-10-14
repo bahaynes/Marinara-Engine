@@ -269,10 +269,10 @@ export function getActiveGameSkills(options?: {
   genre?: string | null;
   setting?: string | null;
 }): GameSkillDefinition[] {
-  const enabledSystemIds =
-    Array.isArray(options?.enabledSystemIds) && options.enabledSystemIds.length > 0
-      ? options.enabledSystemIds
-      : resolveDefaultGameSkillSystemIds(options);
+  // Unset means the genre's default; an empty list is a chat that turned every system off.
+  const enabledSystemIds = Array.isArray(options?.enabledSystemIds)
+    ? options.enabledSystemIds
+    : resolveDefaultGameSkillSystemIds(options);
 
   const disabledSet = new Set(
     (options?.disabledSkillIds ?? []).map((id) =>

@@ -2058,7 +2058,8 @@ export function ChatSettingsDrawer({
             </Section>
           )}
 
-          {(isGame || isRoleplayMode) && <GameSkillSystemsSettings chat={chat} />}
+          {/* A ruleset game checks the ruleset's own skills. */}
+          {((isGame && !metadata.gameRuleset) || isRoleplayMode) && <GameSkillSystemsSettings chat={chat} />}
 
           {/* Card field alternatives — hidden when no card in this chat has any */}
           <CardFieldAlternativesSection chat={chat} characters={characters} personas={personas} />
