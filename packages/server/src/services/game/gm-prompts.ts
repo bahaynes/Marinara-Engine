@@ -2014,7 +2014,8 @@ export function buildGmFormatReminder(
         ]),
   );
 
-  if (ctx.activeSkills && ctx.activeSkills.length > 0) {
+  // A ruleset game checks the ruleset's own skills; a second list would teach names it refuses.
+  if (!ctx.ruleset && ctx.activeSkills && ctx.activeSkills.length > 0) {
     lines.push(
       `- Active skills for [skill_check: ...]:`,
       ...ctx.activeSkills.map((s) => `  * ${s.name} (${s.ability.toUpperCase()}): ${s.description}`),
