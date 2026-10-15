@@ -1126,6 +1126,46 @@ try {
     "one-character chat: only the messages Maukie saw",
   );
   assert.doesNotMatch(soloRecall.recalledScenes!, /SOLO_HIDDEN/u);
+  // Impersonation (owner mode) writes for the persona, who was present: it keeps history that automatic
+  // visibility hid from an offstage character, but not history the user hid by hand.
+  const offstage = await chats.create({
+    name: "Owner sees offstage history",
+    mode: "roleplay",
+    characterIds: ["maukie", "pantalone", "narrator"],
+    connectionId: connection.id,
+  });
+  assert(offstage);
+  await chats.patchMetadata(offstage.id, { groupChatMode: "individual", advancedMemory: groupSettings });
+  const autoHidden = {
+    hiddenFromAICharacterIds: ["pantalone"],
+    autoVisibility: { decidedAt: new Date().toISOString(), hiddenCharacterIds: ["pantalone"] },
+  };
+  await chats.createMessagesBatch(offstage.id, [
+    { role: "user", content: "Maukie and the user wait by the door.", extra: autoHidden },
+    { role: "assistant", characterId: "maukie", content: "Maukie checks the lock.", extra: autoHidden },
+    {
+      role: "assistant",
+      characterId: "maukie",
+      content: "Maukie hides the key.",
+      extra: { hiddenFromAICharacterIds: ["pantalone"] },
+    },
+    { role: "user", content: "The user hums.", extra: { ...autoHidden, visibilityManual: true } },
+  ]);
+  const offstageIds = (await chats.listMessages(offstage.id)).map((message) => message.id);
+  const ownerLive = await memory.prepare({
+    chatId: offstage.id,
+    messages: await chats.listMessages(offstage.id),
+    audienceCharacterIds: [],
+    audienceMode: "owner",
+    budgetTokens: 12000,
+    readOnly: true,
+  });
+  assert.deepEqual(
+    ownerLive.messageIds,
+    offstageIds.slice(0, 2),
+    "owner mode keeps automatically hidden history and drops history hidden by hand",
+  );
+  assert.deepEqual((await groupRecall(["pantalone"], offstage.id)).messageIds, [], "Pantalone still sees none of it");
   console.log(
     "Advanced Memory unlisted-participant defaults, participant access, shared scenes, merged newcomers and legacy duplicate corrections passed.",
   );
