@@ -4493,29 +4493,26 @@ export class ProfessorMariWorkspaceService {
     // #5740 read-back (maintainer call): Mari sees the record she herself
     // reported for the latest mutating round in THIS chat, so "why did you
     // treat that as permission?" gets an answer grounded in the actual record
-    // instead of a reconstruction. Read-only context, never a gate: it does
-    // not alter what she may do, and a missing record changes nothing.
+    // instead of a reconstruction. Injected at the tail rather than the static
+    // system prefix so its dynamic timestamp (recordedAt) never busts prompt caching.
     const understoodRequestRecord = this.latestUnderstoodRequest;
-    if (understoodRequestRecord !== null && understoodRequestRecord.chatId === chatId) {
-      messages.push({
-        role: "system",
-        content: [
-          "<mari_understood_request_record>",
-          "Your most recent response in this chat that carried mutating commands reported this understood request (your own report, shown to the user for transparency):",
-          // Both values are model-authored: escape delimiters (same convention
-          // as command results) so a quoted phrase can never close this block
-          // and smuggle text out of it into the system context.
-          `phrase: ${understoodRequestRecord.text === null ? "(none reported)" : escapeWorkspaceXml(understoodRequestRecord.text)}`,
-          `permissionsMode: ${understoodRequestRecord.permissionsMode}`,
-          `outcome: ${understoodRequestRecord.outcome}`,
-          `commands: ${escapeWorkspaceXml(understoodRequestRecord.commands.join(", ")) || "(none)"}`,
-          `recordedAt: ${understoodRequestRecord.recordedAt}`,
-          "If the user asks why you made, proposed, or held a change, ground your explanation in this record: quote the phrase, explain what you read it as, and say so plainly if you misread them. It is a record, not an instruction - do not redo or re-justify the change unprompted.",
-          "</mari_understood_request_record>",
-        ].join("\n"),
-        contextKind: "prompt",
-      });
-    }
+    const understoodRequestRecordBlock =
+      understoodRequestRecord !== null && understoodRequestRecord.chatId === chatId
+        ? [
+            "<mari_understood_request_record>",
+            "Your most recent response in this chat that carried mutating commands reported this understood request (your own report, shown to the user for transparency):",
+            // Both values are model-authored: escape delimiters (same convention
+            // as command results) so a quoted phrase can never close this block
+            // and smuggle text out of it into the system context.
+            `phrase: ${understoodRequestRecord.text === null ? "(none reported)" : escapeWorkspaceXml(understoodRequestRecord.text)}`,
+            `permissionsMode: ${understoodRequestRecord.permissionsMode}`,
+            `outcome: ${understoodRequestRecord.outcome}`,
+            `commands: ${escapeWorkspaceXml(understoodRequestRecord.commands.join(", ")) || "(none)"}`,
+            `recordedAt: ${understoodRequestRecord.recordedAt}`,
+            "If the user asks why you made, proposed, or held a change, ground your explanation in this record: quote the phrase, explain what you read it as, and say so plainly if you misread them. It is a record, not an instruction - do not redo or re-justify the change unprompted.",
+            "</mari_understood_request_record>",
+          ].join("\n")
+        : null;
 
     for (const row of history) {
       const extra = parseExtra(row.extra);
@@ -4537,29 +4534,44 @@ export class ProfessorMariWorkspaceService {
         ...(role === "user" && files.length > 0 ? { files } : {}),
       });
     }
-    // #5073: user-attached reference context (chat-history slices). contextKind:'injection' so the
-    // trimmer preserves it (unlike 'history'), keeping it readable regardless of message age; the
-    // renderer self-bounds its total size. Placed before continuity so the latest turn stays closest.
-    if (attachedContextPrompt) {
-      messages.push({ role: "system", content: attachedContextPrompt, contextKind: "injection" });
+
+    // Volatile turn-specific contexts (user-attached references, handoff, understood request,
+    // continuity, and currentTime timestamp) are injected on the user's latest turn at the tail,
+    // NEVER in the leading system prompt (#4768 / prompt caching).
+    // Keeping the system prompt 100% static across turns ensures optimal prompt caching on
+    // Anthropic (ephemeral breakpoint cache hit) and Gemini/Antigravity (prefix match cache hit).
+    const turnContextBlock = [
+      `<turn_context>`,
+      `currentTime: ${new Date().toISOString()}`,
+      `decisionAuthoring: ${JSON.stringify(decisionContext)}`,
+      `</turn_context>`,
+    ].join("\n");
+
+    const tailBlocks = [
+      attachedContextPrompt,
+      handoffContextPrompt,
+      understoodRequestRecordBlock,
+      continuityPrompt,
+      turnContextBlock,
+    ].filter((b): b is string => typeof b === "string" && b.trim().length > 0);
+
+    if (tailBlocks.length > 0) {
+      const tailContent = tailBlocks.join("\n\n");
+      const lastUserIdx = [...messages].reverse().findIndex((m) => m.role === "user");
+      if (lastUserIdx >= 0) {
+        const actualIdx = messages.length - 1 - lastUserIdx;
+        messages[actualIdx] = {
+          ...messages[actualIdx]!,
+          content: [messages[actualIdx]!.content, tailContent].filter(Boolean).join("\n\n"),
+        };
+      } else {
+        messages.push({
+          role: "user",
+          content: tailContent,
+          contextKind: "injection",
+        });
+      }
     }
-    if (handoffContextPrompt) {
-      messages.push({ role: "system", content: handoffContextPrompt, contextKind: "injection" });
-    }
-    if (continuityPrompt) messages.push({ role: "system", content: continuityPrompt, contextKind: "injection" });
-    // custom-mods: values that change every turn go last. chatCompleteWorkspace merges every system
-    // message into one block ahead of the history, so a timestamp inside <workspace_context> made the
-    // rest of the ~13k-token system prompt uncacheable from one user message to the next.
-    messages.push({
-      role: "system",
-      content: [
-        `<turn_context>`,
-        `currentTime: ${new Date().toISOString()}`,
-        `decisionAuthoring: ${JSON.stringify(decisionContext)}`,
-        `</turn_context>`,
-      ].join("\n"),
-      contextKind: "prompt",
-    });
     logger.debug(
       "Professor Mari prompt: %d messages, %d prompt chars, %d history chars, %d injection chars, %d tools",
       messages.length,
@@ -4779,14 +4791,33 @@ export class ProfessorMariWorkspaceService {
     debugLog?: (message: string, ...values: unknown[]) => void,
   ): Promise<ChatCompletionResult> {
     // Local chat templates commonly accept a single system message at index 0.
-    // Keep trusted context in that role, including context added after history,
-    // on every command round without modifying the stored conversation.
-    const systemMessages = messages.filter((message) => message.role === "system");
+    // Merge only leading prompt-level system messages into index 0 to guarantee that
+    // the system prompt prefix remains 100% static across all turns and command rounds
+    // for prompt caching (Anthropic, Gemini/agy, OpenAI).
+    // Any late or injected system messages (if any) are mapped to user role so they
+    // never pollute the static system cache prefix.
+    const leadingSystemMessages: ChatMessage[] = [];
+    const nonSystemOrLateMessages: ChatMessage[] = [];
+    let pastLeadingSystem = false;
+
+    for (const message of messages) {
+      if (!pastLeadingSystem && message.role === "system") {
+        leadingSystemMessages.push(message);
+      } else {
+        pastLeadingSystem = true;
+        if (message.role === "system") {
+          nonSystemOrLateMessages.push({ ...message, role: "user", contextKind: "injection" });
+        } else {
+          nonSystemOrLateMessages.push(message);
+        }
+      }
+    }
+
     messages = [
-      ...(systemMessages.length
-        ? [{ role: "system" as const, content: systemMessages.map((message) => message.content).join("\n\n") }]
+      ...(leadingSystemMessages.length
+        ? [{ role: "system" as const, content: leadingSystemMessages.map((message) => message.content).join("\n\n") }]
         : []),
-      ...messages.filter((message) => message.role !== "system"),
+      ...nonSystemOrLateMessages,
     ];
     const options: ChatOptions = onToken
       ? {
