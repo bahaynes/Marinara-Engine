@@ -13192,6 +13192,7 @@ function GameSurfaceComponent({
                       <span className="text-amber-400">✨</span>
                       <span>
                         {inspirationCount} / {MAX_INSPIRATION_CAP}
+                      </span>
                     </div>
                   )}
                 </div>

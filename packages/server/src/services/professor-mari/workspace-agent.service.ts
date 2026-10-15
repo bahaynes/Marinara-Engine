@@ -3895,11 +3895,7 @@ export class ProfessorMariWorkspaceService {
               latestUsage = result.usage;
               latestFinishReason = result.finishReason ?? null;
               const usage = mapUsage(result.usage);
-              totalUsage = {
-                promptTokens: totalUsage.promptTokens + usage.promptTokens,
-                completionTokens: totalUsage.completionTokens + usage.completionTokens,
-                totalTokens: totalUsage.totalTokens + usage.totalTokens,
-              };
+              totalUsage = addUsage(totalUsage, usage);
               return result;
             },
             setRoundFlags: (flags) => {
@@ -4756,15 +4752,18 @@ export class ProfessorMariWorkspaceService {
           : { ...(enabledParameters ?? {}), reasoningEffort: true },
       // Mari's command protocol is JSON. Hidden reasoning can consume the whole
       // response before local OpenAI-compatible servers emit the JSON frame.
-      reasoningEffort: runtime === "pi"
-        ? (piReasoning && piReasoning !== "none" ? piReasoning : undefined)
-        : hasExplicitReasoningEffort
-          ? storedReasoningEffort === "maximum"
-            ? "max"
-            : (storedReasoningEffort as any)
-          : disableHiddenReasoning
-            ? "none"
-            : undefined,
+      reasoningEffort:
+        runtime === "pi"
+          ? piReasoning && piReasoning !== "none"
+            ? piReasoning
+            : undefined
+          : hasExplicitReasoningEffort
+            ? storedReasoningEffort === "maximum"
+              ? "max"
+              : (storedReasoningEffort as any)
+            : disableHiddenReasoning
+              ? "none"
+              : undefined,
       ...(runtime === "pi" && piReasoning && piReasoning !== "none" ? { enableThinking: true } : {}),
       verbosity,
       signal,
