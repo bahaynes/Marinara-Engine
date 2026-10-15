@@ -4959,7 +4959,18 @@ export function createAdvancedMemoryService(db: DB, { includeExcerptsInStatus = 
     const audience = input.audienceMode !== "owner" ? [...new Set(input.audienceCharacterIds)].sort() : [];
     if (ctx.individual && !audience.length && input.audienceMode !== "owner")
       throw new Error("Individual Advanced Memory requires a responding character");
-    const eligible = allowed(ctx, sources, audience);
+    // Fork: impersonation writes for the persona, who was present, so it keeps a message that automatic
+    // visibility hid from an absent character. Without an audience, allowed() keeps only what every
+    // character may read; hiding the user chose still applies.
+    const ownerView = (keepEmptyIds?: ReadonlySet<string>) =>
+      selectAdvancedMemoryMessages(sources, ctx.settings, [], false, "archive", keepEmptyIds).filter((message) => {
+        const extra = messageExtra(message);
+        const auto = extra.visibilityManual === true ? [] : strings(object(extra.autoVisibility).hiddenCharacterIds);
+        return !strings(extra.hiddenFromAICharacterIds).some(
+          (id) => ctx.characterIds.includes(id) && !auto.includes(id),
+        );
+      });
+    const eligible = input.audienceMode === "owner" ? ownerView() : allowed(ctx, sources, audience);
     const eligibleIds = new Set(eligible.map((message) => message.id));
     const visible = eligible.filter((message) => object(message.extra).hiddenFromAI !== true);
     // Live history drops a message hidden from anyone present, since they all read one merged prompt.
@@ -5734,9 +5745,10 @@ export function createAdvancedMemoryService(db: DB, { includeExcerptsInStatus = 
     const kept = whisperOnly.size
       ? [
           ...live,
-          ...allowed(ctx, sources, audience, whisperOnly).filter(
-            (message) => whisperOnly.has(message.id) && indexes.get(message.id)! > windowEnd,
-          ),
+          ...(input.audienceMode === "owner"
+            ? ownerView(whisperOnly)
+            : allowed(ctx, sources, audience, whisperOnly)
+          ).filter((message) => whisperOnly.has(message.id) && indexes.get(message.id)! > windowEnd),
         ].sort((a, b) => indexes.get(a.id)! - indexes.get(b.id)!)
       : live;
     return {
