@@ -196,6 +196,15 @@ export interface CapabilityLanguageModelCompletionOptions {
   verbosity?: "low" | "medium" | "high";
   signal?: AbortSignal;
   responseFormat?: Readonly<{ type: string; [key: string]: unknown }>;
+  /**
+   * Provider-native prompt caching for a package that lays its prompts out to be reused. `ttl` picks the cache
+   * lifetime ("1h" asks Anthropic and Claude Subscription for the extended TTL); `depth` places the message
+   * breakpoint that many messages back from the newest (default 1: everything but the newest message). The system
+   * prompt's end is always a breakpoint. Ignored by providers without caching. Older Engines ignore it.
+   */
+  promptCache?: Readonly<{ ttl?: "5m" | "1h"; depth?: number }>;
+  /** Stream the reply: called with each text chunk as it arrives. The full reply is still returned. */
+  onToken?: (chunk: string) => void | Promise<void>;
 }
 
 export interface CapabilityLanguageModelCompletion {
@@ -206,6 +215,10 @@ export interface CapabilityLanguageModelCompletion {
     completionTokens?: number;
     completionReasoningTokens?: number;
     totalTokens?: number;
+    /** Prompt tokens read from the provider's cache, when reported. */
+    cachedPromptTokens?: number;
+    /** Prompt tokens written to the provider's cache, when reported. */
+    cacheWritePromptTokens?: number;
   };
 }
 

@@ -72,6 +72,14 @@ export function createCapabilityLanguageModelHost(db: DB): CapabilityLanguageMod
               debugMode: options.debugMode,
               signal,
               responseFormat: options.responseFormat ? { ...options.responseFormat } : undefined,
+              ...(options.promptCache
+                ? {
+                    enableCaching: true,
+                    anthropicExtendedCacheTtl: options.promptCache.ttl === "1h",
+                    cachingAtDepth: options.promptCache.depth ?? 1,
+                  }
+                : {}),
+              ...(options.onToken ? { onToken: options.onToken } : {}),
             }),
           options.signal,
         );
