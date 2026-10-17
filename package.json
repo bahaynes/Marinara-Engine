@@ -91,7 +91,7 @@
       "hono": "4.13.11",
       "ip-address": "10.7.1",
       "js-yaml": "4.3.2",
-      "mesh-avatar": "file:patches/vendor/mesh-avatar-0.2.0-bahaynes-4d9fe3a.tgz",
+      "mesh-avatar": "file:patches/vendor/mesh-avatar-0.2.1-bahaynes-bcb25a9.tgz",
       "nanoid@3": "3.3.19",
       "postcss": "8.5.28",
       "protobufjs": "7.6.5",

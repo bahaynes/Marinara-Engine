@@ -67,15 +67,17 @@ export function meshAvatarMouth(
   return { mode: "voice", level: Math.max(0, Math.min(1, frame.mouthOpen)) };
 }
 
-/** How open mesh-avatar 0.1.1 holds the eyes for each emotion tag (the eyeOpen of the preset setEmotion picks:
+/** How open mesh-avatar holds the eyes for each emotion tag (the eyeOpen of the preset setEmotion picks:
  *  happyTalk, angryTalk, sadTalk, relaxedTalk, surprisedTalk). An eyelid override replaces the runtime's own
- *  eyes, emotion included, so overrides start from these. */
+ *  eyes, emotion included, so overrides start from these. The eyes stay open for every feeling but angry
+ *  (lids held lower for a whole reply read as sleepy); angry drops below the half-eye threshold on purpose,
+ *  into the drawn half-closed eye (a glare). */
 export const MESH_AVATAR_EMOTION_EYE_OPEN: Readonly<Record<AvatarEmotion, number>> = {
   neutral: 1,
-  happy: 0.8,
-  angry: 0.72,
-  sad: 0.78,
-  relaxed: 0.82,
+  happy: 0.95,
+  angry: 0.56,
+  sad: 0.92,
+  relaxed: 0.95,
   surprised: 1.18,
 };
 

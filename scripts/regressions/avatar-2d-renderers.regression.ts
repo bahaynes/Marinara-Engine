@@ -394,8 +394,8 @@ assert.deepEqual(face.meshAvatarOverrides({}, { still: true, blink: false, eyeOp
   eyeROpen: 1,
 });
 // With blinking off (or a director blink), the eyelid override keeps each feeling's own eye shape, the
-// openness mesh-avatar 0.1.1's emotion presets hold: wide for surprised, narrowed for the others.
-for (const [emotion, eyes] of Object.entries({ happy: 0.8, angry: 0.72, sad: 0.78, relaxed: 0.82, surprised: 1.18 })) {
+// openness mesh-avatar's emotion presets hold: wide for surprised, a glare for angry, open for the others.
+for (const [emotion, eyes] of Object.entries({ happy: 0.95, angry: 0.56, sad: 0.92, relaxed: 0.95, surprised: 1.18 })) {
   let eyeOpen = 1;
   for (let index = 0; index < 60; index += 1) eyeOpen = face.easeMeshAvatarEyes(eyeOpen, emotion as never, 1 / 30);
   assert.deepEqual(
