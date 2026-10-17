@@ -21,6 +21,7 @@ overrides:
   hono: 4.13.11
   ip-address: 10.7.1
   js-yaml: 4.3.2
+  mesh-avatar: file:patches/vendor/mesh-avatar-0.2.0-bahaynes-4d9fe3a.tgz
   nanoid@3: 3.3.19
   postcss: 8.5.28
   protobufjs: 7.6.5
@@ -103,8 +104,8 @@ importers:
         specifier: ^0.513.0
         version: 0.513.0(react@19.3.0)
       mesh-avatar:
-        specifier: 0.1.1
-        version: 0.1.1
+        specifier: file:../../patches/vendor/mesh-avatar-0.2.0-bahaynes-4d9fe3a.tgz
+        version: file:patches/vendor/mesh-avatar-0.2.0-bahaynes-4d9fe3a.tgz
       postcss:
         specifier: 8.5.28
         version: 8.5.28
@@ -3316,8 +3317,9 @@ packages:
     resolution: {integrity: sha512-Snk314V5ayFLhp3fkUREub6WtjBfPdCPY1Ln8/8munuLuiYhsABgBVWsozAG+MWMbVEvcdcpbi9R7ww22l9Q3g==}
     engines: {node: '>=18'}
 
-  mesh-avatar@0.1.1:
-    resolution: {integrity: sha512-RVSizpqYjVX6rbGfdSgwS0/bDcADn5tcDDSyctDi9cPeSdb5cCep8Y2AAzj3WRw258PHDsJ8nTmkREyDLZOF/Q==}
+  mesh-avatar@file:patches/vendor/mesh-avatar-0.2.0-bahaynes-4d9fe3a.tgz:
+    resolution: {integrity: sha512-B4iVPddyN02TOO1MOKHHWli06trvib0dnVN4MX2skUabRovvDkdmcxdlJyb3/0mfeDfcpFcYMtmz869Kj+qveQ==, tarball: file:patches/vendor/mesh-avatar-0.2.0-bahaynes-4d9fe3a.tgz}
+    version: 0.2.0
 
   meshoptimizer@1.1.1:
     resolution: {integrity: sha512-oRFNWJRDA/WTrVj7NWvqa5HqE1t9MYDj2VaWirQCzCCrAd2GHrqR/sQezCxiWATPNlKTcRaPRHPJwIRoPBAp5g==}
@@ -7617,7 +7619,7 @@ snapshots:
 
   merge-descriptors@2.0.0: {}
 
-  mesh-avatar@0.1.1:
+  mesh-avatar@file:patches/vendor/mesh-avatar-0.2.0-bahaynes-4d9fe3a.tgz:
     dependencies:
       fflate: 0.8.3
 
