@@ -77,6 +77,8 @@ export const AVATAR_DIRECTOR_TIMING = Object.freeze({
   /** While the server answers with keywords, how often to ask it again to get its local model ready. */
   prepareModelIntervalMs: 60_000,
 });
+/** fork: hold the reply's last face until the next reply instead of relaxing to neutral. */
+export const AVATAR_DIRECTOR_FORK = { holdFace: true };
 
 /** The part of the server's model status the director reads. */
 interface AvatarEmotionModelAnswer {
@@ -434,6 +436,7 @@ export function createAvatarDirector(options: AvatarDirectorOptions, hooks: Avat
         switchTo(owner, emotion, weight, null);
       }
       if (mode !== "roleplay" || generating || streamEndedAt === null || owner.settled || owner.speaking) continue;
+      if (AVATAR_DIRECTOR_FORK.holdFace) continue;
       if (owner.emotion === "neutral") continue;
       const since = now - Math.max(streamEndedAt, owner.switchedAt) - T.settleAfterMs;
       if (since < 0) continue;
