@@ -46,6 +46,7 @@ const { useAgentStore } = await import("../../packages/client/src/stores/agent.s
 const { useUIStore } = await import("../../packages/client/src/stores/ui.store.js");
 const { TTS_AUTOPLAY_MESSAGE_READY_EVENT } = await import("../../packages/client/src/lib/tts-autoplay.js");
 const director = await import("../../packages/client/src/features/avatars/director/avatar-director.js");
+director.AVATAR_DIRECTOR_FORK.holdFace = false; // fork: test upstream's relaxing face
 const { createSpeechClock, followMouthEnvelope } =
   await import("../../packages/client/src/features/avatars/director/speech-clock.js");
 const replyText = await import("../../packages/client/src/features/avatars/director/reply-text.js");
