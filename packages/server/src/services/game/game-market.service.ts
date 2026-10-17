@@ -24,6 +24,7 @@ import {
   readWorldLedger,
   type WorldLedgerCarry,
   type WorldLedgerEntry,
+  worldForeignLedger,
   worldLedgerCarry,
 } from "@marinara-engine/shared";
 import type { DB } from "../../db/connection.js";
@@ -72,7 +73,14 @@ export function isGameMasterReply(message: { role: string; content: unknown }): 
   );
 }
 
-export async function gameRepliesBefore(db: DB, chatId: string, replacing?: string | null): Promise<GameRepliesBefore> {
+/** `foreign: false` leaves out what other parties did in a shared world, as a session's fold must: the
+ *  package that shares the world stores those on every session afresh. */
+export async function gameRepliesBefore(
+  db: DB,
+  chatId: string,
+  replacing?: string | null,
+  options: { foreign?: boolean } = {},
+): Promise<GameRepliesBefore> {
   const chats = createChatsStorage(db);
   const [messages, chat, fold] = await Promise.all([
     chats.listMessages(chatId),
@@ -110,7 +118,14 @@ export async function gameRepliesBefore(db: DB, chatId: string, replacing?: stri
     }
   }
   const own = all.slice(carried?.tags ? 1 : 0);
-  const ledger = fold ? [{ from: fold }, ...readWorldLedger(own)] : readWorldLedger(all);
+  // A shared world (a package's): what other parties did comes before this party's own, and the shared
+  // calendar last, a day the world is at least at however few days this party's own story passed.
+  const foreign = options.foreign === false ? [] : worldForeignLedger(meta.gameLedgerForeign);
+  const floor = Number(meta.gameWorldDayFloor);
+  const calendar: WorldLedgerEntry[] = Number.isFinite(floor) && floor > 0 ? [{ untilDay: Math.floor(floor) }] : [];
+  const ledger = fold
+    ? [{ from: fold }, ...foreign, ...readWorldLedger(own), ...calendar]
+    : [...readWorldLedger(all.slice(0, all.length - own.length)), ...foreign, ...readWorldLedger(own), ...calendar];
   return {
     scoped: all.slice(scopedFrom),
     all,

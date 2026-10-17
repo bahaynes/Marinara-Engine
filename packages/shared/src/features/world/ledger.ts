@@ -72,6 +72,62 @@ export interface WorldLedgerEntry {
   at?: string;
   /** Only ever the first entry: the living world a session starts from (W11), folded on from. */
   from?: WorldFold;
+  /** Another party's change in a shared world: it moves the world but never this party's renown or
+   *  standing, and its place history names who did it. Never read from a reply. */
+  by?: string;
+  /** The shared calendar: the world's day is at least this, stepping to it as days passing would. */
+  untilDay?: number;
+}
+
+/** What word of another party's deed says, as a past fact. */
+function foreignDeedNews(entry: WorldLedgerEntry): string {
+  const { by, group = "", with: other = "", place = "", who = "" } = entry;
+  switch (entry.deed) {
+    case "help":
+    case "hinder":
+    case "ally":
+    case "betray":
+    case "destroy":
+      return `${by} ${{ help: "helped", hinder: "hindered", ally: "allied with", betray: "betrayed", destroy: "destroyed" }[entry.deed]} ${group}`;
+    case "befriend":
+    case "set_against":
+      return `${by} ${entry.deed === "befriend" ? "brought together" : "set against each other"} ${group} and ${other}`;
+    case "improve":
+    case "damage":
+      return `${by} ${entry.deed === "improve" ? "improved" : "damaged"} ${place}`;
+    case "take":
+      return `${group} took ${place} (${by})`;
+    case "crown":
+      return `${who || "a new head"} leads ${group} now (${by})`;
+    case "fall":
+      return `${place} fell to ruin (${by})`;
+    default:
+      return `${by} changed the world`;
+  }
+}
+
+/** The changes other parties made in a shared world, as a package stores them on the chat: deeds and
+ *  facts only, each with who did it. Their time, holds and places are their own and never come along. */
+export function worldForeignLedger(value: unknown): WorldLedgerEntry[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((each) => {
+    if (!each || typeof each !== "object") return [];
+    const {
+      by,
+      days: _days,
+      at: _at,
+      from: _from,
+      hold: _hold,
+      release: _release,
+      ground: _ground,
+      untilDay: _until,
+      ...rest
+    } = each as Record<string, unknown>;
+    if (typeof by !== "string" || !by.trim()) return [];
+    if (!Object.values(rest).every((field) => typeof field === "string")) return [];
+    const entry = rest as WorldLedgerEntry;
+    return entry.deed || entry.fact || entry.event !== undefined ? [{ ...entry, by: by.trim() }] : [];
+  });
 }
 
 /** The living world as a game's earlier sessions left it (worldgen W11): the present, and the settlement
@@ -414,11 +470,12 @@ function foldPresent(
     const id = placeId(name);
     return present.places.find((place) => place.id === id)?.parentId ?? id;
   };
-  const record = (name: string | undefined, line: string) => {
+  const record = (name: string | undefined, line: string, by?: string) => {
     const id = placeId(name);
     if (!id) return;
     present.done[id] = [...(present.done[id] ?? []), line];
-    present.deeds.push({ placeId: id, text: line });
+    // Another party's deed is the place's history, never this party's journal.
+    if (!by) present.deeds.push({ placeId: id, text: line });
   };
   const shift = (id: string, by: number) => {
     present.fortune[id] = Math.max(0, Math.min(100, (present.fortune[id] ?? 50) + by));
@@ -430,8 +487,11 @@ function foldPresent(
       partyAt = worldSettlementOf(game, worldPlaceId(entry.at))?.id;
       continue;
     }
-    if (entry.days !== undefined && !entry.deed) {
-      const to = present.day + Math.min(WORLD_DAYS_CAP, Math.max(0, Math.floor(Number(entry.days)) || 0));
+    if ((entry.days !== undefined || entry.untilDay !== undefined) && !entry.deed && !entry.by) {
+      const to =
+        entry.untilDay !== undefined
+          ? Math.max(present.day, Math.floor(entry.untilDay) || 0)
+          : present.day + Math.min(WORLD_DAYS_CAP, Math.max(0, Math.floor(Number(entry.days)) || 0));
       for (let step = Math.floor(present.day / WORLD_STEP_DAYS) + 1; step <= Math.floor(to / WORLD_STEP_DAYS); step++) {
         stepWorld(game, present, step, partyAt);
       }
@@ -485,16 +545,28 @@ function foldPresent(
     // far once it has done twenty deeds.
     const reach = 0.5 + 1.5 * Math.min(1, worldRenown(present) / 20);
     const push = (amount: number) => Math.round(amount * reach);
-    present.renown += 1;
     const group = entry.group ?? "";
     const id = placeId(entry.place);
+    const doer = entry.by ?? "The party";
+    if (entry.by) {
+      // Word of another party's deed travels as news does, from where it was done.
+      const at = worldSettlementOf(game, worldPlaceId(entry.place))?.id;
+      present.news.push({
+        day: present.day,
+        kind: WORLD_DEED_KINDS[entry.deed],
+        text: `Word is ${foreignDeedNews(entry)}${note}.`,
+        ...(at ? { placeId: at } : {}),
+      });
+    } else present.renown += 1;
     switch (entry.deed) {
       case "help":
       case "hinder":
+        if (entry.by) break;
         present.standing[group] = clamp((present.standing[group] ?? 0) + push(entry.deed === "help" ? 15 : -15));
         break;
       case "ally":
       case "betray":
+        if (entry.by) break;
         present.standing[group] = clamp((present.standing[group] ?? 0) + push(entry.deed === "ally" ? 50 : -50));
         break;
       case "befriend":
@@ -506,12 +578,12 @@ function foldPresent(
       case "improve":
       case "damage":
         if (id) shift(id, entry.deed === "improve" ? 30 : -30);
-        record(entry.place, `${entry.deed === "improve" ? "The party improved it" : "The party damaged it"}${note}.`);
+        record(entry.place, `${doer} ${entry.deed === "improve" ? "improved" : "damaged"} it${note}.`, entry.by);
         break;
       case "take":
         if (id) present.keepers[id] = group;
         if (id) present.taken[id] = group;
-        record(entry.place, `${group} took it${note}.`);
+        record(entry.place, `${group} took it${note}.`, entry.by);
         break;
       case "destroy":
         present.gone.push(group);
@@ -524,7 +596,7 @@ function foldPresent(
         break;
       case "fall":
         if (id && !present.ruined.includes(id)) present.ruined.push(id);
-        record(entry.place, `It fell to ruin${note}.`);
+        record(entry.place, `It fell to ruin${note}.`, entry.by);
         break;
     }
   }

@@ -7985,7 +7985,7 @@ export async function gameRoutes(app: FastifyInstance, options: GameRouteOptions
       if (await worldSnapshots.copy(latestSession.id, newChat.id)) {
         const sessionWorld = await loadGameWorld(app.db, latestSession.id, prevMeta);
         if (sessionWorld) {
-          const sessionLedger = (await gameRepliesBefore(app.db, latestSession.id)).ledger;
+          const sessionLedger = (await gameRepliesBefore(app.db, latestSession.id, null, { foreign: false })).ledger;
           await worldSnapshots.setFold(newChat.id, worldFold(sessionWorld, sessionLedger));
         }
       }
