@@ -103,6 +103,8 @@ export const AVATAR_DIRECTOR_TIMING = Object.freeze({
   /** A reading that never played and ended this soon after the reply replays the text animation once. */
   voiceReplayWithinMs: 5_000,
 });
+/** fork: hold the reply's last face until the next reply instead of relaxing to neutral. */
+export const AVATAR_DIRECTOR_FORK = { holdFace: true };
 
 /** The part of the server's model status the director reads. */
 interface AvatarEmotionModelAnswer {
@@ -767,6 +769,7 @@ export function createAvatarDirector(options: AvatarDirectorOptions, hooks: Avat
       if (mode !== "roleplay" || generating || replay || owner.settled || owner.speaking) continue;
       // While a reading is coming, a face holds until its voice has played, then relaxes after the voice.
       if (voice === "waiting" && !owner.voicePlayed) continue;
+      if (AVATAR_DIRECTOR_FORK.holdFace) continue;
       if (owner.emotion === "neutral" && !owner.feeling) continue;
       const ended = Math.max(streamEndedAt ?? -Infinity, owner.voiceAt);
       if (ended === -Infinity) continue;
