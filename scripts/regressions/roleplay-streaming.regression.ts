@@ -2040,4 +2040,10 @@ assert.match(
   "Enter-submitted slash commands must restore the draft when generation fails",
 );
 
+assert.match(
+  chatMessageSource,
+  /const genInfo = showModelName \|\| showTokenUsage \? extra\.generationInfo : null;/u,
+  "Impersonated user messages must show their model and token usage",
+);
+
 process.stdout.write("Roleplay streaming regression passed.\n");
