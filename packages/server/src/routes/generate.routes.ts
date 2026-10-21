@@ -389,7 +389,7 @@ import {
 import {
   isRoleplayRollEnabled,
   prepareRoleplayRoll,
-  withRoleplayRollSchema,
+  roleplayResponderToolDefs,
 } from "../services/generation/roleplay-rolls.js";
 import { applyInspirationAward } from "../services/game/inspiration.service.js";
 import {
@@ -627,7 +627,10 @@ import {
 } from "../services/conversation/autonomous.service.js";
 import { buildIntentCooldownPatch, isMessageIntent } from "../services/conversation/intent.service.js";
 import { buildImpersonateInstruction } from "../services/conversation/impersonate-prompt.js";
-import { pullHistoryInjectionsIntoInstruction } from "../services/prompt/impersonate-tail.js";
+import {
+  closeHistoryOnLastMessage,
+  pullHistoryInjectionsIntoInstruction,
+} from "../services/prompt/impersonate-tail.js";
 import {
   isRepeatedConversationResponse,
   stripConversationPromptTimestamps,
@@ -721,6 +724,7 @@ import {
   type PromptAttachment,
   type SimpleMessage,
 } from "./generate/generate-route-utils.js";
+import { commitStateBeforeImpersonatedMessage } from "./generate/commit-impersonated-turn.js";
 import {
   customAgentCanApplyResult,
   customAgentCanEmitResult,
@@ -2581,6 +2585,11 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
         impersonate: input.impersonate,
         impersonateBlockAgents: input.impersonateBlockAgents,
       });
+      // fork: with impersonateUseChatPrompt, an impersonate is built from the chat's own prompt
+      // (preset sections and agent context) so it shares the reply's prompt cache and sees the
+      // same context. chatEnableAgents still decides whether agents run on the impersonated turn.
+      const impersonateWithChatPrompt = input.impersonate === true && chatMeta.impersonateUseChatPrompt === true;
+      const promptEnableAgents = impersonateWithChatPrompt ? chatMeta.enableAgents === true : chatEnableAgents;
       const roleplayCommandAgentIds = new Set<string>();
       if (chatMode === "roleplay" && !input.impersonate) {
         if (isRoleplayCommandAllowed(chatMeta, "illustrate", null)) roleplayCommandAgentIds.add("illustrator");
@@ -2616,7 +2625,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
         .filter((agentId) => !(gameSpotifyMusicEnabled && agentId === "spotify"));
       const customAgentImportsEnabled = (await getCustomAgentImportPolicy(app.db)).enabled;
       const allConfiguredPromptAgents =
-        (chatEnableAgents && rawChatActiveAgentIds.length > 0) || roleplayCommandAgentIds.size > 0
+        (promptEnableAgents && rawChatActiveAgentIds.length > 0) || roleplayCommandAgentIds.size > 0
           ? await agentsStore.list()
           : [];
       const skippedImportedPromptAgents = customAgentImportsEnabled
@@ -2909,7 +2918,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
         chatPromptPresetId,
         connectionPromptPresetId: conn.promptPresetId,
         impersonate: input.impersonate,
-        impersonatePromptPresetId: input.impersonatePresetId,
+        impersonatePromptPresetId: impersonateWithChatPrompt ? null : input.impersonatePresetId,
       });
       let presetId: string | undefined;
       let resolvedPreset: Awaited<ReturnType<typeof presets.getById>> | null = null;
@@ -3553,7 +3562,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
               },
             });
         const runtimeSectionEligibleAgentTypes = buildRuntimeAgentSectionEligibleTypes({
-          enableAgents: chatEnableAgents,
+          enableAgents: promptEnableAgents,
           activeAgentIds: chatActiveAgentIds,
           chatMode,
           configuredAgents: pipelineConfiguredPromptAgents.map((agent) => ({
@@ -3562,7 +3571,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
             settings: agent.settings,
           })),
         });
-        const longTermMemoryListed = chatEnableAgents && chatActiveAgentIds.includes("long-term-memory");
+        const longTermMemoryListed = promptEnableAgents && chatActiveAgentIds.includes("long-term-memory");
         if (longTermMemoryListed) {
           runtimeSectionEligibleAgentTypes.add("long-term-memory");
         }
@@ -4264,7 +4273,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
             chatSummary: activeChatSummary,
             chatSummaryReaders,
             ...(advancedMemoryEnabled ? { advancedMemory: {}, deferAdvancedMemory: true } : {}),
-            enableAgents: chatEnableAgents,
+            enableAgents: promptEnableAgents,
             activeAgentIds: chatActiveAgentIds,
             activeLorebookIds: chatActiveLorebookIds,
             forcedLorebookEntryIds: ownerSpatialProjection?.lorebookEntryIds ?? [],
@@ -4290,7 +4299,8 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
             idleDuration: promptIdleDuration,
             timeZone: promptTimeZone,
             impersonate: input.impersonate === true,
-            preserveImpersonatePresetSections: input.impersonate === true && presetSource === "impersonate",
+            preserveImpersonatePresetSections:
+              input.impersonate === true && (presetSource === "impersonate" || impersonateWithChatPrompt),
             impersonatePublicFaces,
             deferCharacterMacros,
             decisions: promptMacroContext.decisions,
@@ -7444,7 +7454,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
 
         injectCommittedTrackerContext({
           messages: finalMessages,
-          chatEnableAgents,
+          chatEnableAgents: promptEnableAgents,
           activeAgentIds: chatActiveAgentIds,
           latestGameState,
           beholderState: latestBeholderState,
@@ -9552,8 +9562,15 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
           let roleplayParsedLength = 0;
           const responderToolDefs =
             chatMode === "roleplay"
-              ? withRoleplayRollSchema(
-                  toolDefs?.filter((tool) => tool.function.name !== "roll_dice" || roleplayRollEnabled),
+              ? roleplayResponderToolDefs(
+                  toolDefs,
+                  {
+                    chatMode,
+                    impersonate: input.impersonate,
+                    chatMeta,
+                    callerId: roleplayCallerId,
+                    resolvedToolNames: chatResolvedToolNames,
+                  },
                   roleplayRollParticipants,
                 )
               : toolDefs;
@@ -9655,7 +9672,11 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
             ...providerRuntime.chatParams,
           };
           const prepareProviderMessages = (messages: ChatMessage[]): ChatMessage[] =>
-            postProcessMessages(messages, providerMessageParameters, prefillTurn.endsOnPrefill);
+            postProcessMessages(
+              input.impersonate ? closeHistoryOnLastMessage(messages) : messages,
+              providerMessageParameters,
+              prefillTurn.endsOnPrefill,
+            );
 
           let advancedMemoryReceipt: AdvancedMemoryReceipt | undefined;
           let advancedMemorySnapshot: AdvancedMemorySnapshot | undefined;
@@ -9684,7 +9705,8 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                   : undefined,
               maxContext: effectiveMaxContext ?? connectionMaxContext,
               maxTokens,
-              tools: gameToolConnection ? undefined : responderToolDefs,
+              tools:
+                gameToolConnection || (input.impersonate && !impersonateWithChatPrompt) ? undefined : responderToolDefs,
               query: currentInputMessages()
                 .slice(-4)
                 .map((message) => message.content)
@@ -11507,6 +11529,14 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
           );
           let savedMsg = savedReply.savedMsg;
           const savedSwipeIndex = savedReply.savedSwipeIndex;
+          if (input.impersonate && savedMsg?.role === "user") {
+            await commitStateBeforeImpersonatedMessage({
+              chatId: input.chatId,
+              messageId: savedMsg.id,
+              listMessages: (chatId) => chats.listMessages(chatId) as never,
+              store: gameStateStore,
+            });
+          }
           const replyParts = savedReply.replyParts;
           fullResponse = savedReply.fullResponse;
           if (savedReply.continuedSource !== null) continuedMessageRewriteSource = savedReply.continuedSource;

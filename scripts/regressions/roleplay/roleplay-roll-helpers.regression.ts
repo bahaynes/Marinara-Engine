@@ -3,6 +3,7 @@ import type { LLMToolDefinition } from "../../../packages/shared/src/types/gener
 import {
   cutPendingRoll,
   isRoleplayRollEnabled,
+  roleplayResponderToolDefs,
   rollActivityFromToolResult,
   rollResultFollowUp,
   textualRollToolCall,
@@ -35,6 +36,35 @@ import {
   );
   assert.equal(isRoleplayRollEnabled({ ...base, chatMeta: {} }), false);
   assert.equal(isRoleplayRollEnabled({ ...base, chatMeta: {}, resolvedToolNames: new Set(["roll_dice"]) }), true);
+}
+
+// roleplayResponderToolDefs: an impersonated turn offers the narrator's tools, so both share the
+// provider's prompt cache; isRoleplayRollEnabled still refuses its roll.
+{
+  const tool = (name: string): LLMToolDefinition => ({
+    type: "function",
+    function: { name, description: name, parameters: { type: "object", properties: {} } },
+  });
+  const defs = [tool("roll_dice"), tool("npc_registry_lookup")];
+  const input = {
+    chatMode: "roleplay",
+    impersonate: false,
+    chatMeta: { roleplayCommandsEnabled: true, roleplayCommandToggles: { roll: true } } as Record<string, unknown>,
+    callerId: null as string | null,
+    resolvedToolNames: new Set<string>(),
+  };
+  const participants = [{ name: "Ada" }];
+  const narrator = roleplayResponderToolDefs(defs, input, participants);
+  const impersonated = roleplayResponderToolDefs(defs, { ...input, impersonate: true }, participants);
+  assert.deepEqual(impersonated, narrator, "impersonation offers the same tool list as the narrator");
+  assert.ok(narrator?.some((t) => t.function.name === "roll_dice"));
+  assert.equal(isRoleplayRollEnabled({ ...input, impersonate: true }), false, "the impersonated roll is refused");
+  const rollsOff = roleplayResponderToolDefs(defs, { ...input, chatMeta: {} }, participants);
+  assert.deepEqual(
+    rollsOff?.map((t) => t.function.name),
+    ["npc_registry_lookup"],
+    "without the Rolls command or the attached tool, roll_dice is not offered",
+  );
 }
 
 // withRoleplayRollSchema: roll_dice gains the participant enum and attribute, `character` is required.

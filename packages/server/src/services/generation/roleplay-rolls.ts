@@ -87,6 +87,23 @@ export function isRoleplayRollEnabled(input: {
   );
 }
 
+/**
+ * The roleplay responder's tool list. It ignores impersonation: an impersonated turn offers the
+ * narrator's tools so the two share the provider's prompt cache (tool definitions lead the cached
+ * prefix). Whether this turn may actually roll stays with isRoleplayRollEnabled.
+ */
+export function roleplayResponderToolDefs(
+  toolDefs: LLMToolDefinition[] | undefined,
+  input: Parameters<typeof isRoleplayRollEnabled>[0],
+  participants: readonly { name: string }[],
+): LLMToolDefinition[] | undefined {
+  const rollOffered = isRoleplayRollEnabled({ ...input, impersonate: false });
+  return withRoleplayRollSchema(
+    toolDefs?.filter((tool) => tool.function.name !== "roll_dice" || rollOffered),
+    participants,
+  );
+}
+
 /** Lets a roleplay roll_dice name the participant who rolls and the attribute it uses. */
 export function withRoleplayRollSchema(
   toolDefs: LLMToolDefinition[] | undefined,

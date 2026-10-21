@@ -2003,7 +2003,6 @@ export function ChatSettingsDrawer({
             </Section>
           )}
 
-
           {/* Card field alternatives — hidden when no card in this chat has any */}
           <CardFieldAlternativesSection chat={chat} characters={characters} personas={personas} />
 
@@ -2251,7 +2250,11 @@ export function ChatSettingsDrawer({
           {isGame && <GameWidgetsSection chat={chat} metadata={metadata} />}
 
           {!isConversation && !isGame && (
-            <ImpersonateSection presets={(presets ?? []) as Array<{ id: string; name: string }>} />
+            <ImpersonateSection
+              presets={(presets ?? []) as Array<{ id: string; name: string }>}
+              useChatPrompt={metadata.impersonateUseChatPrompt === true}
+              onUseChatPromptChange={(checked) => updateMeta.mutate({ id: chat.id, impersonateUseChatPrompt: checked })}
+            />
           )}
 
           {/* Memory Recall — Conversation */}
