@@ -2601,7 +2601,8 @@ export const ChatMessage = memo(function ChatMessage({
   );
 
   // Model name display
-  const genInfo = !isUser && (showModelName || showTokenUsage) ? extra.generationInfo : null;
+  // Typed user messages carry no generationInfo; impersonated ones do and show it too.
+  const genInfo = showModelName || showTokenUsage ? extra.generationInfo : null;
   const genLabel = useMemo(() => {
     if (!genInfo) return null;
     const parts: string[] = [];
@@ -2631,7 +2632,7 @@ export const ChatMessage = memo(function ChatMessage({
     return parts.length > 0 ? parts.join(" · ") : null;
   }, [genInfo, showModelName, showTokenUsage, localizeUi]);
   // Shown with the model name and token usage settings off too (#7697).
-  const fallbackMarker = isUser ? null : <GenerationFallbackMarker fallback={extra.generationInfo?.fallback} />;
+  const fallbackMarker = <GenerationFallbackMarker fallback={extra.generationInfo?.fallback} />;
   // useLayoutEffect runs after DOM mutation but before browser paint — prevents visible scroll jump
   useLayoutEffect(() => {
     // Restore scroll position saved before the state change
