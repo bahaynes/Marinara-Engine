@@ -1004,15 +1004,7 @@ export const ChatInput = memo(function ChatInput({
       replaceAttachments([]);
       clearInputDraft(activeChatId);
 
-      try {
-        const result = await match.command.execute(
-          match.args,
-          withComposerReplyAndAttachments(ctx, { replyTo: replyDraft, attachments: submittedAttachments }),
-        );
-        if (result.feedback) {
-          setFeedback(result.feedback);
-        }
-      } catch (error) {
+      const restoreSubmittedDraft = () => {
         const activeChatIdAfterFailure = useChatStore.getState().activeChatId;
         const currentValue = textareaRef.current?.value ?? "";
         const canRestoreVisibleDraft = activeChatIdAfterFailure === activeChatId && currentValue.length === 0;
@@ -1032,6 +1024,30 @@ export const ChatInput = memo(function ChatInput({
         if (submittedDraft && (canRestoreVisibleDraft || activeChatIdAfterFailure !== activeChatId)) {
           setInputDraft(activeChatId, submittedDraft);
         }
+      };
+      const generationStatus: { succeeded?: boolean } = {};
+      const composerCtx = withComposerReplyAndAttachments(ctx, {
+        replyTo: replyDraft,
+        attachments: submittedAttachments,
+      });
+
+      try {
+        const result = await match.command.execute(match.args, {
+          ...composerCtx,
+          generate: async (params) => {
+            const succeeded = await composerCtx.generate(params);
+            if (succeeded !== undefined) generationStatus.succeeded = succeeded;
+            return succeeded;
+          },
+        });
+        if (result.feedback) {
+          setFeedback(result.feedback);
+        }
+        if (generationStatus.succeeded === false) {
+          restoreSubmittedDraft();
+        }
+      } catch (error) {
+        restoreSubmittedDraft();
         const msg = error instanceof Error ? error.message : "Command failed";
         toast.error(msg);
       }

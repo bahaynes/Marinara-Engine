@@ -3538,9 +3538,12 @@ export function useGenerate() {
               return await confirmDurableSubmittedUserTurn();
             }
           }
+          // Impersonate never persists the direction up front, so without a
+          // recovered row the run failed out of sight; report it so the caller
+          // restores the cleared draft instead of dropping the user's text.
           return abortController.signal.aborted
             ? submittedUserTurn || receivedContent || spatialTransitionCommitted
-            : true;
+            : !params.impersonate || !!passiveRecoveryDurableMessage;
         }
         if (params.pendingSpatialTransition) {
           const payload =
