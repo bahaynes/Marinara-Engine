@@ -2015,4 +2015,17 @@ assert.equal(
   "the generation baseline should ignore the user's newest input",
 );
 
+// A stream that drops while an impersonate run fails server-side never sees the
+// error event; generate must still report failure so the cleared draft returns.
+assert.match(
+  generateHookSource,
+  /: !params\.impersonate \|\| !!passiveRecoveryDurableMessage;/u,
+  "Passive recovery must report an impersonate run with no recovered row as failed",
+);
+assert.match(
+  chatInputSource,
+  /const composerCtx = withComposerReplyAndAttachments[\s\S]{0,600}if \(generationStatus\.succeeded === false\) \{\s*restoreSubmittedDraft\(\);/u,
+  "Enter-submitted slash commands must restore the draft when generation fails",
+);
+
 process.stdout.write("Roleplay streaming regression passed.\n");
