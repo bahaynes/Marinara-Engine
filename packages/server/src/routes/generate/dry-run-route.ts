@@ -100,7 +100,10 @@ import {
   resolveOwnerSpatialProjection,
 } from "../../services/spatial-context/projection.js";
 import { buildImpersonateInstruction } from "../../services/conversation/impersonate-prompt.js";
-import { pullHistoryInjectionsIntoInstruction } from "../../services/prompt/impersonate-tail.js";
+import {
+  closeHistoryOnLastMessage,
+  pullHistoryInjectionsIntoInstruction,
+} from "../../services/prompt/impersonate-tail.js";
 import { processLorebooks } from "../../services/lorebook/index.js";
 import { resolveLorebookScopeExclusions } from "../../services/lorebook/game-lorebook-scope.js";
 import { injectAtDepth } from "../../services/lorebook/prompt-injector.js";
@@ -602,7 +605,10 @@ export async function registerDryRunRoute(app: FastifyInstance) {
     const chat = await chats.getById(chatId);
     if (!chat) return notFound(reply, "Chat not found");
 
+    const chatMeta = parseExtra(chat.metadata) as Record<string, unknown>;
     const impersonate = body.impersonate === true;
+    const impersonateWithChatPrompt = impersonate && chatMeta.impersonateUseChatPrompt === true;
+    const promptEnableAgents = impersonateWithChatPrompt ? chatMeta.enableAgents === true : undefined;
     const streaming = body.streaming === true;
     const returnPrompt = body.returnPrompt === true;
     if (
@@ -685,7 +691,6 @@ export async function registerDryRunRoute(app: FastifyInstance) {
     const baseUrl = resolveBaseUrl(conn);
     if (!baseUrl) return reply.status(400).send({ error: "No base URL configured for this connection" });
 
-    const chatMeta = parseExtra(chat.metadata) as Record<string, unknown>;
     const modelAccessPolicy = resolveModelAccessPolicy({
       provider: conn.provider,
       model: conn.model,
@@ -760,7 +765,7 @@ export async function registerDryRunRoute(app: FastifyInstance) {
     let advancedMemoryPlacements: AdvancedMemoryPlacement[] = [];
     const dryRunActiveAgentIds = Array.isArray(chatMeta.activeAgentIds) ? (chatMeta.activeAgentIds as string[]) : [];
     const dryRunChatEnableAgents = shouldEnableAgentsForGeneration({
-      chatEnableAgents: chatMeta.enableAgents === true,
+      chatEnableAgents: promptEnableAgents ?? chatMeta.enableAgents === true,
       impersonate,
       impersonateBlockAgents: false,
     });
@@ -1148,7 +1153,7 @@ export async function registerDryRunRoute(app: FastifyInstance) {
           chatPromptPresetId: chat.promptPresetId,
           connectionPromptPresetId: conn.promptPresetId,
           impersonate,
-          impersonatePromptPresetId: body.impersonatePresetId,
+          impersonatePromptPresetId: impersonateWithChatPrompt ? null : body.impersonatePresetId,
           requestPromptPresetId: body.presetId,
         });
     let effectivePresetId: string | null = null;
@@ -1983,7 +1988,8 @@ export async function registerDryRunRoute(app: FastifyInstance) {
         lastGenerationType: promptLastGenerationType,
         idleDuration: promptIdleDuration,
         impersonate,
-        preserveImpersonatePresetSections: impersonate && effectivePresetSource === "impersonate",
+        preserveImpersonatePresetSections:
+          impersonate && (effectivePresetSource === "impersonate" || impersonateWithChatPrompt),
         impersonatePublicFaces,
         deferCharacterMacros,
         decisions: promptMacroContext.decisions,
@@ -2535,7 +2541,7 @@ export async function registerDryRunRoute(app: FastifyInstance) {
 
     const prepareProviderMessages = (messages: ChatMessage[]): ChatMessage[] => {
       return postProcessMessages(
-        messages,
+        impersonate ? closeHistoryOnLastMessage(messages) : messages,
         {
           ...(effectivePreset && !isStockMarinaraUniversalPreset(effectivePreset)
             ? parseStoredGenerationParameters(effectivePreset.parameters)
