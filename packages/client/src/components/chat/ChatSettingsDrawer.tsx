@@ -10346,7 +10346,13 @@ export function ChatSettingsDrawer({
 
           {!isConversation && !isGame && (
             <div style={{ order: CHAT_SETTINGS_ORDER.impersonate }}>
-              <ImpersonateSection presets={(presets ?? []) as Array<{ id: string; name: string }>} />
+              <ImpersonateSection
+                presets={(presets ?? []) as Array<{ id: string; name: string }>}
+                useChatPrompt={metadata.impersonateUseChatPrompt === true}
+                onUseChatPromptChange={(checked) =>
+                  updateMeta.mutate({ id: chat.id, impersonateUseChatPrompt: checked })
+                }
+              />
             </div>
           )}
         </div>

@@ -10,9 +10,12 @@ import { ImpersonatePromptTemplateField } from "./ImpersonatePromptTemplateField
 
 interface ImpersonateSectionProps {
   presets: Array<{ id: string; name: string }>;
+  /** Per-chat: build impersonates from this chat's own prompt (fork). */
+  useChatPrompt?: boolean;
+  onUseChatPromptChange?: (checked: boolean) => void;
 }
 
-export function ImpersonateSection({ presets }: ImpersonateSectionProps) {
+export function ImpersonateSection({ presets, useChatPrompt, onUseChatPromptChange }: ImpersonateSectionProps) {
   const { t: localizeUi } = useUiTranslation();
   const cyoaChoices = useUIStore((state) => state.impersonateCyoaChoices);
   const setCyoaChoices = useUIStore((state) => state.setImpersonateCyoaChoices);
@@ -92,6 +95,20 @@ export function ImpersonateSection({ presets }: ImpersonateSectionProps) {
           </div>
 
           <div className="grid gap-1 border-t border-[var(--border)]/60 py-2">
+            {onUseChatPromptChange && (
+              <SettingsSwitch
+                label={localizeUi("ui.chatSettings.impersonatesection.useChatPrompt")}
+                help={localizeUi("ui.chatSettings.impersonatesection.useChatPromptHelp")}
+                description={localizeUi("ui.chatSettings.impersonatesection.useChatPromptDescription")}
+                helpPosition="label"
+                checked={useChatPrompt === true}
+                onChange={onUseChatPromptChange}
+                labelPosition="start"
+                className="justify-between rounded-md px-2 py-1.5 text-left"
+                labelClassName="text-xs font-semibold"
+              />
+            )}
+
             <SettingsSwitch
               label={localizeUi("ui.chatSettings.impersonatesection.skipAgents")}
               help={localizeUi(
