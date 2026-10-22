@@ -2034,4 +2034,17 @@ assert.match(
   "Impersonated user messages must show their model and token usage",
 );
 
+// A slash command's text stays in the stored draft until the command settles, so
+// a phone suspending or reloading the page before the request leaves keeps it.
+assert.equal(
+  (chatInputSource.match(/holdSubmittedDraft\(inFlightDraftRef,/gu) ?? []).length,
+  2,
+  "Both slash-command submit paths must hold the submitted draft instead of clearing it",
+);
+assert.equal(
+  (chatInputSource.match(/else if \(inFlightDraft(?:Ref)?\.current\?\.chatId !== /gu) ?? []).length,
+  3,
+  "Draft flushes (chat switch, unmount, pagehide) must not clear a held in-flight draft",
+);
+
 process.stdout.write("Roleplay streaming regression passed.\n");

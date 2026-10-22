@@ -217,6 +217,22 @@ interface ChatInputProps {
   interactionsLocked?: boolean;
 }
 
+type InFlightDraftRef = { current: { chatId: string; text: string } | null };
+
+/** Store the submitted text as the chat's draft until the command settles. */
+function holdSubmittedDraft(ref: InFlightDraftRef, chatId: string, text: string) {
+  ref.current = { chatId, text };
+  if (text.trim()) useChatStore.getState().setInputDraft(chatId, text);
+  else useChatStore.getState().clearInputDraft(chatId);
+}
+
+/** Drop the held draft once the command succeeded, unless the user has typed something new. */
+function releaseSubmittedDraft(ref: InFlightDraftRef, chatId: string, text: string, succeeded: boolean) {
+  if (ref.current?.chatId === chatId) ref.current = null;
+  const store = useChatStore.getState();
+  if (succeeded && store.inputDrafts.get(chatId) === text) store.clearInputDraft(chatId);
+}
+
 export const ChatInput = memo(function ChatInput({
   mode = "conversation",
   characterNames = [],
@@ -255,6 +271,10 @@ export const ChatInput = memo(function ChatInput({
   const emojiButtonRef = useRef<HTMLButtonElement>(null);
   const inputBarRef = useRef<HTMLDivElement>(null);
   const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // A submitted slash command's text stays in the stored draft until the command
+  // finishes, so a mobile browser suspending or reloading the page mid-send
+  // (before the request leaves) cannot lose it. Flushes must not clear it.
+  const inFlightDraftRef = useRef<{ chatId: string; text: string } | null>(null);
   const resizeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const resizeFrameRef = useRef(0);
   const heldDeleteKeyRef = useRef(false);
@@ -516,7 +536,7 @@ export const ChatInput = memo(function ChatInput({
         const prevText = textareaRef.current.value;
         if (prevText.trim()) {
           setInputDraft(prevChatIdRef.current, prevText);
-        } else {
+        } else if (inFlightDraftRef.current?.chatId !== prevChatIdRef.current) {
           clearInputDraft(prevChatIdRef.current);
         }
         const prevAttachments = attachmentsRef.current;
@@ -547,6 +567,7 @@ export const ChatInput = memo(function ChatInput({
   useEffect(() => {
     const textarea = textareaRef.current;
     const chatId = useChatStore.getState().activeChatId;
+    const inFlightDraft = inFlightDraftRef;
     return () => {
       // Cancel pending debounce timers
       if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
@@ -560,7 +581,7 @@ export const ChatInput = memo(function ChatInput({
         const text = textarea.value;
         if (text.trim()) {
           useChatStore.getState().setInputDraft(chatId, text);
-        } else {
+        } else if (inFlightDraft.current?.chatId !== chatId) {
           useChatStore.getState().clearInputDraft(chatId);
         }
       }
@@ -576,7 +597,7 @@ export const ChatInput = memo(function ChatInput({
       if (!chatId) return;
       if (text.trim()) {
         useChatStore.getState().setInputDraft(chatId, text);
-      } else {
+      } else if (inFlightDraftRef.current?.chatId !== chatId) {
         useChatStore.getState().clearInputDraft(chatId);
       }
     };
@@ -1008,7 +1029,7 @@ export const ChatInput = memo(function ChatInput({
       syncInputState("");
       setCompletions([]);
       replaceAttachments([]);
-      clearInputDraft(activeChatId);
+      holdSubmittedDraft(inFlightDraftRef, activeChatId, submittedDraft);
 
       const restoreSubmittedDraft = () => {
         const activeChatIdAfterFailure = useChatStore.getState().activeChatId;
@@ -1052,7 +1073,9 @@ export const ChatInput = memo(function ChatInput({
         if (generationStatus.succeeded === false) {
           restoreSubmittedDraft();
         }
+        releaseSubmittedDraft(inFlightDraftRef, activeChatId, submittedDraft, generationStatus.succeeded !== false);
       } catch (error) {
+        releaseSubmittedDraft(inFlightDraftRef, activeChatId, submittedDraft, false);
         restoreSubmittedDraft();
         const msg = error instanceof Error ? error.message : "Command failed";
         toast.error(msg);
@@ -1254,7 +1277,7 @@ export const ChatInput = memo(function ChatInput({
       }
       syncInputState("");
       setCompletions([]);
-      clearInputDraft(submittingChatId);
+      holdSubmittedDraft(inFlightDraftRef, submittingChatId, previousDraft);
 
       try {
         const result = await match.command.execute(match.args, ctx);
@@ -1264,22 +1287,15 @@ export const ChatInput = memo(function ChatInput({
         if (generationStatus.succeeded === false) {
           restoreSubmittedDraft();
         }
+        releaseSubmittedDraft(inFlightDraftRef, submittingChatId, previousDraft, generationStatus.succeeded !== false);
       } catch (error) {
+        releaseSubmittedDraft(inFlightDraftRef, submittingChatId, previousDraft, false);
         restoreSubmittedDraft();
         const msg = error instanceof Error ? error.message : fallbackError;
         toast.error(msg);
       }
     },
-    [
-      activeChatId,
-      availableCapabilityIds,
-      buildContext,
-      clearInputDraft,
-      completions,
-      mode,
-      setInputDraft,
-      syncInputState,
-    ],
+    [activeChatId, availableCapabilityIds, buildContext, completions, mode, setInputDraft, syncInputState],
   );
 
   const handleImpersonateQuickButton = useCallback(async () => {
