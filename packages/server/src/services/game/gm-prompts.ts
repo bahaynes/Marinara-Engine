@@ -2442,7 +2442,8 @@ export function buildGmFormatReminder(
           ]
         : []),
       `- [party_change: character="New Name" change="add" copy_of="Party Member" condition="Condition"] - a copy of that party member joins under the new name, with their sheet, holding the ruleset's condition from the start (a Simulacrum). copy_of may instead name a creature of the ruleset's bestiary (a beast or a stranger copied), who joins and fights as that creature. condition is optional.`,
-      ...(ctx.enableInspiration === false
+      // Fork: Inspiration is a D&D mechanic; a ruleset game spends only what its own rules define.
+      ...(ctx.enableInspiration === false || ctx.ruleset
         ? []
         : [
             `- [inspiration: +1] - award 1 Inspiration point to the player (max 4) when they demonstrate clever problem-solving, take a bold in-character risk, make an exceptional recovery, or land a heroic narrative beat. When the player is below 4 inspiration points, actively look for opportunities to reward genuine creativity and roleplay so they have narrative resources to spend.`,
@@ -2563,7 +2564,8 @@ export function buildGmFormatReminder(
       );
   }
 
-  if (S)
+  // Fork: d20 coaching (natural 1s, trained professionals); a ruleset brings its own GM text.
+  if (S && !ctx.ruleset)
     lines.push(
       ``,
       `CONSEQUENCES & FAILING FORWARD:`,
