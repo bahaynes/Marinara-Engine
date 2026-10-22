@@ -80,6 +80,7 @@ import {
   rollStoryOwingWith,
 } from "../services/game/story-held-ground.service.js";
 import { gameStorySpends } from "../services/game/story-item-uses.service.js";
+import { advanceDateOnClockRollover } from "../services/game/tracker-day-rollover.js";
 import {
   createAdvancedMemoryService,
   sceneCheckTranscript,
@@ -13356,6 +13357,12 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                 // Build the new snapshot from agent output, falling back to previous snapshot.
                 let newDate = coerceGameStateTextValue(gs.date) ?? coerceGameStateTextValue(prevSnap?.date);
                 let newTime = coerceGameStateTextValue(gs.time) ?? coerceGameStateTextValue(prevSnap?.time);
+                newDate = advanceDateOnClockRollover(
+                  coerceGameStateTextValue(prevSnap?.date),
+                  coerceGameStateTextValue(prevSnap?.time),
+                  newDate,
+                  newTime,
+                );
                 const trackerLocationGuidance = coerceGameStateTextValue(gs.location);
                 let effectiveSpatialProjection = ownerSpatialProjection;
                 if (hierarchicalMapsEnabledForChat && messageId) {
