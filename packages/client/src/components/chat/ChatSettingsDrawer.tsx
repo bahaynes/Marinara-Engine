@@ -10706,6 +10706,10 @@ export function ChatSettingsDrawer({
               <ImpersonateSection
                 presets={(presets ?? []) as Array<{ id: string; name: string }>}
                 connections={chatGenerationConnectionsList}
+                useChatPrompt={metadata.impersonateUseChatPrompt === true}
+                onUseChatPromptChange={(checked) =>
+                  updateMeta.mutate({ id: chat.id, impersonateUseChatPrompt: checked })
+                }
               />
             </div>
           )}

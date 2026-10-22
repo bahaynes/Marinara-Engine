@@ -110,6 +110,28 @@ const useGenerateSource = readSourceText(
   new URL("../../packages/client/src/hooks/use-generate.ts", import.meta.url),
   "utf8",
 );
+// fork: impersonateUseChatPrompt builds the impersonate from the chat's own preset and agent
+// context, so it shares the reply's cache prefix; agents still only run per chatEnableAgents.
+assert.match(
+  generateRouteSource,
+  /impersonatePromptPresetId: impersonateWithChatPrompt \? null : input\.impersonatePresetId/u,
+  "A chat-prompt impersonate must resolve the chat's preset, not the impersonate preset",
+);
+assert.match(
+  generateRouteSource,
+  /preserveImpersonatePresetSections:\s*input\.impersonate === true && \(presetSource === "impersonate" \|\| impersonateWithChatPrompt\)/u,
+  "A chat-prompt impersonate must keep the preset's non-marker sections",
+);
+assert.equal(
+  generateRouteSource.match(/promptEnableAgents/gu)?.length,
+  8,
+  "Prompt-side agent context must follow promptEnableAgents (declaration + 7 uses)",
+);
+assert.match(
+  generateRouteSource,
+  /resolveAgentPipelineAgents\([\s\S]{0,400}chatEnableAgents/u,
+  "Agents running on the turn must still follow chatEnableAgents",
+);
 // The reasoning clock itself is pinned behaviourally in generation-stream-output.regression.ts;
 // these pin that every reply path routes its text through it.
 assert.match(
