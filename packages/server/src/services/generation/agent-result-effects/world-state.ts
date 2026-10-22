@@ -21,6 +21,7 @@ import {
 } from "../../../routes/generate/generate-route-utils.js";
 import { addLocationEntry } from "../../game/journal.service.js";
 import { getGameMapsFromMeta, syncGameMapMetaPartyPosition } from "../../game/map-position.service.js";
+import { advanceDateOnClockRollover } from "../../game/tracker-day-rollover.js";
 import { updateJournal } from "../game-journal-runtime.js";
 import type { AgentResultEffectDeps } from "./types.js";
 
@@ -52,6 +53,17 @@ export async function applyWorldStateResult(result: AgentResult, deps: AgentResu
       const value = coerceGameStateTextValue(gs[field]);
       if (value !== null) proposed[field] = value;
       else if (world.patchScope === "full") proposed[field] = coerceGameStateTextValue(previous?.[field]);
+    }
+    if (proposed.date !== undefined || proposed.time !== undefined) {
+      const prevDate = coerceGameStateTextValue(previous?.date);
+      const prevTime = coerceGameStateTextValue(previous?.time);
+      const nextDate = advanceDateOnClockRollover(
+        prevDate,
+        prevTime,
+        coerceGameStateTextValue(proposed.date) ?? prevDate,
+        coerceGameStateTextValue(proposed.time) ?? prevTime,
+      );
+      if (nextDate !== null) proposed.date = nextDate;
     }
     if (gs.worldCustomFields !== undefined) {
       proposed.worldCustomFields = isTrackerRowsUpdate(gs.worldCustomFields)
