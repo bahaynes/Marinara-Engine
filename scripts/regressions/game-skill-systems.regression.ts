@@ -5,6 +5,8 @@
 //      switched every system off and gets no skills at all.
 //   2. A ruleset game's reminder lists no skill-system skills: the ruleset checks its own, and a
 //      second list (D&D by default) taught the Game Master names the ruleset does not have.
+//   3. Nor any other fork D&D coaching: the Inspiration tag and the natural-1 failing-forward
+//      block, which reached ruleset games regardless of the skill-system switch.
 // ──────────────────────────────────────────────
 
 import assert from "node:assert/strict";
@@ -43,5 +45,14 @@ assert.ok(
   !buildGmFormatReminder({ ...base, ruleset: parsed.definition } as ReminderContext).includes(SKILLS_LINE),
   "a ruleset game lists no skill-system skills",
 );
+
+// ── 3. No Inspiration or d20 coaching in a ruleset game ──
+
+const plain = buildGmFormatReminder(base);
+const ruled = buildGmFormatReminder({ ...base, ruleset: parsed.definition } as ReminderContext);
+for (const marker of ["[inspiration:", "Natural 1", "FAILING FORWARD"]) {
+  assert.ok(plain.includes(marker), `a game without a ruleset keeps ${marker}`);
+  assert.ok(!ruled.includes(marker), `a ruleset game drops ${marker}`);
+}
 
 console.log("game-skill-systems regression passed");
