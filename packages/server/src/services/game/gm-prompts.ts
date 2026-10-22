@@ -2192,7 +2192,8 @@ export function buildGmFormatReminder(
       `- [state: exploration|dialogue|combat|travel_rest]${ctx.combatStyle === "triage" ? ` (for this game's triage combat style, write [state: combat patient="Exact Patient Name"] instead — see the patient-naming rule above)` : ""} - only on actual mode transitions. Before emitting [state: combat], check the scene: if the party is mid-conversation, processing grief or emotional fallout, or otherwise not at a natural action beat, let that beat land first — don't interrupt an emotional or dialogue-driven moment to force a fight or trauma case unless the scene itself is producing the emergency right now (an attack lands, a patient crashes, etc). If you're planning to use [state: combat], this one ALWAYS has to be at the end of the turn, as it initiates a new combat generation and UI.`,
       `- [reputation: npc="Name" action="helped"] - when an NPC's tracked stance changes because of what happened. When two tracked people share a name, add the one you mean: id="..." as listed.`,
       `- [party_change: character="Exact Character Name" change="add|remove"] - only when someone truly joins or leaves the party. Use remove when a party member dies, permanently departs, or is no longer traveling with the player.`,
-      ...(ctx.enableInspiration === false
+      // Fork: Inspiration is a D&D mechanic; a ruleset game spends only what its own rules define.
+      ...(ctx.enableInspiration === false || ctx.ruleset
         ? []
         : [
             `- [inspiration: +1] - award 1 Inspiration point to the player (max 4) when they demonstrate clever problem-solving, take a bold in-character risk, make an exceptional recovery, or land a heroic narrative beat. When the player is below 4 inspiration points, actively look for opportunities to reward genuine creativity and roleplay so they have narrative resources to spend.`,
@@ -2313,7 +2314,8 @@ export function buildGmFormatReminder(
       );
   }
 
-  if (S)
+  // Fork: d20 coaching (natural 1s, trained professionals); a ruleset brings its own GM text.
+  if (S && !ctx.ruleset)
     lines.push(
       ``,
       `CONSEQUENCES & FAILING FORWARD:`,
