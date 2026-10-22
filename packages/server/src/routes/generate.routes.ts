@@ -2446,6 +2446,11 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
         impersonate: input.impersonate,
         impersonateBlockAgents: input.impersonateBlockAgents,
       });
+      // fork: with impersonateUseChatPrompt, an impersonate is built from the chat's own prompt
+      // (preset sections and agent context) so it shares the reply's prompt cache and sees the
+      // same context. chatEnableAgents still decides whether agents run on the impersonated turn.
+      const impersonateWithChatPrompt = input.impersonate === true && chatMeta.impersonateUseChatPrompt === true;
+      const promptEnableAgents = impersonateWithChatPrompt ? chatMeta.enableAgents === true : chatEnableAgents;
       const roleplayCommandAgentIds = new Set<string>();
       if (chatMode === "roleplay" && !input.impersonate) {
         if (isRoleplayCommandAllowed(chatMeta, "illustrate", null)) roleplayCommandAgentIds.add("illustrator");
@@ -2481,7 +2486,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
         .filter((agentId) => !(gameSpotifyMusicEnabled && agentId === "spotify"));
       const customAgentImportsEnabled = (await getCustomAgentImportPolicy(app.db)).enabled;
       const allConfiguredPromptAgents =
-        (chatEnableAgents && rawChatActiveAgentIds.length > 0) || roleplayCommandAgentIds.size > 0
+        (promptEnableAgents && rawChatActiveAgentIds.length > 0) || roleplayCommandAgentIds.size > 0
           ? await agentsStore.list()
           : [];
       const skippedImportedPromptAgents = customAgentImportsEnabled
@@ -2760,7 +2765,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
         chatPromptPresetId,
         connectionPromptPresetId: conn.promptPresetId,
         impersonate: input.impersonate,
-        impersonatePromptPresetId: input.impersonatePresetId,
+        impersonatePromptPresetId: impersonateWithChatPrompt ? null : input.impersonatePresetId,
       });
       let presetId: string | undefined;
       let resolvedPreset: Awaited<ReturnType<typeof presets.getById>> | null = null;
@@ -3398,7 +3403,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
               },
             });
         const runtimeSectionEligibleAgentTypes = buildRuntimeAgentSectionEligibleTypes({
-          enableAgents: chatEnableAgents,
+          enableAgents: promptEnableAgents,
           activeAgentIds: chatActiveAgentIds,
           chatMode,
           configuredAgents: pipelineConfiguredPromptAgents.map((agent) => ({
@@ -3407,7 +3412,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
             settings: agent.settings,
           })),
         });
-        const longTermMemoryListed = chatEnableAgents && chatActiveAgentIds.includes("long-term-memory");
+        const longTermMemoryListed = promptEnableAgents && chatActiveAgentIds.includes("long-term-memory");
         if (longTermMemoryListed) {
           runtimeSectionEligibleAgentTypes.add("long-term-memory");
         }
@@ -4107,7 +4112,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
             chatSummary: activeChatSummary,
             chatSummaryReaders,
             ...(advancedMemoryEnabled ? { advancedMemory: {}, deferAdvancedMemory: true } : {}),
-            enableAgents: chatEnableAgents,
+            enableAgents: promptEnableAgents,
             activeAgentIds: chatActiveAgentIds,
             activeLorebookIds: chatActiveLorebookIds,
             forcedLorebookEntryIds: ownerSpatialProjection?.lorebookEntryIds ?? [],
@@ -4133,7 +4138,8 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
             idleDuration: promptIdleDuration,
             timeZone: promptTimeZone,
             impersonate: input.impersonate === true,
-            preserveImpersonatePresetSections: input.impersonate === true && presetSource === "impersonate",
+            preserveImpersonatePresetSections:
+              input.impersonate === true && (presetSource === "impersonate" || impersonateWithChatPrompt),
             deferCharacterMacros,
             decisions: promptMacroContext.decisions,
             lorebookDecisions,
@@ -7114,7 +7120,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
 
         injectCommittedTrackerContext({
           messages: finalMessages,
-          chatEnableAgents,
+          chatEnableAgents: promptEnableAgents,
           activeAgentIds: chatActiveAgentIds,
           latestGameState,
           beholderState: latestBeholderState,
