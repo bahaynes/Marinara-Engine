@@ -579,7 +579,9 @@ try {
             !line.startsWith("- Do not use roll_dice for"),
         )
         .join("\n");
-    assert.equal(strip(reminder), strip(legacyReminder));
+    // Fork: the Inspiration tag and failing-forward coaching stay out of ruleset games.
+    const forkCoaching = /\n- \[inspiration:[^\n]*|\n\nCONSEQUENCES & FAILING FORWARD:(?:\n- [^\n]*){4}/g;
+    assert.equal(strip(reminder), strip(legacyReminder.replace(forkCoaching, "")));
 
     // The tool is still there for damage and the like, but it is never how a check is recorded.
     assert.match(reminder, /Do not use roll_dice for an ability check, skill check or saving throw/);

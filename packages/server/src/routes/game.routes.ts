@@ -10341,7 +10341,7 @@ export async function gameRoutes(app: FastifyInstance, options: GameRouteOptions
       return reply.code(400).send({ error: "No failed skill check found on that message to reroll." });
     }
     const setupConfig = meta.gameSetupConfig as GameSetupConfig | null;
-    if (setupConfig?.enableInspiration === false) {
+    if (setupConfig?.enableInspiration === false || meta.gameRuleset) {
       return reply.code(400).send({ error: "Inspiration is disabled for this game." });
     }
 
