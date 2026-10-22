@@ -6114,9 +6114,6 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
               disabledSkillIds: Array.isArray(chatMeta.gameDisabledSkills)
                 ? (chatMeta.gameDisabledSkills as string[])
                 : null,
-              combatStyle: (chatMeta.combatStyle as string | null) ?? null,
-              genre: gmCtx.genre,
-              setting: gmCtx.setting,
             }),
             // A package that brought its own inventory takes the built-in one out of the prompt.
             // Dungeon, cave and station maps are the Overworld RPG's; Classic Game Mode never opens one.
@@ -9531,17 +9528,15 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                   characterId: roleplayCallerId,
                   interruptAvailable: Boolean(roleplayInterruptionTarget),
                   video: roleplayVideoOffer,
-                activeSkills: getActiveGameSkills({
-                  enabledSystemIds: Array.isArray(chatMeta.gameSkillSystems)
-                    ? (chatMeta.gameSkillSystems as string[])
-                    : null,
-                  disabledSkillIds: Array.isArray(chatMeta.gameDisabledSkills)
-                    ? (chatMeta.gameDisabledSkills as string[])
-                    : null,
-                  combatStyle: (chatMeta.combatStyle as string | null) ?? null,
-                  genre: (chatMeta.genre as string | null) ?? null,
-                  setting: (chatMeta.setting as string | null) ?? null,
+                  activeSkills: getActiveGameSkills({
+                    enabledSystemIds: Array.isArray(chatMeta.gameSkillSystems)
+                      ? (chatMeta.gameSkillSystems as string[])
+                      : null,
+                    disabledSkillIds: Array.isArray(chatMeta.gameDisabledSkills)
+                      ? (chatMeta.gameDisabledSkills as string[])
+                      : null,
                   }),
+                }),
                 roleplayRulesetReminder,
               ]
                 .filter(Boolean)
