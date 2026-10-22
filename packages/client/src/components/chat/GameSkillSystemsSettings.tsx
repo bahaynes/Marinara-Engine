@@ -1,15 +1,9 @@
-import { useMemo, useState } from "react";
-import { BookOpen, Check, Search } from "lucide-react";
-import {
-  GAME_SKILL_SYSTEMS,
-  resolveDefaultGameSkillSystemIds,
-  type Chat,
-  type GameAbilityKey,
-  type GameSkillDefinition,
-} from "@marinara-engine/shared";
+import { useMemo, useState, type CSSProperties } from "react";
+import { Check, Dices, Search } from "lucide-react";
+import { GAME_SKILL_SYSTEMS, type Chat, type GameAbilityKey, type GameSkillDefinition } from "@marinara-engine/shared";
 import { useUpdateChatMetadata } from "../../hooks/use-chats";
 import { cn } from "../../lib/utils";
-import { AgentSettingsCard } from "./AgentSettingsControls";
+import { ChatSettingsSection } from "../../features/chat-settings/ChatSettingsSection";
 import { SettingsSwitch } from "../panels/settings/SettingControls";
 import { useTranslation as useUiTranslation } from "react-i18next";
 
@@ -52,7 +46,7 @@ const ABILITY_TABS: Array<{ key: "all" | GameAbilityKey; label: string }> = [
   { key: "str", label: "STR" },
 ];
 
-export function GameSkillSystemsSettings({ chat }: { chat: Chat }) {
+export function GameSkillSystemsSettings({ chat, style }: { chat: Chat; style?: CSSProperties }) {
   const { t: localizeUi } = useUiTranslation();
   const updateMeta = useUpdateChatMetadata({ serialize: true });
   const metadata = chat.metadata;
@@ -60,22 +54,11 @@ export function GameSkillSystemsSettings({ chat }: { chat: Chat }) {
   const [search, setSearch] = useState("");
   const [selectedAbility, setSelectedAbility] = useState<"all" | GameAbilityKey>("all");
 
-  const defaultSystems = useMemo(
-    () =>
-      resolveDefaultGameSkillSystemIds({
-        combatStyle: metadata.combatStyle as string | null,
-        genre: metadata.gameGenre as string | null,
-        setting: metadata.gameSetting as string | null,
-      }),
-    [metadata.combatStyle, metadata.gameGenre, metadata.gameSetting],
+  // Unset is plain d20 checks; a skill system is an opt-in enhancement.
+  const activeSystemIds = useMemo(
+    () => (Array.isArray(metadata.gameSkillSystems) ? (metadata.gameSkillSystems as string[]) : []),
+    [metadata.gameSkillSystems],
   );
-
-  const activeSystemIds = useMemo(() => {
-    if (Array.isArray(metadata.gameSkillSystems)) {
-      return metadata.gameSkillSystems as string[];
-    }
-    return defaultSystems;
-  }, [metadata.gameSkillSystems, defaultSystems]);
 
   const disabledSkillIds = useMemo(() => {
     if (Array.isArray(metadata.gameDisabledSkills)) {
@@ -161,186 +144,194 @@ export function GameSkillSystemsSettings({ chat }: { chat: Chat }) {
   }, [activeSystemIds, disabledSkillIds]);
 
   return (
-    <div className="mb-3" data-game-skill-systems>
-      <AgentSettingsCard
-        id={`${chat.id}:game-skill-systems`}
-        icon={<BookOpen size="0.75rem" className="mt-0.5 text-[var(--primary)]" />}
-        title={localizeUi("ui.chat.gameskillsystemssettings.skillSystemsRepertoire")}
-        description={localizeUi("ui.chat.gameskillsystemssettings.value1ActiveSkillsInGmCheckRepertoire", {
-          value1: totalActiveSkillCount,
-        })}
-        initialOpen={false}
-      >
-        <div className="space-y-3 pt-1">
-          {/* System Toggles */}
-          <div className="space-y-2">
-            <span className="text-[11px] font-medium tracking-wide uppercase text-[var(--muted-foreground)]">
-              {localizeUi("ui.chat.gameskillsystemssettings.activeSkillSystems")}
-            </span>
-            <div className="grid gap-2 sm:grid-cols-2">
-              {GAME_SKILL_SYSTEMS.map((system) => {
-                const isActive = activeSystemIds.includes(system.id);
-                return (
-                  <div
-                    key={system.id}
-                    className={cn(
-                      "flex flex-col justify-between rounded-lg border p-2.5 transition-colors",
-                      isActive
-                        ? "border-[var(--primary)]/40 bg-[var(--primary)]/5"
-                        : "border-[var(--border)] bg-[var(--background)]/60 opacity-70",
-                    )}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-xs font-semibold text-[var(--foreground)]">{system.name}</span>
-                          <span className="rounded bg-[var(--muted)] px-1.5 py-0.2 text-[10px] text-[var(--muted-foreground)]">
-                            {system.skills.length} {localizeUi("ui.chat.gameskillsystemssettings.skills")}
-                          </span>
-                        </div>
-                        <p className="mt-1 text-[11px] leading-tight text-[var(--muted-foreground)]">
-                          {system.description}
-                        </p>
-                      </div>
-                      <SettingsSwitch
-                        ariaLabel={system.name}
-                        checked={isActive}
-                        onChange={() => toggleSystem(system.id)}
-                        className="scale-90"
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Party Mode */}
-          <div
-            className={cn(
-              "flex items-start justify-between gap-2 rounded-lg border p-2.5 transition-colors",
-              partyModeEnabled
-                ? "border-[var(--primary)]/40 bg-[var(--primary)]/5"
-                : "border-[var(--border)] bg-[var(--background)]/60 opacity-70",
-            )}
-          >
-            <div>
-              <span className="text-xs font-semibold text-[var(--foreground)]">
-                {localizeUi("ui.chat.gameskillsystemssettings.partyMode")}
-              </span>
-              <p className="mt-1 text-[11px] leading-tight text-[var(--muted-foreground)]">
-                {localizeUi("ui.chat.gameskillsystemssettings.partyModeDescription")}
-              </p>
-            </div>
-            <SettingsSwitch
-              ariaLabel={localizeUi("ui.chat.gameskillsystemssettings.partyMode")}
-              checked={partyModeEnabled}
-              onChange={togglePartyMode}
-              className="scale-90"
-            />
-          </div>
-
-          {/* Search & Ability Filters */}
-          <div className="space-y-2 pt-1">
-            <div className="relative">
-              <Search
-                size="0.75rem"
-                className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)]"
-              />
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder={localizeUi("ui.chat.gameskillsystemssettings.searchSkillsEGDiagnosticsPoliticsPerception")}
-                className="w-full rounded-md border border-[var(--border)] bg-[var(--background)] py-1.5 pl-8 pr-3 text-xs text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:border-[var(--primary)] focus:outline-none"
-              />
-            </div>
-
-            {/* Ability Filter Chips */}
-            <div className="flex flex-wrap gap-1">
-              {ABILITY_TABS.map((tab) => {
-                const isSelected = selectedAbility === tab.key;
-                return (
-                  <button
-                    key={tab.key}
-                    type="button"
-                    onClick={() => setSelectedAbility(tab.key)}
-                    className={cn(
-                      "rounded px-2 py-0.5 text-[11px] font-medium transition-colors",
-                      isSelected
-                        ? "bg-[var(--primary)] text-[var(--primary-foreground)]"
-                        : "bg-[var(--muted)] text-[var(--muted-foreground)] hover:text-[var(--foreground)]",
-                    )}
-                  >
-                    {tab.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Skills Glossary List */}
-          <div className="max-h-72 space-y-1.5 overflow-y-auto pr-1">
-            {displayedSkills.length === 0 ? (
-              <div className="py-4 text-center text-xs text-[var(--muted-foreground)]">
-                {localizeUi("ui.chat.gameskillsystemssettings.noMatchingSkillsFound")}
-              </div>
-            ) : (
-              displayedSkills.map((skill) => {
-                const isDisabled = disabledSkillIds.has(skill.id.toLowerCase());
-                const color = ABILITY_COLORS[skill.ability] ?? {
-                  bg: "bg-gray-500/10",
-                  text: "text-gray-500",
-                  border: "border-gray-500/30",
-                };
-
-                return (
-                  <div
-                    key={skill.id}
-                    onClick={() => toggleSkill(skill.id)}
-                    className={cn(
-                      "group flex cursor-pointer items-start gap-2.5 rounded-md border border-[var(--border)]/70 p-2 text-left transition-colors hover:border-[var(--primary)]/40 hover:bg-[var(--accent)]/40",
-                      isDisabled && "opacity-40 grayscale",
-                    )}
-                  >
-                    <div className="mt-0.5 shrink-0">
-                      <div
-                        className={cn(
-                          "flex h-4 w-4 items-center justify-center rounded border transition-colors",
-                          !isDisabled
-                            ? "border-[var(--primary)] bg-[var(--primary)] text-[var(--primary-foreground)]"
-                            : "border-[var(--border)] bg-[var(--background)]",
-                        )}
-                      >
-                        {!isDisabled && <Check size="0.65rem" strokeWidth={3} />}
-                      </div>
-                    </div>
-
-                    <div className="min-w-0 flex-1">
+    <ChatSettingsSection
+      id={`${chat.mode}-skill-checks`}
+      style={style}
+      label={localizeUi("ui.chat.gameskillsystemssettings.skillChecks")}
+      icon={<Dices size="0.875rem" />}
+      count={totalActiveSkillCount || undefined}
+      help={localizeUi("ui.chat.gameskillsystemssettings.skillChecksHelp")}
+      contentClassName="pt-1.5"
+    >
+      <div className="space-y-3" data-game-skill-systems>
+        {/* System Toggles */}
+        <div className="space-y-2">
+          <span className="text-[11px] font-medium tracking-wide uppercase text-[var(--muted-foreground)]">
+            {localizeUi("ui.chat.gameskillsystemssettings.activeSkillSystems")}
+          </span>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {GAME_SKILL_SYSTEMS.map((system) => {
+              const isActive = activeSystemIds.includes(system.id);
+              return (
+                <div
+                  key={system.id}
+                  className={cn(
+                    "flex flex-col justify-between rounded-lg border p-2.5 transition-colors",
+                    isActive
+                      ? "border-[var(--primary)]/40 bg-[var(--primary)]/5"
+                      : "border-[var(--border)] bg-[var(--background)]/60 opacity-70",
+                  )}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
                       <div className="flex items-center gap-1.5">
-                        <span className="text-xs font-medium text-[var(--foreground)]">{skill.name}</span>
-                        <span
-                          className={cn(
-                            "rounded border px-1 py-0.1 text-[9px] font-bold uppercase tracking-wider",
-                            color.bg,
-                            color.text,
-                            color.border,
-                          )}
-                        >
-                          {skill.ability}
+                        <span className="text-xs font-semibold text-[var(--foreground)]">{system.name}</span>
+                        <span className="rounded bg-[var(--muted)] px-1.5 py-0.2 text-[10px] text-[var(--muted-foreground)]">
+                          {system.skills.length} {localizeUi("ui.chat.gameskillsystemssettings.skills")}
                         </span>
                       </div>
-                      <p className="mt-0.5 text-[11px] leading-tight text-[var(--muted-foreground)]">
-                        {skill.description}
+                      <p className="mt-1 text-[11px] leading-tight text-[var(--muted-foreground)]">
+                        {system.description}
                       </p>
                     </div>
+                    <SettingsSwitch
+                      ariaLabel={system.name}
+                      checked={isActive}
+                      onChange={() => toggleSystem(system.id)}
+                      className="scale-90"
+                    />
                   </div>
-                );
-              })
-            )}
+                </div>
+              );
+            })}
           </div>
         </div>
-      </AgentSettingsCard>
-    </div>
+
+        {/* Party Mode */}
+        <div
+          className={cn(
+            "flex items-start justify-between gap-2 rounded-lg border p-2.5 transition-colors",
+            partyModeEnabled
+              ? "border-[var(--primary)]/40 bg-[var(--primary)]/5"
+              : "border-[var(--border)] bg-[var(--background)]/60 opacity-70",
+          )}
+        >
+          <div>
+            <span className="text-xs font-semibold text-[var(--foreground)]">
+              {localizeUi("ui.chat.gameskillsystemssettings.partyMode")}
+            </span>
+            <p className="mt-1 text-[11px] leading-tight text-[var(--muted-foreground)]">
+              {localizeUi("ui.chat.gameskillsystemssettings.partyModeDescription")}
+            </p>
+          </div>
+          <SettingsSwitch
+            ariaLabel={localizeUi("ui.chat.gameskillsystemssettings.partyMode")}
+            checked={partyModeEnabled}
+            onChange={togglePartyMode}
+            className="scale-90"
+          />
+        </div>
+
+        {activeSystemIds.length === 0 ? (
+          <p className="text-[11px] leading-tight text-[var(--muted-foreground)]">
+            {localizeUi("ui.chat.gameskillsystemssettings.plainD20")}
+          </p>
+        ) : (
+          <>
+            {/* Search & Ability Filters */}
+            <div className="space-y-2 pt-1">
+              <div className="relative">
+                <Search
+                  size="0.75rem"
+                  className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)]"
+                />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder={localizeUi(
+                    "ui.chat.gameskillsystemssettings.searchSkillsEGDiagnosticsPoliticsPerception",
+                  )}
+                  className="w-full rounded-md border border-[var(--border)] bg-[var(--background)] py-1.5 pl-8 pr-3 text-xs text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:border-[var(--primary)] focus:outline-none"
+                />
+              </div>
+
+              {/* Ability Filter Chips */}
+              <div className="flex flex-wrap gap-1">
+                {ABILITY_TABS.map((tab) => {
+                  const isSelected = selectedAbility === tab.key;
+                  return (
+                    <button
+                      key={tab.key}
+                      type="button"
+                      onClick={() => setSelectedAbility(tab.key)}
+                      className={cn(
+                        "rounded px-2 py-0.5 text-[11px] font-medium transition-colors",
+                        isSelected
+                          ? "bg-[var(--primary)] text-[var(--primary-foreground)]"
+                          : "bg-[var(--muted)] text-[var(--muted-foreground)] hover:text-[var(--foreground)]",
+                      )}
+                    >
+                      {tab.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Skills Glossary List */}
+            <div className="max-h-72 space-y-1.5 overflow-y-auto pr-1">
+              {displayedSkills.length === 0 ? (
+                <div className="py-4 text-center text-xs text-[var(--muted-foreground)]">
+                  {localizeUi("ui.chat.gameskillsystemssettings.noMatchingSkillsFound")}
+                </div>
+              ) : (
+                displayedSkills.map((skill) => {
+                  const isDisabled = disabledSkillIds.has(skill.id.toLowerCase());
+                  const color = ABILITY_COLORS[skill.ability] ?? {
+                    bg: "bg-gray-500/10",
+                    text: "text-gray-500",
+                    border: "border-gray-500/30",
+                  };
+
+                  return (
+                    <div
+                      key={skill.id}
+                      onClick={() => toggleSkill(skill.id)}
+                      className={cn(
+                        "group flex cursor-pointer items-start gap-2.5 rounded-md border border-[var(--border)]/70 p-2 text-left transition-colors hover:border-[var(--primary)]/40 hover:bg-[var(--accent)]/40",
+                        isDisabled && "opacity-40 grayscale",
+                      )}
+                    >
+                      <div className="mt-0.5 shrink-0">
+                        <div
+                          className={cn(
+                            "flex h-4 w-4 items-center justify-center rounded border transition-colors",
+                            !isDisabled
+                              ? "border-[var(--primary)] bg-[var(--primary)] text-[var(--primary-foreground)]"
+                              : "border-[var(--border)] bg-[var(--background)]",
+                          )}
+                        >
+                          {!isDisabled && <Check size="0.65rem" strokeWidth={3} />}
+                        </div>
+                      </div>
+
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs font-medium text-[var(--foreground)]">{skill.name}</span>
+                          <span
+                            className={cn(
+                              "rounded border px-1 py-0.1 text-[9px] font-bold uppercase tracking-wider",
+                              color.bg,
+                              color.text,
+                              color.border,
+                            )}
+                          >
+                            {skill.ability}
+                          </span>
+                        </div>
+                        <p className="mt-0.5 text-[11px] leading-tight text-[var(--muted-foreground)]">
+                          {skill.description}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </>
+        )}
+      </div>
+    </ChatSettingsSection>
   );
 }
