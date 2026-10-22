@@ -249,30 +249,12 @@ export const MEDICAL_SKILL_SYSTEM: GameSkillSystem = {
 
 export const GAME_SKILL_SYSTEMS: readonly GameSkillSystem[] = [DND_5E_SKILL_SYSTEM, MEDICAL_SKILL_SYSTEM];
 
-export function resolveDefaultGameSkillSystemIds(context?: {
-  combatStyle?: string | null;
-  genre?: string | null;
-  setting?: string | null;
-}): string[] {
-  const isMedical =
-    context?.combatStyle === "triage" ||
-    /medical|hospital|clinic|doctor|nurse|er\b|emergency/i.test(context?.genre ?? "") ||
-    /medical|hospital|clinic|doctor|nurse|er\b|emergency/i.test(context?.setting ?? "");
-
-  return isMedical ? ["medical"] : ["dnd5e"];
-}
-
 export function getActiveGameSkills(options?: {
   enabledSystemIds?: readonly string[] | null;
   disabledSkillIds?: readonly string[] | null;
-  combatStyle?: string | null;
-  genre?: string | null;
-  setting?: string | null;
 }): GameSkillDefinition[] {
-  // Unset means the genre's default; an empty list is a chat that turned every system off.
-  const enabledSystemIds = Array.isArray(options?.enabledSystemIds)
-    ? options.enabledSystemIds
-    : resolveDefaultGameSkillSystemIds(options);
+  // Skill systems are opt-in enhancements; a chat that chose none plays plain d20 checks.
+  const enabledSystemIds = options?.enabledSystemIds ?? [];
 
   const disabledSet = new Set(
     (options?.disabledSkillIds ?? []).map((id) =>

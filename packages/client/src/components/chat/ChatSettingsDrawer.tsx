@@ -746,6 +746,7 @@ const CHAT_SETTINGS_ORDER = {
   promptPreset: -1200,
   advancedParameters: -1100,
   combatStyle: -475,
+  skillChecks: -470,
   persona: -1000,
   characters: -900,
   groupChat: -800,
@@ -6005,6 +6006,11 @@ export function ChatSettingsDrawer({
             </div>
           )}
 
+          {/* Fork: skill checks; a ruleset game checks the ruleset's own skills. */}
+          {((isGame && !metadata.gameRuleset) || isRoleplayMode) && (
+            <GameSkillSystemsSettings chat={chat} style={{ order: CHAT_SETTINGS_ORDER.skillChecks }} />
+          )}
+
           {/* Combat Style — game mode only */}
           {isGame && (
             <CombatStyleSection
@@ -8481,8 +8487,6 @@ export function ChatSettingsDrawer({
               count={isGame ? gameAgentFeatureCount : visibleActiveAgentIds.length}
               help={localizeUi("ui.chat.chatsettingsdrawer.whenEnabledAiAgentsRunAutomaticallyDuringGenerationTo")}
             >
-              {/* A ruleset game checks the ruleset's own skills. */}
-              {((isGame && !metadata.gameRuleset) || isRoleplayMode) && <GameSkillSystemsSettings chat={chat} />}
               {isRoleplayMode && (
                 <RoleplayCommandsSettings
                   chat={chat}
