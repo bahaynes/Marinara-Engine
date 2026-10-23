@@ -3351,12 +3351,6 @@ function buildAgentExtras(
     parts.push(formatBeholderRequestContext(context.memory._beholderState, context.persona?.name ?? "User"));
   }
 
-  if (sources.trackerData && context.gameState) {
-    parts.push(`<current_game_state>`);
-    parts.push(JSON.stringify(compactGameStateForAgentContext(context.gameState, agentTypes)));
-    parts.push(`</current_game_state>`);
-  }
-
   if (
     agentTypes.some((type) =>
       ["world-state", "character-tracker", "custom-tracker", "inventory-tracker"].includes(type),
@@ -3672,6 +3666,14 @@ function buildAgentExtras(
       normalizeAgentContextWrapFormat(context.wrapFormat),
     );
     if (wrapped) parts.push(wrapped);
+  }
+
+  // custom-mods: the game state changes every turn, so it goes last. Ahead of the other extras it made
+  // a local server re-read them on every call (Lorebook Keeper: ~34k chars of existing entries).
+  if (sources.trackerData && context.gameState) {
+    parts.push(`<current_game_state>`);
+    parts.push(JSON.stringify(compactGameStateForAgentContext(context.gameState, agentTypes)));
+    parts.push(`</current_game_state>`);
   }
 
   return parts.join("\n");
