@@ -8,9 +8,11 @@ import {
   type AgentExecConfig,
 } from "../../packages/server/src/services/agents/agent-executor.js";
 import {
+  createAgentPipeline,
   isAgentEligibleForPrefill,
   type ResolvedAgent,
 } from "../../packages/server/src/services/agents/agent-pipeline.js";
+import { registerCapabilityService } from "../../packages/server/src/services/capability-packages/capability-service-registry.service.js";
 import {
   BaseLLMProvider,
   type ChatCompletionResult,
@@ -95,5 +97,24 @@ assert.equal(
   "a hosted model is never prefilled, whatever its name",
 );
 assert.equal(isAgentEligibleForPrefill(resolved({ localEndpoint: true, phase: "parallel" })), false);
+
+// The real post-processing run carries capability runtime context (a package's prepareContext) in its
+// system prompt, so the pipeline's prefill must too, or its prompt diverges at that block.
+const releaseRuntime = registerCapabilityService("agent-runtime:world-state", {
+  prepareContext: () => ({ roster: [["n1", "Lena"]] }),
+});
+const pipelineProvider = new RecordingProvider();
+createAgentPipeline(
+  [resolved({ provider: pipelineProvider, model: "local-model", localEndpoint: true })],
+  context(),
+).prefillPostAgents();
+for (let i = 0; i < 50 && pipelineProvider.calls.length === 0; i++) await new Promise((r) => setTimeout(r, 10));
+releaseRuntime();
+assert.equal(pipelineProvider.calls.length, 1);
+assert.match(
+  String(pipelineProvider.calls[0]!.messages[0]!.content),
+  /<agent_runtime_context agent="world-state">[^<]*Lena/u,
+  "the prefill carries the capability runtime context the real call sends",
+);
 
 console.log("agent-prefill regression passed");

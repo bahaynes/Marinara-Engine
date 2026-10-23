@@ -25,6 +25,7 @@ import { logger } from "../../lib/logger.js";
 import { failureLevel } from "../../lib/log-context.js";
 import { createAgentConcurrencyLimiter, settleAgentJobsWithConcurrencyLimit } from "./agent-concurrency.js";
 import { getCustomLorebookReadBehindMessages } from "../../routes/generate/lorebook-keeper-utils.js";
+import { prepareCapabilityAgentContexts } from "../capability-packages/capability-agent-runtime.service.js";
 export { settleAgentJobsWithConcurrencyLimit } from "./agent-concurrency.js";
 
 /** A fully resolved agent ready for execution. */
@@ -532,10 +533,13 @@ export function createAgentPipeline(
         eligibleAgents.length,
         eligibleAgents.map((a) => a.type).join(", "),
       );
-      const contextFor = (agent: ResolvedAgent) =>
-        resolveContext
-          ? Promise.resolve(resolveContext(agent, buildAgentContext(agent, baseContext)))
-          : Promise.resolve(buildAgentContext(agent, baseContext));
+      // custom-mods: the real post-processing call carries capability runtime context (NPC Registry's
+      // roster) in its system prompt. Without it here the prefilled prompt diverges early and caches nothing.
+      const prefillContext = prepareCapabilityAgentContexts(eligibleAgents, baseContext);
+      const contextFor = async (agent: ResolvedAgent) => {
+        const context = buildAgentContext(agent, await prefillContext);
+        return resolveContext ? resolveContext(agent, context) : context;
+      };
       void Promise.all(
         groupByProviderModel(eligibleAgents)
           .flatMap(splitGroupForParallelJobs)
