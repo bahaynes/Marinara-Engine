@@ -2425,7 +2425,7 @@ export async function registerDryRunRoute(app: FastifyInstance) {
             [...advancedMemorySourceMessages].reverse().find((message) => message.role === "user")?.content,
           readOnly: true,
           cacheTtlMs:
-            chatMeta.advancedMemoryCacheWindow === true
+            chatMeta.advancedMemoryCacheWindow !== false
               ? (conn?.anthropicExtendedCacheTtl === "true" ? 60 : 5) * 60_000
               : undefined,
           toProviderMessages: (messages) =>
