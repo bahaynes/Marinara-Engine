@@ -9243,9 +9243,9 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
               audienceCharacterIds:
                 chatMode === "game" && !input.impersonate ? [GAME_MASTER_MEMORY_READER_ID] : audienceCharacterIds,
               audienceMode: input.impersonate ? "owner" : undefined,
-              // Fork: opt-in per chat; a lapsed cache re-cuts below the cap, which suits only cached chats.
+              // Fork: on unless the chat sets advancedMemoryCacheWindow: false; a lapsed cache re-cuts below the cap.
               cacheTtlMs:
-                chatMeta.advancedMemoryCacheWindow === true
+                chatMeta.advancedMemoryCacheWindow !== false
                   ? (conn.anthropicExtendedCacheTtl === "true" ? 60 : 5) * 60_000
                   : undefined,
               maxContext: effectiveMaxContext ?? connectionMaxContext,
