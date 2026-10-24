@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { stripTypeScriptTypes } from "node:module";
 import { setImmediate as nextTurn } from "node:timers/promises";
 import { runInNewContext } from "node:vm";
+import { parseRulesetDefinition } from "../../packages/shared/src/schemas/ruleset.schema.js";
 import { GENERATIVE_AUDIO_DEFAULTS } from "../../packages/shared/src/types/connection.js";
 import {
   ROLEPLAY_COMMAND_KEYS,
@@ -30,7 +31,6 @@ import { conversationPromptHistoryContent } from "../../packages/server/src/rout
 import { generateRoleplaySoundEffect } from "../../packages/server/src/routes/tts.routes.js";
 import { prepareRoleplayRoll } from "../../packages/server/src/services/generation/roleplay-rolls.js";
 import { prepareRoleplayInterruption } from "../../packages/server/src/services/generation/roleplay-interrupt.js";
-import type { RPGStatsConfig } from "../../packages/shared/src/types/character.js";
 import { buildCommittedTrackerContextBlock } from "../../packages/server/src/services/generation/committed-tracker-context.js";
 import {
   isDiceRollResult,
@@ -785,39 +785,40 @@ assert.equal(
   0,
 );
 
-const diceCharacters: { id: string; name: string; rpgStats?: RPGStatsConfig }[] = [
+// RP rolls take their modifiers from the pinned ruleset's character sheet (SRD 5.1 example here).
+const parsedRuleset = parseRulesetDefinition(
+  JSON.parse(readFileSync(new URL("../../docs/development/ruleset-5e-2014.example.json", import.meta.url), "utf8")),
+);
+assert.ok(parsedRuleset.ok);
+const fiveE = parsedRuleset.definition;
+const sheetFor = (skills: Record<string, string> = {}) => ({
+  [fiveE.id]: {
+    v: fiveE.sheet.version,
+    build: { abilities: { str: 12, dex: 8 }, skills, saves: {}, bonuses: {}, fields: { level: 1 }, lists: {} },
+  },
+});
+const diceCharacters: { id: string; name: string; rulesetSheets?: unknown }[] = [
   {
     id: "dottore",
     name: "Dottore",
-    rpgStats: {
-      enabled: true,
-      hp: { value: 10, max: 10 },
-      attributes: [
-        { name: "STR", value: 12 },
-        { name: "Dexterity", value: 8 },
-        { name: "Luck", value: 14 },
-      ],
-    },
+    rulesetSheets: sheetFor({ athletics: "proficient", sleight_of_hand: "expertise" }),
   },
   { id: "mari", name: "Mari" },
 ];
 const dice = (args: Record<string, unknown>) =>
-  prepareRoleplayRoll({ notation: "d20", character: "Dottore", ...args }, diceCharacters, "mari");
+  prepareRoleplayRoll({ notation: "d20", character: "Dottore", ...args }, diceCharacters, "mari", fiveE);
 assert.equal(dice({ attribute: "Strength" }).notation, "d20+1");
 assert.equal(dice({ attribute: "STR", notation: "d20+2" }).notation, "d20+3");
 assert.equal(dice({ attribute: "DEX" }).notation, "d20-1");
-assert.equal(dice({ attribute: "Luck" }).notation, "d20+2");
+assert.equal(dice({ attribute: "Luck" }).notation, "d20", "a check the ruleset does not know rolls plain");
 assert.equal(dice({ attribute: "Unknown" }).notation, "d20");
+assert.equal(
+  prepareRoleplayRoll({ notation: "d20", character: "Dottore", attribute: "STR" }, diceCharacters, "mari").notation,
+  "d20",
+  "no pinned ruleset rolls plain dice",
+);
 assert.equal(dice({ character: "Mari", attribute: "Strength" }).notation, "d20");
 assert.equal(dice({ character: undefined, attribute: "Strength" }).character, "Mari");
-assert.equal(
-  prepareRoleplayRoll(
-    { notation: "d20", attribute: "STR" },
-    [{ ...diceCharacters[0]!, rpgStats: { ...diceCharacters[0]!.rpgStats!, enabled: false } }],
-    "dottore",
-  ).notation,
-  "d20",
-);
 assert.throws(() => dice({ character: "Nobody", attribute: "Strength" }), /one chat participant/u);
 assert.throws(
   () =>
@@ -867,8 +868,8 @@ assert.throws(() => dice({ notation: "1d20+9007199254740971", attribute: "STR" }
 
 // Fuzzy participant matching resolves unambiguous prefix or token match (e.g. "Hera" -> "Hera-Zaire")
 const fuzzyParticipants = [
-  { id: "hera-id", name: "Hera-Zaire", rpgStats: diceCharacters[0]!.rpgStats },
-  { id: "loim-id", name: "Hero Loïm", rpgStats: diceCharacters[0]!.rpgStats },
+  { id: "hera-id", name: "Hera-Zaire" },
+  { id: "loim-id", name: "Hero Loïm" },
 ];
 assert.equal(
   prepareRoleplayRoll({ notation: "1d20", character: "Hera" }, fuzzyParticipants, "hera-id").character,
@@ -879,56 +880,20 @@ assert.equal(
   "Hero Loïm",
 );
 
-// Skill checks add proficiency like Game Mode: structured rpgStats first, description line as fallback.
-const trained = (rpgStats: Partial<RPGStatsConfig>, description?: string, skill = "Athletics") =>
-  prepareRoleplayRoll(
-    { notation: "d20", skill },
-    [
-      {
-        id: "t",
-        name: "T",
-        description,
-        rpgStats: { ...diceCharacters[0]!.rpgStats!, ...rpgStats },
-      },
-    ],
-    "t",
-  ).notation;
-assert.equal(trained({}), "d20+1", "untrained Athletics is STR only");
-assert.equal(trained({ proficiencies: { athletics: "proficient" } }), "d20+3", "level 1 proficiency adds +2");
-assert.equal(
-  trained({ proficiencies: { sleight_of_hand: "expertise" } }, undefined, "Sleight of Hand"),
-  "d20+3",
-  "expertise doubles, on a multi-word skill (DEX 8 is -1)",
-);
-assert.equal(trained({}, "Proficiencies: Athletics"), "d20+3", "the legacy description line still counts");
-
-// Formula breakdown properties are attached to the prepared roll object
-const preparedBreakdown = prepareRoleplayRoll(
-  { notation: "d20", skill: "Athletics", character: "T" },
-  [
-    {
-      id: "t",
-      name: "T",
-      rpgStats: {
-        ...diceCharacters[0]!.rpgStats!,
-        proficiencies: { athletics: "proficient" },
-      },
-    },
-  ],
-  "t",
-);
-assert.equal(preparedBreakdown.skill, "Athletics");
-assert.equal(preparedBreakdown.attribute, "STR");
-assert.equal(preparedBreakdown.attributeModifier, 1);
-assert.equal(preparedBreakdown.proficiency, 2);
+// Skill checks add the sheet's training tier (level 1 proficiency is +2; expertise doubles it).
+assert.equal(dice({ skill: "Perception" }).notation, "d20", "an untrained skill with a 10 WIS is plain");
+assert.equal(dice({ skill: "Athletics" }).notation, "d20+3", "STR +1 and proficiency +2");
+assert.equal(dice({ skill: "Sleight of Hand" }).notation, "d20+3", "DEX -1 and expertise +4");
+const preparedBreakdown = dice({ skill: "Athletics" });
 assert.equal(preparedBreakdown.bonus, 3);
+assert.equal(preparedBreakdown.reason, "Dottore · Athletics");
 
 // The native tool and text command reach the same real roller. Fix only the
 // random face, so the production path must supply every modifier and the DC.
 const executeRoll = async (args: Record<string, unknown>) => {
   const [result] = await executeToolCalls(
     [{ id: "roll", type: "function", function: { name: "roll_dice", arguments: JSON.stringify(args) } }],
-    { prepareDiceRoll: (input) => prepareRoleplayRoll(input, diceCharacters, "dottore") },
+    { prepareDiceRoll: (input) => prepareRoleplayRoll(input, diceCharacters, "dottore", fiveE) },
   );
   assert.ok(result);
   return { ...result, payload: JSON.parse(result.result) };
