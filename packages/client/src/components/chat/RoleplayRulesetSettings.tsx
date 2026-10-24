@@ -4,6 +4,13 @@ import { rulesetRefSchema, type Chat } from "@marinara-engine/shared";
 import { useTranslation as useUiTranslation } from "react-i18next";
 import { useUpdateChatMetadata } from "../../hooks/use-chats";
 import { useInstalledRulesets } from "../../hooks/use-capability-packages";
+import {
+  restoredRulesetLayers,
+  rulesetLayerChoices,
+  rulesetLayerOptions,
+  toggleRulesetLayer,
+} from "../../lib/ruleset-layers";
+import { cn } from "../../lib/utils";
 import { ChatSettingsSection } from "../../features/chat-settings/ChatSettingsSection";
 
 /** Pins an installed ruleset to a roleplay chat. `[roll: ...]` skill checks then take their
@@ -16,6 +23,16 @@ export function RoleplayRulesetSettings({ chat, style }: { chat: Chat; style?: C
   const rulesets = installed.data ?? [];
   const pin = rulesetRefSchema.safeParse(chat.metadata.gameRuleset);
   const pinnedId = pin.success ? pin.data.id : "";
+  // The variants the pinned ruleset ships (Inspiration, for one). They can be switched at any time here.
+  const pinned = pin.success ? rulesets.find((ruleset) => ruleset.definition.id === pin.data.id) : undefined;
+  const layerIds = pinned && pin.success ? restoredRulesetLayers(pinned.definition, pin.data.options) : [];
+  const layerChoices = pinned ? rulesetLayerChoices(pinned.definition, layerIds) : [];
+
+  const toggleLayer = (layerId: string) => {
+    if (!pinned || !pin.success) return;
+    const next = toggleRulesetLayer(pinned.definition, layerIds, layerId);
+    updateMeta.mutate({ id: chat.id, gameRuleset: { ...pin.data, options: rulesetLayerOptions(next) } });
+  };
 
   const choose = (id: string) => {
     const entry = rulesets.find((ruleset) => ruleset.definition.id === id);
@@ -64,6 +81,39 @@ export function RoleplayRulesetSettings({ chat, style }: { chat: Chat; style?: C
             pinnedId ? "ui.chat.roleplayrulesetsettings.sheetsHint" : "ui.chat.roleplayrulesetsettings.plainDice",
           )}
         </p>
+        {layerChoices.length > 0 && (
+          <div className="space-y-1.5 text-xs">
+            <span className="block font-medium text-[var(--foreground)]">
+              {localizeUi("game.ruleset.setup.layersHeading")}
+            </span>
+            <ul className="space-y-1.5">
+              {layerChoices.map((choice) => (
+                <li key={choice.layer.id}>
+                  <label className={cn("flex items-start gap-2", choice.blockedBy && "opacity-60")}>
+                    <input
+                      type="checkbox"
+                      checked={choice.checked}
+                      disabled={Boolean(choice.blockedBy)}
+                      onChange={() => toggleLayer(choice.layer.id)}
+                      className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--primary)]"
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="block font-medium text-[var(--foreground)]">{choice.layer.label}</span>
+                      {choice.layer.summary && (
+                        <span className="block text-[var(--muted-foreground)]">{choice.layer.summary}</span>
+                      )}
+                      {choice.blockedBy && (
+                        <span className="block text-[var(--muted-foreground)]">
+                          {localizeUi("game.ruleset.setup.layerBlocked", { layer: choice.blockedBy.label })}
+                        </span>
+                      )}
+                    </span>
+                  </label>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
     </ChatSettingsSection>
   );
