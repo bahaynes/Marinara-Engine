@@ -19,7 +19,7 @@ import {
 import { stripGameBranchDelimiters } from "./dice-branch.js";
 import { stripClockCommandTags } from "./clock-command-tag.js";
 import { stripSheetCommandTags } from "./sheet-command-tag.js";
-import { parseInspirationAwards, stripInspirationTags } from "../constants/game-skills.js";
+import { parseInspirationAwards, stripInspirationTags } from "../constants/inspiration.js";
 import { readResolvedInventoryTagBody, type ResolvedInventoryTag } from "./inventory-command-tag.js";
 import type { DirectionCommand, DirectionEffect, WidgetUpdate } from "../types/game.js";
 
