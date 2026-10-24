@@ -26,6 +26,7 @@ import { listCombatStyles, resolveCombatStyle } from "../game/combat-styles";
 import { AgentActivitySection } from "../agents/AgentActivitySection";
 import { withAgentActivityStatus } from "../agents/AgentActivityIcon";
 import { useKeepFocusedFieldAboveKeyboard } from "../../hooks/use-keep-focused-field-above-keyboard";
+import { RoleplayRulesetSettings } from "./RoleplayRulesetSettings";
 import { GameSkillSystemsSettings } from "./GameSkillSystemsSettings";
 import {
   X,
@@ -5828,9 +5829,10 @@ export function ChatSettingsDrawer({
           )}
 
           {/* Fork: skill checks; a ruleset game checks the ruleset's own skills. */}
-          {((isGame && !metadata.gameRuleset) || isRoleplayMode) && (
+          {isGame && !metadata.gameRuleset && (
             <GameSkillSystemsSettings chat={chat} style={{ order: CHAT_SETTINGS_ORDER.skillChecks }} />
           )}
+          {isRoleplayMode && <RoleplayRulesetSettings chat={chat} style={{ order: CHAT_SETTINGS_ORDER.skillChecks }} />}
 
           {/* Combat Style — game mode only */}
           {isGame && (
