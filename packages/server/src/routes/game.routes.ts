@@ -111,6 +111,7 @@ import { loadGameWorld, saveGameWorldSnapshot } from "../services/game/game-worl
 import { createConnectionsStorage } from "../services/storage/connections.storage.js";
 import { createCharactersStorage } from "../services/storage/characters.storage.js";
 import {
+  applyRpInspirationChange,
   buildRerolledSwipeExtra,
   buildRoleplayRerollMessages,
   findLatestFailedRoleplayRoll,
@@ -370,6 +371,7 @@ import {
   worldGeneratorReads,
   RULESET_REF_MAX_OPTIONS,
   type RulesetDefinition,
+  rpInspirationOf,
   type RulesetRef,
   normalizeIllustratorImagesPerGeneration,
   resolveGameImageDynamicPromptEnabled,
@@ -10261,8 +10263,6 @@ export async function gameRoutes(app: FastifyInstance, options: GameRouteOptions
       if (!isRoleplayCommandEnabled(meta, "inspire")) {
         return reply.code(400).send({ error: "Inspiration is off for this chat." });
       }
-      const currentInspiration = readInspiration(meta);
-      if (currentInspiration <= 0) return reply.code(400).send({ error: "No Inspiration points remaining." });
       const targetMsg = await chats.getMessage(input.messageId);
       if (!targetMsg || targetMsg.chatId !== input.chatId) {
         return reply.code(404).send({ error: "Message not found in this chat." });
@@ -10271,8 +10271,18 @@ export async function gameRoutes(app: FastifyInstance, options: GameRouteOptions
       const failed = findLatestFailedRoleplayRoll(extra);
       if (!failed) return reply.code(404).send({ error: "No failed roll with a DC on that message." });
 
+      // A ruleset with an Inspiration pool spends from the roller's own count; otherwise the chat's counter.
+      const pinnedRuleset =
+        meta.gameRuleset != null ? resolveGameRuleset(meta, await loadRulesetRegistry(app.db)) : null;
+      const rpDefinition = pinnedRuleset?.status === "ok" ? pinnedRuleset.definition : null;
+      const rollerName = failed.roll.character ?? "";
+      const rpPool = rollerName ? rpInspirationOf(meta, rpDefinition, rollerName) : null;
+      const currentInspiration = rpPool ? rpPool.value : readInspiration(meta);
+      if (currentInspiration <= 0) return reply.code(400).send({ error: "No Inspiration points remaining." });
+
       const rerolled = await rerollRoleplayRoll(failed);
-      await chats.updateMetadata(input.chatId, { ...meta, gameInspiration: currentInspiration - 1 });
+      if (rpPool && rpDefinition) await applyRpInspirationChange(chats, input.chatId, rpDefinition, rollerName, -1);
+      else await chats.updateMetadata(input.chatId, { ...meta, gameInspiration: currentInspiration - 1 });
 
       const characters = createCharactersStorage(app.db);
       const characterRow = targetMsg.characterId ? await characters.getById(targetMsg.characterId) : null;

@@ -332,6 +332,7 @@ import {
   rulesetLayeredCurrencies,
   rulesetPurseText,
   leadingSceneBreak,
+  rpInspirationOf,
   splitAtSceneBreaks,
   type RoleplayCommandActivity,
   type RulesetDefinition,
@@ -344,7 +345,7 @@ import {
   withRoleplayRollSchema,
 } from "../services/generation/roleplay-rolls.js";
 import { rulesetCheckNames } from "../services/generation/roleplay-ruleset-rolls.js";
-import { applyInspirationAward } from "../services/game/inspiration.service.js";
+import { applyInspirationAward, applyRpInspirationChange } from "../services/game/inspiration.service.js";
 import {
   appendRoleplayMessageNotes,
   appendRoleplayPromptTail,
@@ -8896,6 +8897,29 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
           const roleplayActivity: RoleplayCommandActivity[] = [];
           const announceInspirationAward = async (amount: number) => {
             try {
+              // A ruleset with an Inspiration pool keeps it per character; the persona is who earns it.
+              if (roleplayRuleset && identity && rpInspirationOf(chatMeta, roleplayRuleset, identity.name)) {
+                const awarded = await applyRpInspirationChange(
+                  chats,
+                  input.chatId,
+                  roleplayRuleset,
+                  identity.name,
+                  amount,
+                );
+                if (awarded) {
+                  chatMeta.gameRpInspiration = awarded.gameRpInspiration;
+                  sendSseEvent(reply, {
+                    type: "game_inspiration_update",
+                    data: {
+                      gameRpInspiration: awarded.gameRpInspiration,
+                      count: awarded.value,
+                      max: awarded.max,
+                      delta: amount,
+                    },
+                  });
+                }
+                return;
+              }
               const next = await applyInspirationAward(chats, input.chatId, amount);
               if (next === null) return;
               chatMeta.gameInspiration = next;

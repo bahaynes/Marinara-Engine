@@ -692,6 +692,8 @@ export interface ChatMetadata {
   gameCurrentSessionStartedAt?: string;
   /** Current Inspiration points available for rerolling failed checks (0-4). Defaults to 1 when enabled. */
   gameInspiration?: number;
+  /** Roleplay Inspiration per character (normalized name) when the pinned ruleset declares an `inspiration` pool. */
+  gameRpInspiration?: Record<string, number>;
   /** Current game state (exploration, dialogue, combat, travel_rest) */
   gameActiveState?: import("./game.js").GameActiveState;
   /** Whether the game should maintain visible custom HUD widgets. */

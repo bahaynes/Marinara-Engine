@@ -1,6 +1,8 @@
 import {
   DEFAULT_STARTING_INSPIRATION,
   MAX_INSPIRATION_CAP,
+  rpInspirationAfter,
+  type RulesetDefinition,
   getRoleplayCommandActivity,
   getRoleplayCommandContentOffset,
   type DiceRollResult,
@@ -163,5 +165,25 @@ export async function applyInspirationAward(
   const meta = (typeof raw === "string" ? JSON.parse(raw || "{}") : (raw ?? {})) as Record<string, unknown>;
   const next = nextInspirationAfterAward(meta, amount);
   if (next !== null) await chats.updateMetadata(chatId, { ...meta, gameInspiration: next });
+  return next;
+}
+
+/** Change one character's Inspiration under a ruleset that declares the pool. Returns the new count and
+ *  the whole map, or null when the ruleset has no pool or nothing changed. */
+export async function applyRpInspirationChange(
+  chats: {
+    getById(id: string): Promise<{ metadata?: unknown } | null | undefined>;
+    updateMetadata(id: string, metadata: Record<string, unknown>): Promise<unknown>;
+  },
+  chatId: string,
+  definition: RulesetDefinition,
+  characterName: string,
+  delta: number,
+): Promise<{ gameRpInspiration: Record<string, number>; value: number; max: number } | null> {
+  const chat = await chats.getById(chatId);
+  const raw = chat?.metadata;
+  const meta = (typeof raw === "string" ? JSON.parse(raw || "{}") : (raw ?? {})) as Record<string, unknown>;
+  const next = rpInspirationAfter(meta, definition, characterName, delta);
+  if (next) await chats.updateMetadata(chatId, { ...meta, gameRpInspiration: next.gameRpInspiration });
   return next;
 }

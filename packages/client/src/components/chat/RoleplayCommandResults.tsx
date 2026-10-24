@@ -15,12 +15,14 @@ import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import {
   DEFAULT_STARTING_INSPIRATION,
+  rpInspirationOf,
   MAX_INSPIRATION_CAP,
   getRoleplayCommandActivity,
   isRoleplayCommandAllowed,
   type RoleplayCommandActivity,
 } from "@marinara-engine/shared";
 import { useInspirationReroll } from "../../hooks/use-game";
+import { useGameRuleset } from "../../hooks/use-game-ruleset";
 import { cn } from "../../lib/utils";
 import { parseChatMetadata } from "../../lib/chat-display";
 import { useUpdateMessageExtra } from "../../hooks/use-chats";
@@ -238,11 +240,19 @@ export function RoleplayDiceRoll({
   );
   const metadata = useMemo(() => (rawMetadata ? parseChatMetadata(rawMetadata) : null), [rawMetadata]);
   const reroll = useInspirationReroll();
-  const inspiration = metadata
-    ? typeof metadata.gameInspiration === "number"
-      ? metadata.gameInspiration
-      : DEFAULT_STARTING_INSPIRATION
-    : 0;
+  // A ruleset with an Inspiration pool counts it per character; otherwise the chat has one counter.
+  const ruleset = useGameRuleset(metadata);
+  const pool =
+    metadata && roll?.character
+      ? rpInspirationOf(metadata, ruleset.status === "ok" ? ruleset.definition : null, roll.character)
+      : null;
+  const inspiration = pool
+    ? pool.value
+    : metadata
+      ? typeof metadata.gameInspiration === "number"
+        ? metadata.gameInspiration
+        : DEFAULT_STARTING_INSPIRATION
+      : 0;
   const canReroll = !!rerollTarget && !!metadata && isRoleplayCommandAllowed(metadata, "inspire", null);
   return roll ? (
     <div className="my-3 min-w-0 max-w-full whitespace-normal" data-roleplay-inline-roll>
@@ -262,7 +272,7 @@ export function RoleplayDiceRoll({
           <Sparkles size="0.8125rem" className={cn("text-[var(--primary)]", reroll.isPending && "animate-pulse")} />
           {reroll.isPending
             ? t("roleplay.commands.inspire.rerolling")
-            : t("roleplay.commands.inspire.reroll", { count: inspiration, max: MAX_INSPIRATION_CAP })}
+            : t("roleplay.commands.inspire.reroll", { count: inspiration, max: pool?.max ?? MAX_INSPIRATION_CAP })}
         </button>
       )}
     </div>

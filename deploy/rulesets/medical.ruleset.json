@@ -2,7 +2,7 @@
   "$comment": "Fork-local medical drama ruleset for RP skill checks. Same dice-sum/proficiency shape as the 5e SRD example; skills are the former built-in Medical skill system.",
   "schemaVersion": 1,
   "id": "medical",
-  "version": 1,
+  "version": 2,
   "name": "Medical Drama",
   "edition": "Fork-local, 5e-style d20",
   "license": {
@@ -324,6 +324,17 @@
             "field": "hp_max"
           },
           "allowTemp": true
+        },
+        {
+          "id": "inspiration",
+          "label": "Inspiration",
+          "max": {
+            "const": 4
+          },
+          "start": "empty",
+          "startFrom": {
+            "const": 1
+          }
         }
       ]
     }

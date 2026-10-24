@@ -7,9 +7,11 @@ import {
   ROLEPLAY_COMMAND_KEYS,
   isRoleplayCommandEnabled,
   roleplayCommandsEnabled,
+  rpInspirationOf,
   type Chat,
 } from "@marinara-engine/shared";
 import { useUpdateChatMetadata } from "../../hooks/use-chats";
+import { useGameRuleset } from "../../hooks/use-game-ruleset";
 import { AgentSettingsCard } from "./AgentSettingsControls";
 import { SettingsSwitch } from "../panels/settings/SettingControls";
 import { cn } from "../../lib/utils";
@@ -29,6 +31,10 @@ export function RoleplayCommandsSettings({
   const update = useUpdateChatMetadata({ serialize: true });
   const metadata = chat.metadata;
   const enabled = roleplayCommandsEnabled(metadata);
+  // Under a ruleset with an Inspiration pool each character has their own count, shown on their rolls.
+  const ruleset = useGameRuleset(metadata);
+  const perCharacterInspiration =
+    rpInspirationOf(metadata, ruleset.status === "ok" ? ruleset.definition : null, "") !== null;
   const individual = characters.length > 1 && metadata.groupChatMode === "individual";
   const privateAvailable = characters.length === 1 || individual;
   const hasNarrator = characters.some((character) => character.id === metadata.roleplayCommandNarratorId);
@@ -131,7 +137,7 @@ export function RoleplayCommandsSettings({
                         labelClassName="text-[0.6875rem] font-medium"
                       />
                     )}
-                    {checked && key === "inspire" && (
+                    {checked && key === "inspire" && !perCharacterInspiration && (
                       <span className="text-[0.6875rem] text-[var(--muted-foreground)]" role="status">
                         {t("roleplay.commands.inspire.count", {
                           count:
