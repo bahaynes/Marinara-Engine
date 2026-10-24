@@ -13,7 +13,8 @@ import { mariAssetUrls } from "./lib/mari-work-animations";
 import { queryClient } from "./lib/query-client";
 import { APP_VERSION } from "@marinara-engine/shared";
 import { formatRuntimeBuild, runningBuildIsServed } from "./lib/runtime-build";
-import { recordClientReload, registerClientRuntimeDiagnostics } from "./lib/client-runtime-diagnostics";
+import { registerClientRuntimeDiagnostics, recordClientReload } from "./lib/client-runtime-diagnostics";
+import { registerTriageCombatStyle } from "./components/game/triage/triage-combat-style";
 import "./styles/globals.css";
 
 // Installed capability clients can outlive the Engine build that produced
@@ -26,6 +27,7 @@ registerClientRuntimeDiagnostics(formatRuntimeBuild(APP_VERSION, __MARINARA_BUIL
 // Prevent Chrome/Edge from sleeping this tab
 startKeepAlive();
 installCsrfFetchShim();
+registerTriageCombatStyle();
 // Auto-recover from stale-chunk dynamic-import failures (e.g. a lazy route that
 // 404s after an update) instead of surfacing "Failed to fetch dynamically
 // imported module" to the user.

@@ -17,7 +17,7 @@ import { resolveChatUserIdentity } from "../services/chat-user-identity.js";
 import { createLLMProvider } from "../services/llm/provider-registry.js";
 import type { ChatMessage } from "../services/llm/base-provider.js";
 import { logger } from "../lib/logger.js";
-import { localAuthProviderBaseUrl, DIFFERENTIAL_CATALOG } from "@marinara-engine/shared";
+import { localAuthProviderBaseUrl, DIFFERENTIAL_CATALOG, parseGmTags } from "@marinara-engine/shared";
 import type {
   TriageInitRequest,
   TriageInitResponse,
@@ -347,7 +347,7 @@ export async function triageEncounterRoutes(app: FastifyInstance) {
   const gameState = createGameStateStorage(app.db);
 
   app.post<{ Body: TriageInitRequest }>("/triage-init", async (req, reply) => {
-    const { chatId, connectionId, recentPresentations, patientHint } = req.body;
+    const { chatId, connectionId, recentPresentations, patientHint: explicitPatientHint, messageId } = req.body;
     if (!chatId) return reply.status(400).send({ error: "Missing required field: chatId" });
 
     try {
@@ -396,6 +396,17 @@ export async function triageEncounterRoutes(app: FastifyInstance) {
         role: (m.role === "narrator" ? "system" : m.role) as "user" | "assistant" | "system",
         content: m.content as string,
       }));
+
+      let patientHint = explicitPatientHint;
+      if (!patientHint && messageId) {
+        const triggeringMsg = chatMessages.find((m: any) => m.id === messageId);
+        if (triggeringMsg && typeof triggeringMsg.content === "string") {
+          const parsedTags = parseGmTags(triggeringMsg.content);
+          if (parsedTags.stateChangeSubject) {
+            patientHint = parsedTags.stateChangeSubject;
+          }
+        }
+      }
 
       if (!patientHint) {
         logger.warn("[triage-init] No patientHint from GM tag for chat %s — falling back to prose inference", chatId);
