@@ -1042,7 +1042,6 @@ import {
   buildCharacterMacroProfilesById,
   injectIdentityFallbackMessages,
   loadCharacterPromptInfo,
-  normalizeCharacterRpgStats,
 } from "../services/generation/character-prompt-context.js";
 import {
   injectSceneContextMessages,
@@ -5202,7 +5201,6 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                 id: identity.id,
                 name: identity.name,
                 description: identity.description,
-                rpgStats: normalizeCharacterRpgStats(parseExtra(identity.personaStats).rpgStats),
                 rulesetSheets: parseExtra(identity.personaStats).rulesetSheets,
               },
             ]
