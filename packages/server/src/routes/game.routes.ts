@@ -118,6 +118,7 @@ import { loadGameWorld, saveGameWorldSnapshot } from "../services/game/game-worl
 import { createConnectionsStorage } from "../services/storage/connections.storage.js";
 import { createCharactersStorage } from "../services/storage/characters.storage.js";
 import {
+  applyInspirationAward,
   applyRpInspirationChange,
   buildRerolledSwipeExtra,
   buildRoleplayRerollMessages,
@@ -404,6 +405,7 @@ import {
   storyPerson,
   worldPersonNpc,
   DEFAULT_STARTING_INSPIRATION,
+  MAX_INSPIRATION_CAP,
   isRoleplayCommandEnabled,
   formatSkillCheckResultSummary,
   getSkillCheckOutcomeLabel,
@@ -10236,6 +10238,27 @@ export async function gameRoutes(app: FastifyInstance, options: GameRouteOptions
     }
 
     return { result, updatedContent };
+  });
+
+  // ── POST /game/inspiration-award ──
+  // The /inspire slash command: award the persona 1 Inspiration, in their ruleset pool when the chat's
+  // ruleset declares one and otherwise on the chat's single counter.
+  app.post("/inspiration-award", async (req, reply) => {
+    const { chatId } = z.object({ chatId: z.string() }).parse(req.body);
+    const chats = createChatsStorage(app.db);
+    const chat = await chats.getById(chatId);
+    if (!chat) return reply.code(404).send({ error: "Chat not found" });
+    const meta = parseMeta(chat.metadata);
+    const pinned = meta.gameRuleset != null ? resolveGameRuleset(meta, await loadRulesetRegistry(app.db)) : null;
+    const definition = pinned?.status === "ok" ? pinned.definition : null;
+    const persona = chat.personaId ? await createCharactersStorage(app.db).getPersona(chat.personaId) : null;
+    if (definition && persona?.name && rpInspirationOf(meta, definition, persona.name)) {
+      const awarded = await applyRpInspirationChange(chats, chatId, definition, persona.name, 1);
+      const current = awarded ?? rpInspirationOf(meta, definition, persona.name)!;
+      return { count: current.value, max: current.max };
+    }
+    const next = await applyInspirationAward(chats, chatId, 1);
+    return { count: next ?? readInspiration(meta), max: MAX_INSPIRATION_CAP };
   });
 
   // ── POST /game/inspiration-reroll ──

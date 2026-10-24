@@ -13,7 +13,6 @@ import { rollWithPersonalExtensionDiceFormats } from "./personal-extension-dice-
 export { isMessageHidden } from "./message-visibility";
 import {
   SUPPORTED_MACROS,
-  DEFAULT_STARTING_INSPIRATION,
   MAX_INSPIRATION_CAP,
   buildGuidedGenerationInstructionMessage,
   buildNarratorInstructionMessage,
@@ -799,23 +798,17 @@ const COMMANDS: SlashCommand[] = [
   {
     name: "inspire",
     aliases: ["award-inspiration"],
-    description: "Award 1 Inspiration point to the player (max 4)",
+    description: "Award 1 Inspiration point to the player",
     usage: "/inspire",
     local: true,
     async execute(_args, ctx) {
       try {
-        const chat = await api.get<{ metadata?: string | Record<string, unknown> }>(`/chats/${ctx.chatId}`);
-        const meta = chat.metadata
-          ? typeof chat.metadata === "string"
-            ? JSON.parse(chat.metadata)
-            : chat.metadata
-          : {};
-        const current = typeof meta.gameInspiration === "number" ? meta.gameInspiration : DEFAULT_STARTING_INSPIRATION;
-        const updated = Math.min(MAX_INSPIRATION_CAP, current + 1);
-        await api.patch(`/chats/${ctx.chatId}/metadata`, { gameInspiration: updated });
+        const { count, max } = await api.post<{ count: number; max: number }>("/game/inspiration-award", {
+          chatId: ctx.chatId,
+        });
         ctx.invalidate();
-        toast.success(`✨ Inspiration awarded! (${updated}/${MAX_INSPIRATION_CAP})`);
-        return { handled: true, feedback: `Inspiration awarded! Current: ${updated}/${MAX_INSPIRATION_CAP}` };
+        toast.success(`✨ Inspiration awarded! (${count}/${max})`);
+        return { handled: true, feedback: `Inspiration awarded! Current: ${count}/${max}` };
       } catch (err: any) {
         return { handled: true, feedback: `Failed to award inspiration: ${err.message}` };
       }

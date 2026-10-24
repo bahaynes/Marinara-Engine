@@ -1,5 +1,6 @@
 import { currentRoomGeneration } from "../multiplayer/generation-policy.js";
 import {
+  MAX_INSPIRATION_CAP,
   isRoleplayCommandEnabled,
   isRoleplayCommandAllowed,
   getRoleplayPrivateCommands,
@@ -856,6 +857,8 @@ export function buildRoleplayCommandsReminder(args: {
   video?: { instructions: string } | null;
   /** Names of the checks the chat's pinned ruleset answers to. */
   skillNames?: readonly string[];
+  /** The persona's Inspiration maximum when the pinned ruleset declares the pool. */
+  inspirationMax?: number;
   /** Fork: the latest [scene] title, so the model can repeat it exactly while the scene continues. */
   sceneTitle?: string | null;
 }): string {
@@ -914,7 +917,7 @@ export function buildRoleplayCommandsReminder(args: {
   }
   if (enabled("inspire"))
     lines.push(
-      "- [inspire] awards the user's persona 1 Inspiration (they can hold up to 4). Award it for clever problem-solving, a bold in-character risk, or a heroic beat, not routinely. The user can spend it to reroll a failed roll.",
+      `- [inspire] awards the user's persona 1 Inspiration (they can hold up to ${args.inspirationMax ?? MAX_INSPIRATION_CAP}). Award it for clever problem-solving, a bold in-character risk, or a heroic beat, not routinely. The user can spend it to reroll a failed roll.`,
     );
   if (enabled("combat") && args.availableAgentIds.has("combat"))
     lines.push("- [combat] asks the Combat agent to start an encounter when the scene turns to combat.");

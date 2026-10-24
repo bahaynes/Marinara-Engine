@@ -9231,6 +9231,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                 interruptAvailable: Boolean(roleplayInterruptionTarget),
                 video: roleplayVideoOffer,
                 skillNames: roleplayRuleset ? rulesetCheckNames(roleplayRuleset) : undefined,
+                inspirationMax: identity ? rpInspirationOf(chatMeta, roleplayRuleset, identity.name)?.max : undefined,
               }),
               wrapFormat,
             );
