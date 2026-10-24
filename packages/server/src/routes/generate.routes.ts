@@ -371,7 +371,7 @@ import {
   withRoleplayRollSchema,
 } from "../services/generation/roleplay-rolls.js";
 import { rulesetCheckNames } from "../services/generation/roleplay-ruleset-rolls.js";
-import { applyInspirationAward, applyRpInspirationChange } from "../services/game/inspiration.service.js";
+import { announceRoleplayInspirationAward } from "../services/game/inspiration.service.js";
 import {
   appendRoleplayMessageNotes,
   appendRoleplayPromptTail,
@@ -9293,40 +9293,16 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
             resolvedToolNames: chatResolvedToolNames,
           });
           const roleplayActivity: RoleplayCommandActivity[] = [];
-          const announceInspirationAward = async (amount: number) => {
-            try {
-              // A ruleset with an Inspiration pool keeps it per character; the persona is who earns it.
-              if (roleplayRuleset && identity && rpInspirationOf(chatMeta, roleplayRuleset, identity.name)) {
-                const awarded = await applyRpInspirationChange(
-                  chats,
-                  input.chatId,
-                  roleplayRuleset,
-                  identity.name,
-                  amount,
-                );
-                if (awarded) {
-                  chatMeta.gameRpInspiration = awarded.gameRpInspiration;
-                  sendSseEvent(reply, {
-                    type: "game_inspiration_update",
-                    data: {
-                      gameRpInspiration: awarded.gameRpInspiration,
-                      count: awarded.value,
-                      max: awarded.max,
-                      delta: amount,
-                    },
-                  });
-                }
-                return;
-              }
-              const next = await applyInspirationAward(chats, input.chatId, amount);
-              if (next === null) return;
-              chatMeta.gameInspiration = next;
-              sendSseEvent(reply, { type: "game_inspiration_update", data: { gameInspiration: next, delta: amount } });
-              logger.info("[generate/inspiration] chatId=%s awarded=%d newTotal=%d", input.chatId, amount, next);
-            } catch (err) {
-              logger.warn(err, "[generate/inspiration] Failed to apply inspiration award");
-            }
-          };
+          const announceInspirationAward = (amount: number) =>
+            announceRoleplayInspirationAward({
+              chats,
+              chatId: input.chatId,
+              chatMeta,
+              ruleset: roleplayRuleset,
+              personaName: identity?.name,
+              amount,
+              send: (event) => sendSseEvent(reply, event),
+            });
           const roleplayInlinePrefixes = new Map<RoleplayCommandActivity, string>();
           // The reply text before each command, so a reply split at scene breaks keeps it with its part.
           const roleplayActivityPlaces = new Map<RoleplayCommandActivity, string>();
@@ -9391,6 +9367,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                 interruptAvailable: Boolean(roleplayInterruptionTarget),
                 video: roleplayVideoOffer,
                 skillNames: roleplayRuleset ? rulesetCheckNames(roleplayRuleset) : undefined,
+                inspirationMax: identity ? rpInspirationOf(chatMeta, roleplayRuleset, identity.name)?.max : undefined,
               }),
               wrapFormat,
             );
