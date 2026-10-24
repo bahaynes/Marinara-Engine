@@ -24,12 +24,20 @@ export function rulesetRollModifier(
   definition: RulesetDefinition,
   rulesetSheets: unknown,
   checkName: string,
-): { label: string; modifier: number } | null {
+): { label: string; modifier: number; ability?: string; abilityModifier?: number } | null {
   const stored = (rulesetSheets as Record<string, unknown> | undefined)?.[definition.id];
   const envelope = readRulesetSheetEnvelope(definition, stored);
   if (!envelope) return null;
   const target = matchRulesetCheckTarget(definition, checkName, undefined, envelope.build);
   if (!target) return null;
   const evaluated = evaluateRulesetSheetLive(definition, envelope.build);
-  return { label: target.label, modifier: rulesetCheckModifier(evaluated, target) };
+  const abilityId = target.type === "ability" ? target.id : target.ability;
+  const ability = definition.sheet.abilities.find((entry) => entry.id === abilityId);
+  return {
+    label: target.label,
+    modifier: rulesetCheckModifier(evaluated, target),
+    ...(ability
+      ? { ability: ability.short ?? ability.label, abilityModifier: evaluated.abilityMods[ability.id] ?? 0 }
+      : {}),
+  };
 }

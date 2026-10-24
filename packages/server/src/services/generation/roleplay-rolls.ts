@@ -4,12 +4,9 @@ import {
   parseDicePool,
   type LLMToolDefinition,
   type RoleplayCommandActivity,
-  type RPGStatsConfig,
   type RulesetDefinition,
 } from "@marinara-engine/shared";
 import { normalizeCharacterLookupName } from "../game/name-normalization.js";
-import { resolveSheetSkillMap } from "../game/skill-check-resolution.service.js";
-import { attributeModifier, getGoverningAttribute, mapSheetAttributesToRPG } from "../game/skill-check.service.js";
 import type { LLMToolCall } from "../llm/base-provider.js";
 import { formatToolExecutionResultForModel, type ToolExecutionResult } from "../tools/tool-executor.js";
 import { parseRoleplayCommands } from "./roleplay-commands.js";
@@ -22,7 +19,6 @@ export function prepareRoleplayRoll(
     id: string;
     name: string;
     description?: string;
-    rpgStats?: RPGStatsConfig;
     rulesetSheets?: unknown;
   }[],
   fallbackCharacterId: string | null,
@@ -57,73 +53,28 @@ export function prepareRoleplayRoll(
   const rawAttribute = typeof args.attribute === "string" ? args.attribute.trim() : "";
   const parsed = typeof args.notation === "string" ? parseDicePool(args.notation) : null;
   if (!parsed || !character) return args;
-  if (ruleset) {
-    const checkName = requestedSkill || rawAttribute;
-    const check = checkName ? rulesetRollModifier(ruleset, character.rulesetSheets, checkName) : null;
-    const modifier = parsed.modifier + (check?.modifier ?? 0);
-    const notation = check?.modifier ? `${parsed.dice}${modifier > 0 ? "+" : ""}${modifier || ""}` : parsed.notation;
-    if (!parseDiceNotation(notation)) throw new Error("The sheet-adjusted roll exceeds the supported numeric range.");
-    return {
-      ...args,
-      character: character.name,
-      notation,
-      ...(check ? { bonus: check.modifier } : {}),
-      reason: [character.name, check?.label ?? checkName, typeof args.reason === "string" ? args.reason : ""]
-        .filter(Boolean)
-        .join(" · "),
-    };
-  }
-  const stats = character.rpgStats;
-  let attributeBonus = 0;
-
-  // Resolve skill and governing attribute using the same service as Game Mode. A name already on
-  // the sheet (including homebrew abilities like "Luck") always wins over the skill table - only
-  // reroute through getGoverningAttribute when the name isn't a stat the character actually has.
-  const isBareAbility = /^(str(ength)?|dex(terity)?|con(stitution)?|int(elligence)?|wis(dom)?|cha(risma)?)$/i.test(
-    rawAttribute,
-  );
-  const isSheetAttribute = stats?.attributes.some(
-    (item) => item.name.trim().toLowerCase() === rawAttribute.toLowerCase(),
-  );
-  const skillName = requestedSkill || (!isBareAbility && !isSheetAttribute && rawAttribute ? rawAttribute : "");
-  const attributeToLookup = skillName ? getGoverningAttribute(skillName) : rawAttribute;
-
-  if (stats?.enabled && attributeToLookup) {
-    const exact = stats.attributes.find((item) => item.name.trim().toLowerCase() === attributeToLookup.toLowerCase());
-    // This mapper omits unrecognized names; an unknown attribute must not pick a default stat.
-    const canonical = Object.keys(mapSheetAttributesToRPG([{ name: attributeToLookup, value: 0 }]))[0];
-    const score =
-      exact?.value ??
-      (canonical
-        ? mapSheetAttributesToRPG(stats.attributes)[canonical as keyof ReturnType<typeof mapSheetAttributesToRPG>]
-        : undefined);
-    if (typeof score === "number" && Number.isFinite(score)) attributeBonus = attributeModifier(score);
-  }
-  // Proficiency (doubled for expertise) comes from the same sheet reader Game Mode uses.
-  let proficiencyBonus = 0;
-  if (skillName) {
-    const skills = resolveSheetSkillMap(stats, character.description);
-    const key = skillName.toLowerCase();
-    const proficiency = Number(skills?.[key.replace(/[^a-z0-9]+/g, "_")] ?? skills?.[key] ?? 0);
-    if (Number.isFinite(proficiency)) proficiencyBonus = proficiency;
-  }
-  const bonus = attributeBonus + proficiencyBonus;
-  const modifier = parsed.modifier + bonus;
-  const notation = bonus ? `${parsed.dice}${modifier > 0 ? "+" : ""}${modifier || ""}` : parsed.notation;
-  if (!parseDicePool(notation)) throw new Error("The attribute-adjusted roll exceeds the supported numeric range.");
-
-  const displayLabel = skillName ? `${skillName} (${attributeToLookup.toUpperCase()})` : attributeToLookup;
-
+  // Modifiers come only from the pinned ruleset's sheet; no pin, no sheet or an unknown check rolls plain dice.
+  const checkName = requestedSkill || rawAttribute;
+  const check = ruleset && checkName ? rulesetRollModifier(ruleset, character.rulesetSheets, checkName) : null;
+  const modifier = parsed.modifier + (check?.modifier ?? 0);
+  const notation = check?.modifier ? `${parsed.dice}${modifier > 0 ? "+" : ""}${modifier || ""}` : parsed.notation;
+  if (!parseDicePool(notation)) throw new Error("The sheet-adjusted roll exceeds the supported numeric range.");
   return {
     ...args,
     character: character.name,
     notation,
-    ...(skillName ? { skill: skillName } : {}),
-    ...(attributeToLookup ? { attribute: attributeToLookup.toUpperCase() } : {}),
-    ...(stats?.enabled && attributeToLookup ? { attributeModifier: attributeBonus } : {}),
-    ...(skillName ? { proficiency: proficiencyBonus } : {}),
-    bonus,
-    reason: [character.name, displayLabel, typeof args.reason === "string" ? args.reason : ""]
+    ...(check
+      ? {
+          bonus: check.modifier,
+          ...(check.ability
+            ? { attribute: check.ability.toUpperCase(), attributeModifier: check.abilityModifier }
+            : {}),
+          ...(requestedSkill
+            ? { skill: requestedSkill, proficiency: check.modifier - (check.abilityModifier ?? 0) }
+            : {}),
+        }
+      : {}),
+    reason: [character.name, check?.label ?? checkName, typeof args.reason === "string" ? args.reason : ""]
       .filter(Boolean)
       .join(" · "),
   };
