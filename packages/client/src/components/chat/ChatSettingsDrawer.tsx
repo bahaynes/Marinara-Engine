@@ -608,6 +608,8 @@ function renderRoleplayAgentMenuIcon(agentId: string, variant: "card" | "chip" =
       return <MessageSquareQuote size={size} className={className} />;
     case "hierarchical-maps":
       return <MapIcon size={size} className={className} />;
+    case "narrative-architect":
+      return <Sparkles size={size} className={className} />;
     case "custom-agents":
       return <Bot size={size} className={className} />;
     case "avatars":
