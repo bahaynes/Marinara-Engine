@@ -10,7 +10,6 @@ import type {
   GameNpc,
   SessionSummary,
   HudWidget,
-  GameSkillDefinition,
 } from "@marinara-engine/shared";
 import {
   DEFAULT_GAME_SYSTEM_PROMPT,
@@ -1745,8 +1744,6 @@ export function buildGmFormatReminder(
      *  attachment are gated on the same fact, so the tool is never attached without being
      *  described and never described without being attached. */
     rollDiceToolAttached?: boolean;
-    /** Active skill definitions available for skill checks in this campaign. */
-    activeSkills?: readonly GameSkillDefinition[];
   },
 ): string {
   const lines: string[] = [];
@@ -2013,14 +2010,6 @@ export function buildGmFormatReminder(
           `- Place unresolved roll requests before any outcome that depends on them. Describe the attempt, then stop. The engine will send the real results back for you to finish this same turn; do not guess success or failure before receiving them.`,
         ]),
   );
-
-  // A ruleset game checks the ruleset's own skills; a second list would teach names it refuses.
-  if (!ctx.ruleset && ctx.activeSkills && ctx.activeSkills.length > 0) {
-    lines.push(
-      `- Active skills for [skill_check: ...]:`,
-      ...ctx.activeSkills.map((s) => `  * ${s.name} (${s.ability.toUpperCase()}): ${s.description}`),
-    );
-  }
 
   lines.push(
     ...(ctx.enableQuickTimeEvents === false

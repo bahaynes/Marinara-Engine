@@ -27,7 +27,6 @@ import { AgentActivitySection } from "../agents/AgentActivitySection";
 import { withAgentActivityStatus } from "../agents/AgentActivityIcon";
 import { useKeepFocusedFieldAboveKeyboard } from "../../hooks/use-keep-focused-field-above-keyboard";
 import { RoleplayRulesetSettings } from "./RoleplayRulesetSettings";
-import { GameSkillSystemsSettings } from "./GameSkillSystemsSettings";
 import {
   X,
   Users,
@@ -5828,10 +5827,7 @@ export function ChatSettingsDrawer({
             </div>
           )}
 
-          {/* Fork: skill checks; a ruleset game checks the ruleset's own skills. */}
-          {isGame && !metadata.gameRuleset && (
-            <GameSkillSystemsSettings chat={chat} style={{ order: CHAT_SETTINGS_ORDER.skillChecks }} />
-          )}
+          {/* Fork: roleplay skill checks come from the ruleset pinned here. */}
           {isRoleplayMode && <RoleplayRulesetSettings chat={chat} style={{ order: CHAT_SETTINGS_ORDER.skillChecks }} />}
 
           {/* Combat Style — game mode only */}

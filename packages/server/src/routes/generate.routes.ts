@@ -934,7 +934,6 @@ import {
 } from "../services/game/map-position.service.js";
 import { applyAllSegmentEdits } from "../services/game/segment-edits.js";
 import {
-  getActiveGameSkills,
   parseInspirationAwards,
   type CharacterData,
   type GameMap,
@@ -5711,14 +5710,6 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
               dicePoolMode: gameDicePoolTurn,
               dicePoolBlock,
               rollDiceToolAttached,
-              activeSkills: getActiveGameSkills({
-                enabledSystemIds: Array.isArray(chatMeta.gameSkillSystems)
-                  ? (chatMeta.gameSkillSystems as string[])
-                  : null,
-                disabledSkillIds: Array.isArray(chatMeta.gameDisabledSkills)
-                  ? (chatMeta.gameDisabledSkills as string[])
-                  : null,
-              }),
               // A package that brought its own inventory takes the built-in one out of the prompt.
               // Dungeon, cave and station maps are the Overworld RPG's; Classic Game Mode never opens one.
               overworld: gameStyleFromMetadata(chatMeta) === "overworld",

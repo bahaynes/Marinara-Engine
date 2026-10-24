@@ -162,7 +162,6 @@ import {
 import { useQuoteFormatter } from "../../hooks/use-quote-formatter";
 import { LorebookAssignmentSection } from "../lorebooks/LorebookAssignmentSection";
 import { ConvoProfileFields } from "../characters/ConvoProfileFields";
-import { RpgProficienciesEditor } from "../characters/RpgProficienciesEditor";
 import { useTranslation, useTranslation as useUiTranslation } from "react-i18next";
 import {
   mergeAuthoritativePersonaEditorDraft,
@@ -3589,13 +3588,6 @@ function PersonaStatsTab({
                   </div>
                 ))}
               </div>
-            </div>
-
-            <div className="mt-4">
-              <RpgProficienciesEditor
-                value={rpgStats.proficiencies}
-                onChange={(proficiencies) => updateRpg({ proficiencies })}
-              />
             </div>
           </>
         )}
