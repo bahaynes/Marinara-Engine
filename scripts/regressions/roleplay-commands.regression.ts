@@ -5,6 +5,7 @@ import { stripTypeScriptTypes } from "node:module";
 import { setImmediate as nextTurn } from "node:timers/promises";
 import { runInNewContext } from "node:vm";
 import { parseRulesetDefinition } from "../../packages/shared/src/schemas/ruleset.schema.js";
+import { rpInspirationAfter, rpInspirationOf } from "../../packages/shared/src/utils/rp-inspiration.js";
 import { GENERATIVE_AUDIO_DEFAULTS } from "../../packages/shared/src/types/connection.js";
 import {
   ROLEPLAY_COMMAND_KEYS,
@@ -879,6 +880,24 @@ assert.equal(
   prepareRoleplayRoll({ notation: "1d20", character: "Loïm" }, fuzzyParticipants, "hera-id").character,
   "Hero Loïm",
 );
+
+// Inspiration under a ruleset pool is per character, starts where the pool starts and stops at its maximum.
+{
+  const medical = parseRulesetDefinition(
+    JSON.parse(readFileSync(new URL("../../deploy/rulesets/medical.ruleset.json", import.meta.url), "utf8")),
+  );
+  assert.ok(medical.ok);
+  assert.deepEqual(rpInspirationOf({}, medical.definition, "Mira"), { value: 1, max: 4 });
+  const awarded = rpInspirationAfter({}, medical.definition, "Mira", 1);
+  assert.equal(awarded?.value, 2);
+  const meta = { gameRpInspiration: awarded!.gameRpInspiration };
+  assert.equal(rpInspirationOf(meta, medical.definition, "mira")?.value, 2, "names match case-insensitively");
+  assert.equal(rpInspirationOf(meta, medical.definition, "Bob")?.value, 1, "another character is untouched");
+  assert.equal(rpInspirationAfter({ gameRpInspiration: { mira: 4 } }, medical.definition, "Mira", 1), null, "capped");
+  assert.equal(rpInspirationAfter(meta, medical.definition, "Mira", -1)?.value, 1, "spending lowers it");
+  assert.equal(rpInspirationOf({}, fiveE, "Mira"), null, "a ruleset without the pool keeps the chat counter");
+  assert.equal(rpInspirationOf({}, null, "Mira"), null, "no ruleset keeps the chat counter");
+}
 
 // Skill checks add the sheet's training tier (level 1 proficiency is +2; expertise doubles it).
 assert.equal(dice({ skill: "Perception" }).notation, "d20", "an untrained skill with a 10 WIS is plain");
