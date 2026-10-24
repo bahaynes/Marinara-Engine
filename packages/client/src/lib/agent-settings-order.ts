@@ -12,6 +12,7 @@ const STANDALONE_ROLEPLAY_AGENT_SETTINGS = new Set([
   "beholder",
   STORYBOARD_AGENT_ID,
   "long-term-memory",
+  "narrative-architect",
 ]);
 
 export function hasStandaloneRoleplayAgentSettings(agentId: string): boolean {
