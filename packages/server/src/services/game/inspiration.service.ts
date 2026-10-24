@@ -2,12 +2,14 @@ import {
   DEFAULT_STARTING_INSPIRATION,
   MAX_INSPIRATION_CAP,
   rpInspirationAfter,
+  rpInspirationOf,
   type RulesetDefinition,
   getRoleplayCommandActivity,
   getRoleplayCommandContentOffset,
   type DiceRollResult,
   type RoleplayCommandActivity,
 } from "@marinara-engine/shared";
+import { logger } from "../../lib/logger.js";
 import type { ChatMessage } from "../llm/base-provider.js";
 import { parseRollDiceToolResult } from "./dice.service.js";
 import { executeToolCalls } from "../tools/tool-executor.js";
@@ -186,4 +188,43 @@ export async function applyRpInspirationChange(
   const next = rpInspirationAfter(meta, definition, characterName, delta);
   if (next) await chats.updateMetadata(chatId, { ...meta, gameRpInspiration: next.gameRpInspiration });
   return next;
+}
+
+/** Applies a Roleplay award and tells the client. Updates `chatMeta` in place; a failure only logs. */
+export async function announceRoleplayInspirationAward(args: {
+  chats: Parameters<typeof applyInspirationAward>[0];
+  chatId: string;
+  chatMeta: Record<string, unknown>;
+  ruleset: RulesetDefinition | null | undefined;
+  personaName: string | null | undefined;
+  amount: number;
+  send: (event: { type: "game_inspiration_update"; data: Record<string, unknown> }) => void;
+}): Promise<void> {
+  const { chats, chatId, chatMeta, ruleset, personaName, amount, send } = args;
+  try {
+    // A ruleset with an Inspiration pool keeps it per character; the persona is who earns it.
+    if (ruleset && personaName && rpInspirationOf(chatMeta, ruleset, personaName)) {
+      const awarded = await applyRpInspirationChange(chats, chatId, ruleset, personaName, amount);
+      if (awarded) {
+        chatMeta.gameRpInspiration = awarded.gameRpInspiration;
+        send({
+          type: "game_inspiration_update",
+          data: {
+            gameRpInspiration: awarded.gameRpInspiration,
+            count: awarded.value,
+            max: awarded.max,
+            delta: amount,
+          },
+        });
+      }
+      return;
+    }
+    const next = await applyInspirationAward(chats, chatId, amount);
+    if (next === null) return;
+    chatMeta.gameInspiration = next;
+    send({ type: "game_inspiration_update", data: { gameInspiration: next, delta: amount } });
+    logger.info("[generate/inspiration] chatId=%s awarded=%d newTotal=%d", chatId, amount, next);
+  } catch (err) {
+    logger.warn(err, "[generate/inspiration] Failed to apply inspiration award");
+  }
 }

@@ -166,6 +166,6 @@ Reproduce: branch the chat at a message, point the branch's `lorebookKeeperTarge
 RP chats pin a ruleset in Chat Settings > Skill Checks (the same `gameRuleset` pin a game uses). `[roll: ...]` skill and ability checks then take their modifier from each character's or persona's ruleset sheet; with no pin, or no sheet, they roll plain dice.
 
 - **D&D**: install the 5e SRD 5.1 ruleset package (needs the staging preview catalog, `BUILD_BRANCH=staging`).
-- **Medical**: `deploy/rulesets/medical.ruleset.json` is a fork-local ruleset with the Medical Drama skills. Import it once with `POST /api/game-rulesets/import` (body `{"definition": <file contents>}`); it files under `local/medical`.
+- **Medical**: `deploy/rulesets/medical.ruleset.json` is a fork-local ruleset with the Medical Drama skills. Import it once with `POST /api/game-rulesets/import` (body `{"definition": "<the file's text, as a JSON string>"}`); it files under `local/medical`.
 - Give each character a sheet for the ruleset in the character editor's ruleset sheets section.
 - **Inspiration**: a ruleset with a live pool whose id is `inspiration` (the medical ruleset has one: start 1, max 4) gives RP characters their own Inspiration. `[inspire]` awards the persona's pool; the reroll button on a failed roll spends the roller's own point. Rulesets without the pool keep the chat-wide `gameInspiration` counter. The reroll itself is engine code (`rerollRoleplayRoll`), because `resolution.spend` re-throws dice before the result is known and only for dice pools.
