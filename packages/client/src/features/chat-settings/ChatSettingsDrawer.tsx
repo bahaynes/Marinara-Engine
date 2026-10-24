@@ -32,7 +32,6 @@ import {
   Search,
   Dices,
 } from "lucide-react";
-import { GameSkillSystemsSettings } from "../../components/chat/GameSkillSystemsSettings";
 import { RoleplayRulesetSettings } from "../../components/chat/RoleplayRuleset";
 import {
   NEUTRAL_PANEL_SCROLL_AREA,
@@ -2058,8 +2057,6 @@ export function ChatSettingsDrawer({
             </Section>
           )}
 
-          {/* A ruleset game checks the ruleset's own skills. */}
-          {((isGame && !metadata.gameRuleset) || isRoleplayMode) && <GameSkillSystemsSettings chat={chat} />}
 
           {/* Card field alternatives — hidden when no card in this chat has any */}
           <CardFieldAlternativesSection chat={chat} characters={characters} personas={personas} />
