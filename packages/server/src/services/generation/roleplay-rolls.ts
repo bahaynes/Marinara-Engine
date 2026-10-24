@@ -5,6 +5,7 @@ import {
   type LLMToolDefinition,
   type RoleplayCommandActivity,
   type RPGStatsConfig,
+  type RulesetDefinition,
 } from "@marinara-engine/shared";
 import { normalizeCharacterLookupName } from "../game/name-normalization.js";
 import { resolveSheetSkillMap } from "../game/skill-check-resolution.service.js";
@@ -12,12 +13,21 @@ import { attributeModifier, getGoverningAttribute, mapSheetAttributesToRPG } fro
 import type { LLMToolCall } from "../llm/base-provider.js";
 import { formatToolExecutionResultForModel, type ToolExecutionResult } from "../tools/tool-executor.js";
 import { parseRoleplayCommands } from "./roleplay-commands.js";
+import { rulesetRollModifier } from "./roleplay-ruleset-rolls.js";
 
 /** Resolve a participant's assigned attribute or skill without guessing another character or stat. */
 export function prepareRoleplayRoll(
   args: Record<string, unknown>,
-  characters: readonly { id: string; name: string; description?: string; rpgStats?: RPGStatsConfig }[],
+  characters: readonly {
+    id: string;
+    name: string;
+    description?: string;
+    rpgStats?: RPGStatsConfig;
+    rulesetSheets?: unknown;
+  }[],
   fallbackCharacterId: string | null,
+  /** The chat's pinned ruleset: skill and ability rolls then take their modifier from the sheet. */
+  ruleset?: RulesetDefinition | null,
 ): Record<string, unknown> {
   if (args.character !== undefined && typeof args.character !== "string")
     throw new Error("The roll character must be a participant name.");
@@ -47,6 +57,22 @@ export function prepareRoleplayRoll(
   const rawAttribute = typeof args.attribute === "string" ? args.attribute.trim() : "";
   const parsed = typeof args.notation === "string" ? parseDicePool(args.notation) : null;
   if (!parsed || !character) return args;
+  if (ruleset) {
+    const checkName = requestedSkill || rawAttribute;
+    const check = checkName ? rulesetRollModifier(ruleset, character.rulesetSheets, checkName) : null;
+    const modifier = parsed.modifier + (check?.modifier ?? 0);
+    const notation = check?.modifier ? `${parsed.dice}${modifier > 0 ? "+" : ""}${modifier || ""}` : parsed.notation;
+    if (!parseDiceNotation(notation)) throw new Error("The sheet-adjusted roll exceeds the supported numeric range.");
+    return {
+      ...args,
+      character: character.name,
+      notation,
+      ...(check ? { bonus: check.modifier } : {}),
+      reason: [character.name, check?.label ?? checkName, typeof args.reason === "string" ? args.reason : ""]
+        .filter(Boolean)
+        .join(" · "),
+    };
+  }
   const stats = character.rpgStats;
   let attributeBonus = 0;
 
