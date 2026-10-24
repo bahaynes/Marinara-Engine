@@ -3593,6 +3593,7 @@ export function ChatSettingsDrawer({
   };
 
   const renderAgentLorebookAttachment = (agentType: string) => {
+    if (agentType === "narrative-architect") return null;
     const agent = availableAgents.find((entry) => entry.id === agentType);
     if (!agent || (agent.builtIn && agent.category !== "writer" && agent.category !== "tracker")) return null;
     if (agentType === "hierarchical-maps") {
