@@ -189,15 +189,11 @@ export interface RPGStatsConfig {
   hp: { value: number; max: number };
   /** HP-like bars such as HP, MP, EP, Sanity, etc. */
   pools?: RPGStatPool[];
-  /** Trained skills, keyed by skill id. Read only by skill-check math, never written into prompts. */
-  proficiencies?: Record<string, RPGSkillProficiency>;
 }
 
 /** What a fight token shows: the avatar, a picture from the owner's gallery, or the initials. */
 export type CombatIconChoice =
   { source: "avatar" } | { source: "initials" } | { source: "image"; imageId: string; url: string };
-
-export type RPGSkillProficiency = "proficient" | "expertise";
 
 /** A character-profile default for a text-valued Character Tracker field. */
 export interface CharacterTrackerCustomFieldDefault {
