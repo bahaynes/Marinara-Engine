@@ -8,7 +8,7 @@
 // shared/src/features/triage); this component is a thin renderer + button
 // dispatcher. It never reveals which hand card the engine considers "good" —
 // that tiering is engine-internal only (see engine.ts's computeHand).
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -22,7 +22,6 @@ import {
   Trophy,
   SkullIcon,
   LifeBuoy,
-  XCircle,
   FastForward,
 } from "lucide-react";
 import { cn } from "../../../lib/utils";
@@ -37,8 +36,8 @@ interface TriageCombatUIProps {
   onFlee: () => void;
   /** Statistically resolve the rest of the case from the party's skill, without interactive play. */
   onAutoResolve: () => void;
-  /** Discard the case entirely — no chat post, no journal entry; also deletes the GM turn that started it. */
-  onCancel: () => void;
+  /** The game surface's battle controls (logs, back to the turn before the case). */
+  controlsSlot?: ReactNode;
   onContinue: () => void;
 }
 
@@ -122,13 +121,12 @@ export function TriageCombatUI({
   onEndRound,
   onFlee,
   onAutoResolve,
-  onCancel,
+  controlsSlot,
   onContinue,
 }: TriageCombatUIProps) {
   const { t: localizeUi } = useUiTranslation();
   const [fleeConfirm, setFleeConfirm] = useState(false);
   const [autoResolveConfirm, setAutoResolveConfirm] = useState(false);
-  const [cancelConfirm, setCancelConfirm] = useState(false);
   const [hintOpen, setHintOpen] = useState(false);
   const [expandedActionId, setExpandedActionId] = useState<string | null>(null);
   const { vitals } = state;
@@ -328,16 +326,7 @@ export function TriageCombatUI({
               {localizeUi("ui.game.triagecombatui.handOff")}
             </button>
           )}
-          {!state.outcome && (
-            <button
-              type="button"
-              onClick={() => setCancelConfirm(true)}
-              className="flex items-center gap-1 rounded-lg border border-white/15 bg-white/5 px-2 py-1 text-xs font-semibold text-white/60 hover:bg-white/10"
-            >
-              <XCircle size={13} />
-              {localizeUi("ui.game.triagecombatui.cancelCase")}
-            </button>
-          )}
+          {!state.outcome && controlsSlot}
         </div>
       </div>
 
@@ -521,37 +510,6 @@ export function TriageCombatUI({
               <button
                 type="button"
                 onClick={() => setAutoResolveConfirm(false)}
-                className="flex-1 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm font-semibold text-white/70 hover:bg-white/10"
-              >
-                {localizeUi("ui.game.tacticalcombatui.stay")}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Cancel confirm */}
-      {cancelConfirm && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-          <div className="w-full max-w-xs rounded-2xl border border-white/10 bg-slate-900 p-5 text-center">
-            <XCircle className="mx-auto mb-2 h-6 w-6 text-red-400" />
-            <p className="mb-4 text-sm text-white/90">
-              {localizeUi("ui.game.triagecombatui.discardThisCaseEntirelyAndRemoveTheGmTurn")}
-            </p>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setCancelConfirm(false);
-                  onCancel();
-                }}
-                className="flex-1 rounded-lg border border-red-400/40 bg-red-500/20 px-3 py-2 text-sm font-bold text-red-300 hover:bg-red-500/30"
-              >
-                {localizeUi("ui.game.triagecombatui.cancelCase")}
-              </button>
-              <button
-                type="button"
-                onClick={() => setCancelConfirm(false)}
                 className="flex-1 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm font-semibold text-white/70 hover:bg-white/10"
               >
                 {localizeUi("ui.game.tacticalcombatui.stay")}

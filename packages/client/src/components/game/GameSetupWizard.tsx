@@ -2317,7 +2317,12 @@ export function GameSetupWizard({
                           </button>
                         )}
                         {listCombatStyles()
-                          .filter((id) => !isBuiltInCombatStyle(id) && (!combatStyles || combatStyles.includes(id)))
+                          .filter(
+                            (id) =>
+                              !isBuiltInCombatStyle(id) &&
+                              id !== "triage" &&
+                              (!combatStyles || combatStyles.includes(id)),
+                          )
                           .map((id) => (
                             <button
                               key={id}
