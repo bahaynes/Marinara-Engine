@@ -1,0 +1,336 @@
+{
+  "$comment": "Fork-local medical drama ruleset for RP skill checks. Same dice-sum/proficiency shape as the 5e SRD example; skills are the former built-in Medical skill system.",
+  "schemaVersion": 1,
+  "id": "medical",
+  "version": 1,
+  "name": "Medical Drama",
+  "edition": "Fork-local, 5e-style d20",
+  "license": {
+    "spdx": "CC0-1.0",
+    "attribution": "Original to this fork; no third-party material."
+  },
+  "coverage": {
+    "checks": true,
+    "saves": true,
+    "sheet": true,
+    "resources": false,
+    "rests": false,
+    "combat": false,
+    "summary": "Ability checks, skill checks and saving throws for clinical roleplay, plus a small character sheet."
+  },
+  "resolution": {
+    "kind": "dice-sum",
+    "dice": {
+      "count": 1,
+      "sides": 20
+    },
+    "abilityModifier": {
+      "op": "floorHalfMinusTen"
+    },
+    "proficiency": {
+      "bonus": {
+        "derived": "proficiency_bonus"
+      }
+    },
+    "proficiencyTiers": [
+      {
+        "id": "none",
+        "label": "Not proficient",
+        "multiplier": 0
+      },
+      {
+        "id": "half",
+        "label": "Half proficiency",
+        "multiplier": 0.5,
+        "round": "down"
+      },
+      {
+        "id": "proficient",
+        "label": "Proficient",
+        "multiplier": 1
+      },
+      {
+        "id": "expertise",
+        "label": "Expertise",
+        "multiplier": 2
+      }
+    ],
+    "advantage": true,
+    "naturals": {
+      "$comment": "2014 rules: a natural 20 or 1 decides attack rolls only. Checks and saves are pure arithmetic, unlike Marinara's own rules.",
+      "check": "none",
+      "save": "none"
+    },
+    "difficultyLadder": [
+      {
+        "label": "Very easy",
+        "dc": 5
+      },
+      {
+        "label": "Easy",
+        "dc": 10
+      },
+      {
+        "label": "Medium",
+        "dc": 15
+      },
+      {
+        "label": "Hard",
+        "dc": 20
+      },
+      {
+        "label": "Very hard",
+        "dc": 25
+      },
+      {
+        "label": "Nearly impossible",
+        "dc": 30
+      }
+    ]
+  },
+  "sheet": {
+    "version": 1,
+    "sections": [
+      {
+        "id": "identity",
+        "label": "Identity"
+      }
+    ],
+    "abilities": [
+      {
+        "id": "str",
+        "label": "Strength",
+        "short": "STR",
+        "min": 1,
+        "max": 30,
+        "default": 10
+      },
+      {
+        "id": "dex",
+        "label": "Dexterity",
+        "short": "DEX",
+        "min": 1,
+        "max": 30,
+        "default": 10
+      },
+      {
+        "id": "con",
+        "label": "Constitution",
+        "short": "CON",
+        "min": 1,
+        "max": 30,
+        "default": 10
+      },
+      {
+        "id": "int",
+        "label": "Intelligence",
+        "short": "INT",
+        "min": 1,
+        "max": 30,
+        "default": 10
+      },
+      {
+        "id": "wis",
+        "label": "Wisdom",
+        "short": "WIS",
+        "min": 1,
+        "max": 30,
+        "default": 10
+      },
+      {
+        "id": "cha",
+        "label": "Charisma",
+        "short": "CHA",
+        "min": 1,
+        "max": 30,
+        "default": 10
+      }
+    ],
+    "saves": [
+      {
+        "id": "str_save",
+        "label": "Strength save",
+        "ability": "str"
+      },
+      {
+        "id": "dex_save",
+        "label": "Dexterity save",
+        "ability": "dex"
+      },
+      {
+        "id": "con_save",
+        "label": "Constitution save",
+        "ability": "con"
+      },
+      {
+        "id": "int_save",
+        "label": "Intelligence save",
+        "ability": "int"
+      },
+      {
+        "id": "wis_save",
+        "label": "Wisdom save",
+        "ability": "wis"
+      },
+      {
+        "id": "cha_save",
+        "label": "Charisma save",
+        "ability": "cha"
+      }
+    ],
+    "saveTiers": [
+      "none",
+      "proficient"
+    ],
+    "skills": [
+      {
+        "id": "diagnostics",
+        "label": "Diagnostics",
+        "ability": "int"
+      },
+      {
+        "id": "investigation",
+        "label": "Investigation",
+        "ability": "int"
+      },
+      {
+        "id": "triage",
+        "label": "Triage",
+        "ability": "wis"
+      },
+      {
+        "id": "perception",
+        "label": "Perception",
+        "ability": "wis"
+      },
+      {
+        "id": "insight",
+        "label": "Insight",
+        "ability": "wis"
+      },
+      {
+        "id": "bedside_manner",
+        "label": "Bedside Manner",
+        "ability": "cha"
+      },
+      {
+        "id": "hospital_politics",
+        "label": "Hospital Politics",
+        "ability": "cha"
+      },
+      {
+        "id": "persuasion",
+        "label": "Persuasion",
+        "ability": "cha"
+      },
+      {
+        "id": "intimidation",
+        "label": "Intimidation",
+        "ability": "cha"
+      },
+      {
+        "id": "deception",
+        "label": "Deception",
+        "ability": "cha"
+      },
+      {
+        "id": "surgery",
+        "label": "Surgery",
+        "ability": "dex"
+      },
+      {
+        "id": "procedures",
+        "label": "Procedures",
+        "ability": "dex"
+      },
+      {
+        "id": "athletics",
+        "label": "Athletics",
+        "ability": "str"
+      },
+      {
+        "id": "endurance",
+        "label": "Endurance",
+        "ability": "con"
+      }
+    ],
+    "fields": [
+      {
+        "id": "level",
+        "label": "Level",
+        "type": "number",
+        "min": 1,
+        "max": 20,
+        "default": 1,
+        "section": "identity"
+      },
+      {
+        "id": "class",
+        "label": "Class",
+        "type": "text",
+        "maxLength": 80,
+        "section": "identity"
+      },
+      {
+        "id": "hp_max",
+        "label": "Hit points",
+        "type": "number",
+        "min": 1,
+        "max": 999,
+        "default": 10,
+        "section": "identity"
+      }
+    ],
+    "derived": [
+      {
+        "id": "proficiency_bonus",
+        "label": "Proficiency bonus",
+        "op": "stepTable",
+        "from": {
+          "field": "level"
+        },
+        "table": [
+          [
+            1,
+            2
+          ],
+          [
+            5,
+            3
+          ],
+          [
+            9,
+            4
+          ],
+          [
+            13,
+            5
+          ],
+          [
+            17,
+            6
+          ]
+        ],
+        "section": "identity"
+      }
+    ],
+    "lists": [],
+    "live": {
+      "pools": [
+        {
+          "id": "hp",
+          "label": "Hit points",
+          "max": {
+            "field": "hp_max"
+          },
+          "allowTemp": true
+        }
+      ]
+    }
+  },
+  "rests": [],
+  "gm": {
+    "checkGuidance": "This game uses a medical-drama ruleset. Call for a skill check only when the outcome is uncertain and failure is interesting. Name the skill and set a DC. Never add modifiers or state a total: the Engine applies the character sheet and reports the outcome.",
+    "sheetGuidance": "The character sheets are authoritative."
+  }
+}
