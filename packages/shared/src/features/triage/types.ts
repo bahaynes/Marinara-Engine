@@ -170,6 +170,8 @@ export interface TriageInitRequest {
    * more recently introduced patient silently displace one already being treated.
    */
   patientHint?: string;
+  /** The GM message that started the case; without a patientHint, its `patient="Name"` tag supplies one. */
+  messageId?: string;
 }
 
 /** Server response for POST /api/encounter/triage-init. */
