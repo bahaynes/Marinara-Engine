@@ -367,6 +367,7 @@ import {
   prepareRoleplayRoll,
   withRoleplayRollSchema,
 } from "../services/generation/roleplay-rolls.js";
+import { rulesetCheckNames } from "../services/generation/roleplay-ruleset-rolls.js";
 import { applyInspirationAward } from "../services/game/inspiration.service.js";
 import {
   appendRoleplayMessageNotes,
@@ -5202,9 +5203,16 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                 name: identity.name,
                 description: identity.description,
                 rpgStats: normalizeCharacterRpgStats(parseExtra(identity.personaStats).rpgStats),
+                rulesetSheets: parseExtra(identity.personaStats).rulesetSheets,
               },
             ]
           : charInfo;
+        // RP skill rolls follow the ruleset the chat pinned; an unavailable pin rolls plain dice.
+        const roleplayRulesetResolved =
+          chatMode === "roleplay" && chatMeta.gameRuleset != null
+            ? resolveGameRuleset(chatMeta, await loadRulesetRegistry())
+            : null;
+        const roleplayRuleset = roleplayRulesetResolved?.status === "ok" ? roleplayRulesetResolved.definition : null;
         for (const character of charInfo) {
           const resolveCharacterPromptText = (value: string): string =>
             resolveHistoryMessageMacros([{ content: value, characterId: character.id }])[0]?.content ?? value;
@@ -9347,14 +9355,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                 characterId: roleplayCallerId,
                 interruptAvailable: Boolean(roleplayInterruptionTarget),
                 video: roleplayVideoOffer,
-                activeSkills: getActiveGameSkills({
-                  enabledSystemIds: Array.isArray(chatMeta.gameSkillSystems)
-                    ? (chatMeta.gameSkillSystems as string[])
-                    : null,
-                  disabledSkillIds: Array.isArray(chatMeta.gameDisabledSkills)
-                    ? (chatMeta.gameDisabledSkills as string[])
-                    : null,
-                }),
+                skillNames: roleplayRuleset ? rulesetCheckNames(roleplayRuleset) : undefined,
               }),
               wrapFormat,
             );
@@ -9788,7 +9789,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                     ...(chatMode === "roleplay"
                       ? {
                           prepareDiceRoll: (args: Record<string, unknown>) =>
-                            prepareRoleplayRoll(args, roleplayRollParticipants, roleplayCallerId),
+                            prepareRoleplayRoll(args, roleplayRollParticipants, roleplayCallerId, roleplayRuleset),
                         }
                       : {}),
                     applyGameStateUpdate: async ({ type, value }) => {

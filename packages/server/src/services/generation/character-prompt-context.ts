@@ -39,6 +39,8 @@ export type CharacterPromptInfo = {
   avatarPath: string | null;
   avatarCrop: unknown | null;
   rpgStats?: RPGStatsConfig;
+  /** Ruleset sheets by ruleset id, for RP skill rolls under a pinned ruleset. */
+  rulesetSheets?: unknown;
   /** Conversation-only: cosmetic display name + whether to declare it on the card. */
   convoDisplayName?: string;
   convoDisplayNameInCard?: boolean;
@@ -170,6 +172,7 @@ export async function loadCharacterPromptInfo({
       avatarPath: (charRow.avatarPath as string) ?? null,
       avatarCrop: charData.extensions?.avatarCrop ?? null,
       rpgStats: normalizeCharacterRpgStats(charData.extensions?.rpgStats),
+      rulesetSheets: charData.extensions?.rulesetSheets,
       convoDisplayName:
         typeof charData.extensions?.convoDisplayName === "string" ? charData.extensions.convoDisplayName : undefined,
       convoDisplayNameInCard: charData.extensions?.convoDisplayNameInCard === true,
