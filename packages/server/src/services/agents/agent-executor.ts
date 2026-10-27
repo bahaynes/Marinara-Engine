@@ -1785,7 +1785,7 @@ export async function prefillAgent(
       ...(tools?.length
         ? { ...requestOptions, tools }
         : { ...requestOptions, ...jsonAgentResponseFormatOverride(config, model) }),
-      signal: agentCallSignal(context.signal),
+      signal: context.signal,
     });
   } catch (err) {
     logger.debug(err, "[agent-prefill] %s skipped", config.type);
@@ -1844,7 +1844,7 @@ export async function prefillAgentBatch(
           model,
           ...agentRequestOptions(batched[0]!, true),
           ...localSidecarJsonResponseFormat(model),
-          signal: agentCallSignal(context.signal),
+          signal: context.signal,
         }),
       );
     } catch (err) {
