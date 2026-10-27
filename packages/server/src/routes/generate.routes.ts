@@ -5334,34 +5334,24 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
             !(typeof chatMeta.gameGmPromptTemplateId === "string" && chatMeta.gameGmPromptTemplateId.trim().length > 0)
               ? { ...chatMeta, gameSystemPrompt: selectedGamePrompt }
               : chatMeta;
-          const {
-            gmCtx,
-            gameActiveState,
-            sessionNumber,
-            gameTurnNumber,
-            gameTime,
-            gameMap,
-            hasSceneModel,
-            volatileTail,
-          } = await injectGameGmPromptRuntime({
-            messages: finalMessages,
-            chatId: input.chatId,
-            chat,
-            chatMetadata: gamePromptMetadata,
-            world: await loadGameWorld(app.db, input.chatId, gamePromptMetadata),
-            ruleset: pinnedGameRuleset?.status === "ok" ? pinnedGameRuleset.definition : undefined,
-            characterIds,
-            chars,
-            chats,
-            selectedGameStateSnapshotPromise,
-            mappedMessages,
-            personaName,
-            hasPlayerIdentity: persona != null,
-            resolvePromptMacros,
-          });
+          const { gmCtx, gameActiveState, sessionNumber, gameTurnNumber, gameTime, gameMap, hasSceneModel } =
+            await injectGameGmPromptRuntime({
+              messages: finalMessages,
+              chatId: input.chatId,
+              chat,
+              chatMetadata: gamePromptMetadata,
+              world: await loadGameWorld(app.db, input.chatId, gamePromptMetadata),
+              ruleset: pinnedGameRuleset?.status === "ok" ? pinnedGameRuleset.definition : undefined,
+              characterIds,
+              chars,
+              chats,
+              selectedGameStateSnapshotPromise,
+              mappedMessages,
+              personaName,
+              hasPlayerIdentity: persona != null,
+              resolvePromptMacros,
+            });
           canonicalGamePartyNames = gmCtx.partyNames;
-          placeGameWorldInfo(finalMessages, volatileTail, "", true);
-
           // ── Lorebook injection for game mode ──
           if (!presetHandledLorebooks) {
             sendProgress("lorebooks");
