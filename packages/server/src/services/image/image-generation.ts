@@ -69,6 +69,7 @@ import {
   findMissingComfyReferenceSlots,
   numberedComfyReferencePlaceholder,
 } from "./comfyui-reference-placeholders.js";
+import { buildComfyLayoutReplacements, comfyWorkflowTakesLayout } from "./comfyui-layout-placeholders.js";
 import {
   readWorkflowVariableDeclarations,
   resolveWorkflowVariableReplacements,
@@ -280,6 +281,20 @@ export function imageConnectionTakesReferencePicture(connection: {
       });
 }
 
+/** Fork: whether an image connection, given as generateImage receives it, fills a ComfyUI layout workflow's boxes. */
+export function imageConnectionTakesComfyLayout(connection: {
+  source: string;
+  baseUrl: string;
+  serviceHint: string;
+  model?: string;
+  comfyWorkflow?: string | null;
+}): boolean {
+  return (
+    resolveImageBackend(connection.source, connection.baseUrl, connection.serviceHint, connection.model) ===
+      "comfyui" && comfyWorkflowTakesLayout(connection.comfyWorkflow)
+  );
+}
+
 /** Default 30-minute timeout for image generation API calls (overridable via env). */
 const IMAGE_GEN_TIMEOUT = Number(process.env.IMAGE_GEN_TIMEOUT_MS ?? 1_800_000);
 const COMFYUI_GEN_TIMEOUT_SECONDS = Number(process.env.COMFYUI_GEN_TIMEOUT ?? 2400);
@@ -344,7 +359,8 @@ export async function generateImage(
   // the prompt writer put there, including when a NovelAI request falls back.
   const flattenedPrompt =
     request.characterPrompts?.length &&
-    !(resolvedSource === "novelai" && supportsNovelAiCharacterPrompts({ baseUrl, model: request.model }))
+    !(resolvedSource === "novelai" && supportsNovelAiCharacterPrompts({ baseUrl, model: request.model })) &&
+    !(resolvedSource === "comfyui" && comfyWorkflowTakesLayout(request.comfyWorkflow))
       ? [request.prompt, ...request.characterPrompts.map((entry) => `${entry.name}: ${entry.prompt}`)].join("\n\n")
       : undefined;
   const generationTimeoutMs =
@@ -3841,6 +3857,9 @@ async function generateComfyUI(baseUrl: string, request: ImageGenRequest): Promi
   workflow = stripWorkflowVariableDeclarations(workflow);
   Object.assign(replacements, resolveWorkflowVariableReplacements(variableDeclarations, request.comfyVariables));
   const workflowJson = JSON.stringify(workflow);
+  if (comfyWorkflowTakesLayout(workflowJson)) {
+    Object.assign(replacements, buildComfyLayoutReplacements(request.characterPrompts));
+  }
   const references = collectComfyReferenceImages(request, defaults);
   // Real references always come first; the placeholder only stands in when none exist.
   const realReferenceCount = references.filter(
