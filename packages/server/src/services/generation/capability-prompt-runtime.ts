@@ -1,4 +1,5 @@
 import type { DB } from "../../db/connection.js";
+import { findTrackerContextInsertIndex } from "../../routes/generate/generate-route-utils.js";
 import {
   collectCapabilityPromptContext,
   type CapabilityPromptContextRequest,
@@ -8,7 +9,7 @@ import { replaceRuntimeAgentSection, type RuntimeAgentSectionTokens } from "./ru
 
 /** The same read-only package placement for generation and Peek Prompt. */
 export async function injectCapabilityContexts(
-  messages: Array<{ role: "system" | "user" | "assistant"; content: string }>,
+  messages: Array<{ role: "system" | "user" | "assistant"; content: string; contextKind?: string }>,
   request: CapabilityPromptContextRequest,
   db: DB,
   sectionTokens: ReadonlyMap<string, RuntimeAgentSectionTokens>,
@@ -21,10 +22,17 @@ export async function injectCapabilityContexts(
   const eventBlock = await collectRoleplayEventContext(db, request.chatId, request.targetCharacterIds ?? []);
   if (eventBlock) blocks.push(eventBlock);
   if (blocks.length > 0) {
-    const context = blocks.join("\n\n");
-    const systemMessage = messages.find((message) => message.role === "system");
-    if (systemMessage) systemMessage.content += "\n\n" + context;
-    else messages.unshift({ role: "system", content: context });
+    // Fork: unplaced package context changes most turns, so it goes beside the committed tracker
+    // context just before the last message; upstream appends it to the first system message,
+    // which rewrites the whole prompt cache from there on every change. When the last message is
+    // an assistant reply (impersonate), it goes after it: the provider caches history up to the
+    // last assistant message, so anything volatile must stay past that point.
+    const at = findTrackerContextInsertIndex(messages);
+    messages.splice(messages[at]?.role === "assistant" ? at + 1 : at, 0, {
+      role: "user",
+      content: blocks.join("\n\n"),
+      contextKind: "injection",
+    });
   }
   return promptContext;
 }
