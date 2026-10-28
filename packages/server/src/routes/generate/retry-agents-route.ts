@@ -304,6 +304,7 @@ import {
   previewIllustratorSceneBackground,
   resolveIllustratorImageConnectionId,
   resolveIllustratorCharacterPromptInstruction,
+  resolveComfyLayoutCharacterPromptLimit,
   resolveIllustratorPromptStyle,
 } from "../../services/generation/illustrator-background-generation.js";
 import {
@@ -4013,7 +4014,7 @@ async function applyRetryResultEffects(args: {
             const imgModel = imgConnFull.model || "";
             const characterPromptLimit = supportsNovelAiCharacterPrompts(imgConnFull)
               ? resolveNovelAiCharacterPromptLimit(imgModel)
-              : 0;
+              : resolveComfyLayoutCharacterPromptLimit(imgConnFull);
             const illustratorCharacterPrompts = readCharacterPrompts(
               illData,
               illCharacters.filter((name): name is string => typeof name === "string"),
