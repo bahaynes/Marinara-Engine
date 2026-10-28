@@ -560,6 +560,7 @@ import {
   illustratorTrackerLocationChanged,
   resolveIllustratorImageConnectionId,
   resolveIllustratorCharacterPromptInstruction,
+  resolveComfyLayoutCharacterPromptLimit,
   resolveIllustratorPromptStyle,
 } from "../services/generation/illustrator-background-generation.js";
 import {
@@ -15063,7 +15064,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                       const imgModel = imgConnFull.model || "";
                       const characterPromptLimit = supportsNovelAiCharacterPrompts(imgConnFull)
                         ? resolveNovelAiCharacterPromptLimit(imgModel)
-                        : 0;
+                        : resolveComfyLayoutCharacterPromptLimit(imgConnFull);
                       const illustratorCharacterPrompts = readCharacterPrompts(
                         illData,
                         illCharacters.filter((name): name is string => typeof name === "string"),

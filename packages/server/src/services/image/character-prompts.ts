@@ -144,9 +144,16 @@ export const NOVELAI_CHARACTER_PROMPT_RULES = [
   "position is the character's approximate normalized center: x=0 is left, x=1 is right, y=0 is top, y=1 is bottom. Keep positions consistent with camera composition and character order.",
 ] as const;
 
-/** System-prompt block appended for the roleplay Illustrator when its image connection is native NovelAI. */
-export function buildIllustratorCharacterPromptInstruction(limit: number): string {
+/**
+ * System-prompt block appended for the roleplay Illustrator when its image connection is native NovelAI,
+ * or (fork) a ComfyUI layout workflow that draws each character in its own box.
+ */
+export function buildIllustratorCharacterPromptInstruction(
+  limit: number,
+  flavor: "novelai" | "comfyui_layout" = "novelai",
+): string {
   if (limit <= 0) return "";
+  if (flavor === "comfyui_layout") return buildComfyLayoutCharacterPromptInstruction(limit);
   return [
     "<illustrator_character_prompts>",
     "The image connection is NovelAI with native multi-character prompting enabled for this request.",
@@ -157,6 +164,22 @@ export function buildIllustratorCharacterPromptInstruction(limit: number): strin
     "Fixed traits come from that character's card or persona Appearance field. If the Appearance field is already written as Danbooru tags, copy those tags verbatim into the caption; if it is prose, convert it into Danbooru tags. Do not restate fixed traits in the base prompt.",
     "Clothing comes from the tracker's current outfit for that character when one is present, converted into Danbooru tags; otherwise use what the scene describes. Put the clothing tags in the caption, not the base prompt.",
     ...NOVELAI_CHARACTER_PROMPT_RULES,
+    "</illustrator_character_prompts>",
+  ].join("\n");
+}
+
+function buildComfyLayoutCharacterPromptInstruction(limit: number): string {
+  return [
+    "<illustrator_character_prompts>",
+    "The image connection is a ComfyUI layout workflow that draws each named character inside their own box of the picture.",
+    'Extend the JSON you return with "characterPrompts": [ { "name": string, "prompt": string, "negativePrompt": string, "position": { "x": number, "y": number } } ].',
+    'When two or more named characters are visible, include exactly one characterPrompts entry for every name in "characters", using the exact same spelling. For zero or one visible character, return an empty characterPrompts array.',
+    `Never return more than ${limit} entries. If more characters are visible, keep the most important for this beat and treat the rest as unnamed background.`,
+    'Keep "prompt" as the base scene description: the shared interaction, camera, composition, environment, lighting, mood, and props. Put character-specific identity, appearance, hair, eyes, build, clothing, expression, pose, and role in that character\'s own prompt so traits never leak between characters.',
+    "Write every prompt and character prompt as natural-language descriptive sentences, not comma-separated tags. This overrides any instruction to copy or produce Danbooru tags; turn tag-style Appearance fields into plain description.",
+    "Fixed traits come from that character's card or persona Appearance field. Clothing comes from the tracker's current outfit for that character when one is present; otherwise use what the scene describes.",
+    "Use an empty string for negativePrompt; this workflow has no per-character negative prompt.",
+    NOVELAI_CHARACTER_PROMPT_RULES[3],
     "</illustrator_character_prompts>",
   ].join("\n");
 }

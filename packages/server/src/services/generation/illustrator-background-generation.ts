@@ -24,6 +24,8 @@ import {
   resolveNovelAiCharacterPromptLimit,
   supportsNovelAiCharacterPrompts,
 } from "../image/character-prompts.js";
+import { COMFYUI_LAYOUT_MAX_CHARACTER_PROMPTS } from "../image/comfyui-layout-placeholders.js";
+import { imageConnectionTakesComfyLayout } from "../image/image-generation.js";
 import { resolveConnectionImageDefaults, resolveConnectionImageQuality } from "../image/image-generation-defaults.js";
 import { loadImageGenerationUserSettings } from "../image/image-generation-settings.js";
 import { resolveImagePromptReviewSize } from "../image/image-prompt-review.js";
@@ -357,9 +359,34 @@ export async function resolveIllustratorCharacterPromptInstruction(args: {
   const imageConnection =
     (configuredImageConnectionId ? await args.connections.getWithKey(configuredImageConnectionId) : null) ??
     (await args.connections.getDefaultForImageGeneration());
-  if (!imageConnection || !supportsNovelAiCharacterPrompts(imageConnection)) return { instruction: "", limit: 0 };
+  if (!imageConnection) return { instruction: "", limit: 0 };
+  if (!supportsNovelAiCharacterPrompts(imageConnection)) {
+    const limit = resolveComfyLayoutCharacterPromptLimit(imageConnection);
+    return { instruction: buildIllustratorCharacterPromptInstruction(limit, "comfyui_layout"), limit };
+  }
   const limit = resolveNovelAiCharacterPromptLimit(String(imageConnection.model ?? ""));
   return { instruction: buildIllustratorCharacterPromptInstruction(limit), limit };
+}
+
+/** Fork: the caption cap for an image connection whose ComfyUI workflow takes layout boxes, else 0. */
+export function resolveComfyLayoutCharacterPromptLimit(connection: {
+  model?: string | null;
+  baseUrl?: string | null;
+  imageGenerationSource?: string | null;
+  imageService?: string | null;
+  comfyuiWorkflow?: string | null;
+}): number {
+  const model = connection.model || "";
+  const source = connection.imageGenerationSource || model;
+  return imageConnectionTakesComfyLayout({
+    source,
+    baseUrl: connection.baseUrl || "",
+    serviceHint: connection.imageService || source,
+    model,
+    comfyWorkflow: connection.comfyuiWorkflow,
+  })
+    ? COMFYUI_LAYOUT_MAX_CHARACTER_PROMPTS
+    : 0;
 }
 
 async function resolveIllustratorImageConnection(
