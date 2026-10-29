@@ -9257,7 +9257,8 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                   : undefined,
               maxContext: effectiveMaxContext ?? connectionMaxContext,
               maxTokens,
-              tools: gameToolConnection ? undefined : responderToolDefs,
+              tools:
+                gameToolConnection || (input.impersonate && !impersonateWithChatPrompt) ? undefined : responderToolDefs,
               query: currentInputMessages()
                 .slice(-4)
                 .map((message) => message.content)
