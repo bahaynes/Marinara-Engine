@@ -84,6 +84,11 @@ every push, PR or not.
   `.github/agents/chai-workflow.md`: fork-local entries conflict on every rebase
   onto upstream and are never released from here. Describe the change in the
   commit message instead.
+- The fork is opinionated, and its changes stay here. Upstream's coordination
+  rules (draft PRs, tagging owners, self-assignment, filing issues) don't apply
+  to `custom-mods` work. Never propose upstream issues or PRs, and never post to
+  GitHub without the maintainer approving a draft first. The maintainer decides
+  what goes upstream.
 
 ## Repo-Specific Cautions
 
