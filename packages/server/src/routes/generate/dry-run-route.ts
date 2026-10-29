@@ -2248,7 +2248,9 @@ export async function registerDryRunRoute(app: FastifyInstance) {
             : null,
         characterIds.includes(chatMeta.roleplayCommandNarratorId as string)
           ? (chatMeta.roleplayCommandNarratorId as string)
-          : null,
+          : characterIds.length === 1
+            ? characterIds[0]!
+            : null,
       );
       if (!impersonate) {
         appendRoleplayMessageNotes(

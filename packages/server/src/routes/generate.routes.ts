@@ -9074,7 +9074,9 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                   : null,
               charInfo.some((character) => character.id === chatMeta.roleplayCommandNarratorId)
                 ? (chatMeta.roleplayCommandNarratorId as string)
-                : null,
+                : charInfo.length === 1
+                  ? charInfo[0]!.id
+                  : null,
             );
           // A note the user shared with the replying character is private context, like a whisper.
           const roleplayNoteContext =
