@@ -328,7 +328,11 @@ export function injectCommittedTrackerContext(args: {
   if (!contextBlock) return;
 
   args.dedupeLastMessageWrappers(args.messages);
-  args.messages.splice(args.findTrackerContextInsertIndex(args.messages), 0, {
+  // Fork: when the last message is an assistant reply (impersonate), inject context after it,
+  // matching capability-prompt-runtime. The provider caches history up to the last assistant
+  // message, so volatile context must not be inserted before it.
+  const at = args.findTrackerContextInsertIndex(args.messages);
+  args.messages.splice(args.messages[at]?.role === "assistant" ? at + 1 : at, 0, {
     role: "user",
     content: contextBlock,
     contextKind: "injection",
