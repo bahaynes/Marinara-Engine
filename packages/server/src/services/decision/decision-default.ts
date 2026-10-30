@@ -90,14 +90,19 @@ export async function askChoicesAsStatements(
   threshold: number,
 ): Promise<MixedDecisionAnswers> {
   const plain = questions.filter((question) => !question.options);
-  const expanded = questions.flatMap((question) =>
-    (question.options ?? []).map((option, index) => ({
+  const expanded = questions.flatMap((question) => {
+    // "What is his mood?" must not become "What is his mood?. Is this true? ...".
+    const asked = question.instructions.trim().replace(/[\s.?!:;,]+$/u, "");
+    return (question.options ?? []).map((option, index) => ({
       id: `${question.id}\u0000${index}`,
+      // Asked as a yes/no question about the criteria, without the option's label: worded
+      // "question: label (criteria)", a local model answered with the label ("open") or
+      // "Neither" instead of yes or no, and the option was lost.
       instructions: question.criteria?.[index]
-        ? `${question.instructions}: ${option} (${question.criteria[index]})`
-        : `${question.instructions}: ${option}`,
-    })),
-  );
+        ? `${asked}. Is this true? ${question.criteria[index]}`
+        : `${asked}. Is the answer "${option}"?`,
+    }));
+  });
   const answers = (await ask(state, [...plain, ...expanded])) ?? new Map<string, number>();
   const choices = new Map<string, string>();
   for (const question of questions) {
