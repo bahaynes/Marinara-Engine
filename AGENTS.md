@@ -90,6 +90,29 @@ every push, PR or not.
   GitHub without the maintainer approving a draft first. The maintainer decides
   what goes upstream.
 
+## Live Instances (homeserver)
+
+Two instances run from `/home/bah/git/minecraftdocker/marinara`: `marinara` (Ben) and
+`marinara-wife` (Erin). The `manage-marinara` skill (`.claude/skills/manage-marinara/SKILL.md`)
+has the commands; these rules hold for every agent:
+
+- **Erin's instance is hands-off.** No data, settings, agent, or rebuild changes to
+  `marinara-wife` unless Ben says Erin wants that change. Never recreate both instances in
+  one command.
+- **Use the `marinara` MCP tools** (`scripts/mari-mcp.mjs`) or `mari` for data. Dry-run first. Never
+  edit storage JSON on the host while a container runs.
+- **No restart mid-generation.** A recreate kills in-flight turns, and game turns can't be
+  re-swiped. Check both instances' recent chats via `/api/generate/status/<chatId>` and the
+  `llama-backend` slots right before the recreate, then recreate only if everything is idle. This
+  also covers agent installs and anything else that restarts a container.
+- **Build images from a clean commit.** Use a `git worktree` of the commit, never the main working
+  tree, because uncommitted work from other sessions would ship under the wrong `BUILD_COMMIT`.
+  Ben's instance builds `marinara-engine:nightly`; Erin's builds `:local`.
+- **Keep a rollback.** Tag the current image `:nightly-prev` before deploying, and confirm
+  `/api/health` reports the new commit afterward. If `storage-format.json` changed, back up the data
+  directory first: format bumps are one-way.
+- **Logs**: Loki (`127.0.0.1:3100`) first; `docker logs` only when Loki has nothing.
+
 ## Repo-Specific Cautions
 
 - Keep edits non-destructive. Do not revert unrelated work in the tree.
