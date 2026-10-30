@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "marinara": {
+      "command": "node",
+      "args": ["/home/bah/git/marinara-engine/scripts/mari-mcp.mjs"]
+    }
+  }
+}

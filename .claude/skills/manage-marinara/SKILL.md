@@ -146,26 +146,28 @@ cd /home/bah/git/marinara-engine
 pnpm check
 ```
 
-### Step 2: Build Base Docker Image
-Each instance has its own base tag: `marinara` builds FROM `marinara-engine:nightly`, `marinara-wife` FROM `marinara-engine:local`. Build only the one you are deploying:
+### Step 2: Deploy to Ben's instance (`marinara`)
+Use the `marinara_deploy` MCP tool, or the same script directly:
 ```bash
 cd /home/bah/git/marinara-engine
-# Primary (Ben):
-docker build --build-arg BUILD_BRANCH=staging --build-arg BUILD_COMMIT=$(git rev-parse --short HEAD) -t marinara-engine:nightly .
-# Wife (Erin), only when she wants the change:
-docker build --build-arg BUILD_BRANCH=staging --build-arg BUILD_COMMIT=$(git rev-parse --short HEAD) -t marinara-engine:local .
+python3 scripts/marinara-deploy.py idle            # {"idle": true|false, "reason": ...}
+python3 scripts/marinara-deploy.py deploy          # custom-mods; or pass a commit/branch
 ```
+It refuses commits whose tree never passed the pre-push checks (push first), storage-format changes
+(back up, then deploy by hand), and a second concurrent deploy. It builds `marinara-engine:nightly` from a
+clean worktree, waits up to `--wait-minutes` (default 30, retry every `--retry-seconds` 60) for both
+instances and `llama-backend` to be idle, tags the running image `:nightly-prev`, recreates `marinara`, and
+rolls back if `/api/health` doesn't report the commit. Never `docker build` from the main working tree:
+other sessions' uncommitted edits ship under the wrong commit.
 
-### Step 3: Recreate Container(s)
-Check both instances for in-flight generations in the same command as the recreate, then:
+### Step 3: Erin's instance (`marinara-wife`), only when she wants the change
+Build `:local` by hand from a clean worktree of the commit, check `marinara-deploy.py idle` in the same
+command, then recreate only `marinara-wife`:
 ```bash
-cd /home/bah/git/minecraftdocker/marinara
-
-# Recreate primary instance:
-docker compose up -d --build --force-recreate marinara
-
-# OR recreate wife instance:
-docker compose up -d --build --force-recreate marinara-wife
+cd /home/bah/git/marinara-engine && git worktree add --detach /tmp/mw-build <commit>
+docker build --build-arg BUILD_BRANCH=staging --build-arg BUILD_COMMIT=$(git -C /tmp/mw-build rev-parse --short HEAD) -t marinara-engine:local /tmp/mw-build
+python3 scripts/marinara-deploy.py idle | grep -q '"idle": true' && (cd /home/bah/git/minecraftdocker/marinara && docker compose up -d --build --force-recreate marinara-wife)
+git worktree remove /tmp/mw-build
 ```
 
 ### Nightly deploys (primary only)
