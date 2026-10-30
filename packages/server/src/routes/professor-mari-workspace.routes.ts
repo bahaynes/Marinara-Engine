@@ -24,6 +24,7 @@ import { createChatsStorage } from "../services/storage/chats.storage.js";
 import { getProfessorMariWorkspaceService } from "../services/professor-mari/workspace-agent.service.js";
 import { getProfessorMariWorkspaceSkillsService } from "../services/professor-mari/workspace-skills.service.js";
 import { getMariDbService } from "../services/mari-db/mari-db.service.js";
+import { runCacheCompare } from "../services/mari-db/cache-compare.js";
 import { renderMariEditPrompt } from "../services/professor-mari/workspace-edit-render.js";
 import { listCanonicalDocumentation } from "../services/professor-mari/documentation-tools.js";
 import { getMonorepoRoot } from "../config/runtime-config.js";
@@ -637,5 +638,30 @@ export async function professorMariWorkspaceRoutes(app: FastifyInstance) {
     if (!privileged(req, reply, true)) return;
     const body = cliSchema.parse(req.body);
     return getMariDbService(app.db).executeCli(body);
+  });
+
+  // Fork: structured app_data actions for the marinara MCP (scripts/mari-mcp.mjs), which calls from inside the
+  // container. Loopback-only like /db/command: it writes data.
+  app.post("/db/action", async (req, reply) => {
+    if (!privileged(req, reply, true)) return;
+    const body = z.record(z.string(), z.unknown()).parse(req.body ?? {});
+    const action = typeof body.action === "string" ? body.action : typeof body.type === "string" ? body.type : "";
+    if (action.toLowerCase() === "chat.cachecompare") {
+      return {
+        ok: true,
+        mode: "read",
+        command: "app_data chat.cacheCompare",
+        output: await runCacheCompare(app, body),
+      };
+    }
+    const result = await getMariDbService(app.db).executeAction({
+      ...body,
+      cwd: typeof body.cwd === "string" ? body.cwd : getMonorepoRoot(),
+      sessionId: typeof body.sessionId === "string" ? body.sessionId : "mcp",
+    });
+    if (result.ok !== false && (action === "personal_extension.create" || action === "personal_extension.update")) {
+      await personalServerExtensionRuntime.reloadAll();
+    }
+    return result;
   });
 }
