@@ -10,4 +10,17 @@ cd "$(git rev-parse --show-toplevel)" || exit 1
 # Regressions that build throwaway fixture repos would inherit it and commit into,
 # re-init (core.bare=true), and re-config this repo instead of their temp dir.
 for var in $(git rev-parse --local-env-vars); do unset "$var"; done
-pnpm check && pnpm regression
+# A tree that already passed (here or in bah-nixos's nightly marinara-rebase job) isn't run twice: a
+# force-push of a rebase the nightly validated skips straight through. Only a clean working tree
+# counts, since the suite runs on the files on disk, not on the pushed commit.
+validated="${XDG_CACHE_HOME:-$HOME/.cache}/marinara-rebase/validated-trees"
+tree=$(git rev-parse HEAD^{tree})
+if [ -z "$(git status --porcelain --untracked-files=no)" ] && grep -qx "$tree" "$validated" 2>/dev/null; then
+  echo "[pre-push] tree $tree already passed check + regression; skipping."
+  exit 0
+fi
+# MARINARA_REGRESSION_CONCURRENCY caps the regression workers (default: one per core) to run cooler.
+pnpm check && pnpm regression -- ${MARINARA_REGRESSION_CONCURRENCY:+--concurrency "$MARINARA_REGRESSION_CONCURRENCY"} || exit 1
+if [ -z "$(git status --porcelain --untracked-files=no)" ]; then
+  mkdir -p "$(dirname "$validated")" && echo "$tree" >> "$validated"
+fi
