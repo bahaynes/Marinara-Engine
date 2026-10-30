@@ -668,6 +668,35 @@ try {
     rollingSource.slice(10).map((message) => message.id),
     "rollover keeps the last finished scene and the open scene",
   );
+  // Fork: MARINARA_AM_ROLLING_SCENES=true is the instance default; a chat's false still opts out.
+  const rolledWith = async (flag: boolean | undefined) => {
+    await chats.patchMetadata(rollingChat.id, { advancedMemoryRollingScenes: flag });
+    return (
+      await memory.prepare({
+        chatId: rollingChat.id,
+        messages: rollingSource,
+        audienceCharacterIds: ["first"],
+        budgetTokens: Math.floor(rollingAll.receipt.estimatedTokensAfter * 0.8),
+        readOnly: true,
+      })
+    ).messageIds;
+  };
+  process.env.MARINARA_AM_ROLLING_SCENES = "true";
+  try {
+    assert.deepEqual(
+      await rolledWith(undefined),
+      rollingSource.slice(10).map((message) => message.id),
+      "the instance default rolls a chat that sets nothing",
+    );
+    assert.deepEqual(
+      await rolledWith(false),
+      rollingSource.slice(20).map((message) => message.id),
+      "a chat's false overrides the instance default",
+    );
+  } finally {
+    delete process.env.MARINARA_AM_ROLLING_SCENES;
+  }
+  await chats.patchMetadata(rollingChat.id, { advancedMemoryRollingScenes: true });
 
   // Fork: advancedMemoryLooseScenes allows endings inside a message and passes tracked location changes.
   const { gameStateSnapshots } = await import("../../packages/server/src/db/schema/game-state.js");
