@@ -41,6 +41,7 @@ import {
 } from "../services/professor-mari/workspace-pending-store.js";
 import { getProfessorMariWorkspaceSkillsService } from "../services/professor-mari/workspace-skills.service.js";
 import { getMariDbService } from "../services/mari-db/mari-db.service.js";
+import { runCacheCompare } from "../services/mari-db/cache-compare.js";
 import { renderMariEditPrompt } from "../services/professor-mari/workspace-edit-render.js";
 import { listCanonicalDocumentation } from "../services/professor-mari/documentation-tools.js";
 import { getMonorepoRoot } from "../config/runtime-config.js";
@@ -821,5 +822,30 @@ export async function professorMariWorkspaceRoutes(app: FastifyInstance) {
         `${images.length} picture(s) not shown: the shell CLI can't deliver pictures. Professor Mari sees them when she runs mari images look on its own (no pipes or ;); anyone else can ask her in chat to look.`,
       ],
     };
+  });
+
+  // Fork: structured app_data actions for the marinara MCP (scripts/mari-mcp.mjs), which calls from inside the
+  // container. Loopback-only like /db/command: it writes data.
+  app.post("/db/action", async (req, reply) => {
+    if (!privileged(req, reply, true)) return;
+    const body = z.record(z.string(), z.unknown()).parse(req.body ?? {});
+    const action = typeof body.action === "string" ? body.action : typeof body.type === "string" ? body.type : "";
+    if (action.toLowerCase() === "chat.cachecompare") {
+      return {
+        ok: true,
+        mode: "read",
+        command: "app_data chat.cacheCompare",
+        output: await runCacheCompare(app, body),
+      };
+    }
+    const result = await getMariDbService(app.db).executeAction({
+      ...body,
+      cwd: typeof body.cwd === "string" ? body.cwd : getMonorepoRoot(),
+      sessionId: typeof body.sessionId === "string" ? body.sessionId : "mcp",
+    });
+    if (result.ok !== false && (action === "personal_extension.create" || action === "personal_extension.update")) {
+      await personalServerExtensionRuntime.reloadAll();
+    }
+    return result;
   });
 }
