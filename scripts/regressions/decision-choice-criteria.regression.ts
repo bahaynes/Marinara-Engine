@@ -238,13 +238,32 @@ const statements: string[] = [];
 const chosen = await askChoicesAsStatements(
   async (_state, questions) => {
     statements.push(...questions.map((q) => q.instructions));
-    return new Map(questions.map((q): [string, number] => [q.id, q.instructions.includes("angry") ? 0.9 : 0.1]));
+    return new Map(questions.map((q): [string, number] => [q.id, q.instructions.includes("shouts") ? 0.9 : 0.1]));
   },
   {},
   [choiceQuestion],
   0.5,
 );
-assert.deepEqual(statements, ["mood: angry (he shouts)", "mood: sad"], "a chat model reads the criteria per option");
+assert.deepEqual(
+  statements,
+  ["mood. Is this true? he shouts", 'mood. Is the answer "sad"?'],
+  "a chat model gets one yes/no question per option, about its criteria when it has them",
+);
 assert.equal(chosen.choices.get("m"), "angry");
+statements.length = 0;
+await askChoicesAsStatements(
+  async (_state, questions) => {
+    statements.push(...questions.map((q) => q.instructions));
+    return new Map();
+  },
+  {},
+  [{ id: "p", instructions: "What is his mood? ", options: ["sad"], criteria: ["he cries"] }],
+  0.5,
+);
+assert.deepEqual(
+  statements,
+  ["What is his mood. Is this true? he cries"],
+  "a question's own punctuation is not doubled",
+);
 
 console.log("decision choice criteria regression passed");

@@ -1,12 +1,15 @@
 import {
   DECISION_CONNECTION_TIMEOUT_BOUNDS_MS,
+  DECISION_THINKING_MODES,
   DECISION_TIMEOUT_MS,
   defaultDecisionStateTokens,
   defaultDecisionTimeoutMs,
+  normalizeDecisionThinking,
   resolveDecisionConnectionTimeoutMs,
   resolveTtsRequestTimeoutMs,
   TTS_REQUEST_TIMEOUT_MS,
   type DecisionSource,
+  type DecisionThinkingMode,
   isChatProvider,
 } from "@marinara-engine/shared";
 import { isConnectionFlagFalse, isLanguageGenerationConnection } from "../../lib/connection-filters";
@@ -474,6 +477,7 @@ export function ConnectionEditor({
   const [localCredentialsFrom, setLocalCredentialsFrom] = useState("");
   const [localMaxStateTokens, setLocalMaxStateTokens] = useState(30000);
   const [localDecisionTimeoutMs, setLocalDecisionTimeoutMs] = useState<number>(DECISION_TIMEOUT_MS.systemOne);
+  const [localDecisionThinking, setLocalDecisionThinking] = useState<DecisionThinkingMode>("auto");
   const [localAudioSource, setLocalAudioSource] = useState("elevenlabs");
   const [localAudioGenerationSource, setLocalAudioGenerationSource] = useState<GenerativeAudioSource>("elevenlabs");
   const [localAudioGenerationCallbackUrl, setLocalAudioGenerationCallbackUrl] = useState("");
@@ -635,6 +639,7 @@ export function ConnectionEditor({
     setLocalCredentialsFrom((c.credentialsFromConnectionId as string) ?? "");
     setLocalMaxStateTokens(Number(c.maxStateTokens ?? defaultDecisionStateTokens(c.decisionSource as string)));
     setLocalDecisionTimeoutMs(resolveDecisionConnectionTimeoutMs(c.decisionTimeoutMs, c.decisionSource as string));
+    setLocalDecisionThinking(normalizeDecisionThinking(c.decisionThinking));
     setLocalAudioSource((c.audioSource as string) || "elevenlabs");
     setLocalAudioGenerationSource(
       GENERATIVE_AUDIO_SOURCES.includes(c.audioGenerationSource as GenerativeAudioSource)
@@ -1044,6 +1049,11 @@ export function ConnectionEditor({
         localProvider === "decision" && localDecisionTimeoutMs !== defaultDecisionTimeoutMs(localDecisionSource)
           ? localDecisionTimeoutMs
           : null,
+      // Auto is stored as null, like the time limit's default.
+      decisionThinking:
+        localProvider === "decision" && localDecisionSource === "openai_compatible" && localDecisionThinking !== "auto"
+          ? localDecisionThinking
+          : null,
       audioSource: isAudioProvider ? localAudioSource || null : null,
       audioGenerationSource: isGenerativeAudioProvider ? localAudioGenerationSource : null,
       audioGenerationCallbackUrl:
@@ -1227,6 +1237,7 @@ export function ConnectionEditor({
     localCredentialsFrom,
     localMaxStateTokens,
     localDecisionTimeoutMs,
+    localDecisionThinking,
     localAudioSource,
     localAudioGenerationSource,
     localAudioGenerationCallbackUrl,
@@ -2674,6 +2685,33 @@ export function ConnectionEditor({
                     default: defaultDecisionTimeoutMs(localDecisionSource) / 1000,
                   })}
                 </p>
+                {/* Only a chat model can think; System One scores in one pass. */}
+                {localDecisionSource === "openai_compatible" && (
+                  <>
+                    <label className="block text-xs" htmlFor="decision-thinking">
+                      {t("connections.decision.thinkingLabel")}
+                    </label>
+                    <select
+                      id="decision-thinking"
+                      value={localDecisionThinking}
+                      aria-describedby="decision-thinking-help"
+                      onChange={(event) => {
+                        setLocalDecisionThinking(event.target.value as DecisionThinkingMode);
+                        markDirty();
+                      }}
+                      className="mari-chrome-field h-11 w-full px-3 text-xs md:h-9"
+                    >
+                      {DECISION_THINKING_MODES.map((mode) => (
+                        <option key={mode} value={mode}>
+                          {t(`connections.decision.thinking.${mode}`)}
+                        </option>
+                      ))}
+                    </select>
+                    <p id="decision-thinking-help" className="text-xs text-[var(--muted-foreground)]">
+                      {t("connections.decision.thinkingHelp")}
+                    </p>
+                  </>
+                )}
               </section>
             )}
 

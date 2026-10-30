@@ -28,6 +28,7 @@ import type {
   APIProvider,
   ConnectionTestResult,
   DecisionSource,
+  DecisionThinkingMode,
   GenerativeAudioSource,
   ImageGenerationQuality,
 } from "@marinara-engine/shared";
@@ -139,6 +140,7 @@ export type CreateConnectionPayload = {
   credentialsFromConnectionId?: string | null;
   maxStateTokens?: number | null;
   decisionTimeoutMs?: number | null;
+  decisionThinking?: DecisionThinkingMode | null;
   audioVoice?: string | null;
   audioTimeoutMs?: number | null;
   audioSoundEffects?: boolean;
