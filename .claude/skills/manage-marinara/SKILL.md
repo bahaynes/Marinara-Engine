@@ -146,14 +146,17 @@ pnpm check
 ```
 
 ### Step 2: Build Base Docker Image
-Rebuild the local base image that both containers inherit:
+Each instance has its own base tag: `marinara` builds FROM `marinara-engine:nightly`, `marinara-wife` FROM `marinara-engine:local`. Build only the one you are deploying:
 ```bash
 cd /home/bah/git/marinara-engine
-docker build -t marinara-engine:local .
+# Primary (Ben):
+docker build --build-arg BUILD_BRANCH=staging --build-arg BUILD_COMMIT=$(git rev-parse --short HEAD) -t marinara-engine:nightly .
+# Wife (Erin), only when she wants the change:
+docker build --build-arg BUILD_BRANCH=staging --build-arg BUILD_COMMIT=$(git rev-parse --short HEAD) -t marinara-engine:local .
 ```
 
 ### Step 3: Recreate Container(s)
-Switch to the docker compose directory and recreate the target container:
+Check both instances for in-flight generations in the same command as the recreate, then:
 ```bash
 cd /home/bah/git/minecraftdocker/marinara
 
@@ -162,10 +165,10 @@ docker compose up -d --build --force-recreate marinara
 
 # OR recreate wife instance:
 docker compose up -d --build --force-recreate marinara-wife
-
-# OR recreate both if changing shared engine logic:
-docker compose up -d --build --force-recreate marinara marinara-wife
 ```
+
+### Nightly deploys (primary only)
+bah-nixos's `marinara-rebase` systemd timer (01:00) rebases `custom-mods` onto `upstream/staging` in `~/.cache/marinara-rebase/repo`, runs `pnpm check` and `pnpm regression`, and when they pass builds `marinara-engine:nightly` and recreates `marinara` once both instances are idle (until 03:30), rolling back to `marinara-engine:nightly-prev` if `/api/health` doesn't report the new commit. It skips the deploy when `storage-format.json` changed. The report is `~/.claude/handoffs/marinara-nightly-rebase.md`; `/api/health`'s `commit` is a `nightly/rebased` commit, not a `custom-mods` one. A manual deploy to `marinara` replaces the nightly until the next night.
 
 ---
 
