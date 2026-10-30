@@ -320,8 +320,7 @@ export async function runPiLoop(input: PiRunInput & { commands: WorkspaceCommand
 
   const reviewState = newRoundReviewState();
   // Decided once per connection: only these connections ever parse text as tool calls.
-  const textualTools =
-    isLocalSidecarConnection(input.connection) || !supportsNativeToolCalls(input.connection.provider);
+  const textualTools = isLocalSidecarConnection(input.connection) || !supportsNativeToolCalls(input.connection);
   const systemMessages = input.messages.filter((message) => message.role === "system");
   const systemSeparator = "\n\n";
   const systemPrompt = systemMessages.map((message) => message.content).join(systemSeparator);

@@ -156,6 +156,7 @@ export type WorkspaceConnection = Pick<
   | "openrouterProvider"
   | "claudeFastMode"
   | "treatAsLocalEndpoint"
+  | "disableNativeTools"
   | "enableCaching"
   | "anthropicExtendedCacheTtl"
   | "cachingAtDepth"
@@ -5292,6 +5293,7 @@ export class ProfessorMariWorkspaceService {
       openrouterProvider: null,
       claudeFastMode: "false",
       treatAsLocalEndpoint: "true",
+      disableNativeTools: "false",
       enableCaching: "false",
       anthropicExtendedCacheTtl: "false",
       cachingAtDepth: 5,

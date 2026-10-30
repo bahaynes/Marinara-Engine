@@ -63,6 +63,7 @@ try {
 
   let mode: "auto" | "manual" | "plan" | "bypass" = "auto";
   let provider = "custom";
+  let disableNativeTools = "false";
   let armed = false;
   let userText = "Do the thing.";
   let defaultParameters: string | null = null;
@@ -90,6 +91,7 @@ try {
         id: "mari-pi-runtime",
         name: "Regression",
         provider,
+        disableNativeTools,
         model: "fake-model",
         baseUrl: "http://127.0.0.1:1/v1",
         apiKey: "",
@@ -1356,6 +1358,16 @@ try {
       assert.equal(existsSync(join(workspaceDir, file)), false);
     assert.ok(JSON.stringify(open.events).includes("Continue the task."));
     provider = "custom";
+    disableNativeTools = "true";
+    const disabledNative = await start("textual disableNativeTools", [
+      reply(`Checking. ${call("read", { path: "hello.txt" })}`),
+      reply("Done."),
+    ]);
+    await disabledNative.done;
+    disableNativeTools = "false";
+    assert.equal(requests.length, 2, "custom connection with disableNativeTools=true uses textual tools");
+    assert.equal(requests[0]!.options.tools, undefined, "no native tool schemas sent when disableNativeTools=true");
+    assert.match(requests[0]!.messages[0]?.content ?? "", /<text_tool_calls>/u);
   }
 
   // Live draft: streamed words reach the client as provisional "draft" events, stop at a textual call marker
