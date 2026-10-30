@@ -189,7 +189,13 @@ const scored =
   (scores: Record<string, number>) => async (_state: unknown, qs: Array<{ id: string; instructions: string }>) =>
     new Map(qs.flatMap((q) => (q.instructions in scores ? [[q.id, scores[q.instructions]!] as const] : [])));
 const mixed = await askChoicesAsStatements(
-  scored({ "a fight starts": 0.8, "mood: angry": 0.3, "mood: sad": 0.9, "weather: rain": 0.2, "weather: snow": 0.1 }),
+  scored({
+    "a fight starts": 0.8,
+    'mood. Is the answer "angry"?': 0.3,
+    'mood. Is the answer "sad"?': 0.9,
+    'weather. Is the answer "rain"?': 0.2,
+    'weather. Is the answer "snow"?': 0.1,
+  }),
   {},
   [
     { id: "q", instructions: "a fight starts" },

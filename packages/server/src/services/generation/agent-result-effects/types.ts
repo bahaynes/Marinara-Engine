@@ -79,6 +79,8 @@ export interface CharacterTrackerTarget {
     presentCharacters: Array<Record<string, unknown>>,
     movedKeys?: { fieldLocks: Record<string, boolean>; hiddenTrackerFields: Record<string, boolean> },
   ) => Promise<unknown>;
+  /** Optional post-lock filter on presentCharacters (e.g., fork departure check). */
+  filterPresentCharacters?: (characters: Array<Record<string, unknown>>) => Promise<Array<Record<string, unknown>>>;
   /** Re-reads this message's row after the portraits are drawn, when the route has already answered. */
   loadForBackgroundSave: () => Promise<TrackerSnapshotRow | null>;
   /** Saves the drawn portraits. Must not depend on the route's abort signal, which may have fired by then. */

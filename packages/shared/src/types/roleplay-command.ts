@@ -17,6 +17,8 @@ export const ROLEPLAY_COMMAND_KEYS = [
   "inspire",
   // Fork: the story model names the current scene; Advanced Memory splits scenes when it changes.
   "scene",
+  // Fork: the story model opens each reply with who is in the scene; the Engine owns presentCharacters from it.
+  "present",
 ] as const;
 
 export type RoleplayCommandKey = (typeof ROLEPLAY_COMMAND_KEYS)[number];
@@ -58,7 +60,8 @@ export type RoleplayCommand =
   | { type: "whisper"; character: string; text: string }
   | { type: "interrupt"; part: string }
   | { type: "inspire" }
-  | { type: "scene"; title: string };
+  | { type: "scene"; title: string }
+  | { type: "present"; names: string[] };
 
 export interface RoleplayWhisperRecipient {
   id: string;
