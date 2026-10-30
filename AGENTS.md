@@ -98,19 +98,15 @@ has the commands; these rules hold for every agent:
 
 - **Erin's instance is hands-off.** No data, settings, agent, or rebuild changes to
   `marinara-wife` unless Ben says Erin wants that change. Never recreate both instances in
-  one command.
+  one command. Her `marinara-engine:local` image is built by hand, from a clean worktree, only then.
 - **Use the `marinara` MCP tools** (`scripts/mari-mcp.mjs`) or `mari` for data. Dry-run first. Never
-  edit storage JSON on the host while a container runs.
-- **No restart mid-generation.** A recreate kills in-flight turns, and game turns can't be
-  re-swiped. Check both instances' recent chats via `/api/generate/status/<chatId>` and the
-  `llama-backend` slots right before the recreate, then recreate only if everything is idle. This
-  also covers agent installs and anything else that restarts a container.
-- **Build images from a clean commit.** Use a `git worktree` of the commit, never the main working
-  tree, because uncommitted work from other sessions would ship under the wrong `BUILD_COMMIT`.
-  Ben's instance builds `marinara-engine:nightly`; Erin's builds `:local`.
-- **Keep a rollback.** Tag the current image `:nightly-prev` before deploying, and confirm
-  `/api/health` reports the new commit afterward. If `storage-format.json` changed, back up the data
-  directory first: format bumps are one-way.
+  edit storage JSON on the host while a container runs. The MCP refuses writes to `marinara-wife`.
+- **Restart and deploy only through the tools.** A recreate kills in-flight turns, and game turns can't
+  be re-swiped. Check `marinara_idle` (or `python3 scripts/marinara-deploy.py idle`) before anything that
+  restarts a container, agent installs included. Deploy with `marinara_deploy` (or
+  `scripts/marinara-deploy.py deploy [REF]`). It deploys only commits that passed the pre-push checks,
+  builds them from a clean worktree, waits for idle, keeps a rollback image and checks `/api/health`.
+  Never run `docker compose up` or `docker build` against the instances yourself.
 - **Logs**: Loki (`127.0.0.1:3100`) first; `docker logs` only when Loki has nothing.
 
 ## Repo-Specific Cautions
