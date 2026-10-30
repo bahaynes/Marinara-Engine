@@ -9,7 +9,7 @@ import {
   MAX_MODEL_ID_LENGTH,
   MAX_PINNED_MODELS,
 } from "../types/connection.js";
-import { DECISION_CONNECTION_TIMEOUT_BOUNDS_MS } from "../types/decision.js";
+import { DECISION_CONNECTION_TIMEOUT_BOUNDS_MS, DECISION_THINKING_MODES } from "../types/decision.js";
 import { TTS_REQUEST_TIMEOUT_MS } from "../types/tts.js";
 import { MAX_IMAGE_PROMPT_INSTRUCTIONS_LENGTH } from "../constants/defaults.js";
 
@@ -128,6 +128,8 @@ export const createConnectionSchema = z.object({
     .max(DECISION_CONNECTION_TIMEOUT_BOUNDS_MS.max)
     .nullable()
     .default(null),
+  /** A chat-model Decision connection's Thinking mode; null is Auto. */
+  decisionThinking: z.enum(DECISION_THINKING_MODES).nullable().default(null),
   audioVoice: z.string().nullable().default(null),
   /** Milliseconds; null keeps the default. */
   audioTimeoutMs: z

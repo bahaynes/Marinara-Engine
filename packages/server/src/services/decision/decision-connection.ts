@@ -2,7 +2,9 @@ import {
   DECISION_SOURCE_BASE_URLS,
   decisionSourceTakesUrl,
   defaultDecisionStateTokens,
+  normalizeDecisionThinking,
   resolveDecisionConnectionTimeoutMs,
+  type DecisionThinkingMode,
 } from "@marinara-engine/shared";
 
 export interface DecisionConnectionRow {
@@ -16,6 +18,7 @@ export interface DecisionConnectionRow {
   credentialsFromConnectionId?: string | null;
   maxStateTokens?: number | null;
   decisionTimeoutMs?: number | null;
+  decisionThinking?: string | null;
 }
 
 export interface DecisionConnection {
@@ -30,6 +33,8 @@ export interface DecisionConnection {
   maxStateTokens: number;
   /** The connection's own time limit. Unset on the managed sidecar, which has its own budget. */
   timeoutMs?: number;
+  /** Thinking mode for a chat-model connection; System One never reasons. */
+  thinking?: DecisionThinkingMode;
 }
 
 export type DecisionConnectionError =
@@ -123,6 +128,7 @@ export async function resolveDecisionConnection(
         ),
       ),
       timeoutMs: resolveDecisionConnectionTimeoutMs(row.decisionTimeoutMs, source),
+      ...(chat ? { thinking: normalizeDecisionThinking(row.decisionThinking) } : {}),
     },
   };
 }

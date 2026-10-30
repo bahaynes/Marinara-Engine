@@ -1,6 +1,7 @@
 // ──────────────────────────────────────────────
 // API Connection Types
 // ──────────────────────────────────────────────
+import type { DecisionThinkingMode } from "./decision.js";
 
 /** Supported API providers. */
 export type APIProvider =
@@ -194,6 +195,8 @@ export interface APIConnection {
   maxStateTokens?: number | null;
   /** How long a Decision connection may take to answer, in milliseconds; null is the default. */
   decisionTimeoutMs?: number | null;
+  /** A chat-model Decision connection's Thinking mode; null is Auto. */
+  decisionThinking?: DecisionThinkingMode | null;
   /** Default voice id/name for speech synthesis on this audio connection. */
   audioVoice: string | null;
   /** How long a speech request on this audio connection may take, in milliseconds; null is the default. */

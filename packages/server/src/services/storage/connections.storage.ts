@@ -405,6 +405,7 @@ export function createConnectionsStorage(db: DB) {
         credentialsFromConnectionId: input.provider === "decision" ? (input.credentialsFromConnectionId ?? null) : null,
         maxStateTokens: input.maxStateTokens ?? null,
         decisionTimeoutMs: input.decisionTimeoutMs ?? null,
+        decisionThinking: input.decisionThinking ?? null,
         audioVoice: input.audioVoice ?? null,
         audioTimeoutMs: input.audioTimeoutMs ?? null,
         audioSoundEffects: String(input.audioSoundEffects ?? false),
@@ -527,6 +528,7 @@ export function createConnectionsStorage(db: DB) {
         updateFields.credentialsFromConnectionId = data.credentialsFromConnectionId;
       if (data.maxStateTokens !== undefined) updateFields.maxStateTokens = data.maxStateTokens;
       if (data.decisionTimeoutMs !== undefined) updateFields.decisionTimeoutMs = data.decisionTimeoutMs;
+      if (data.decisionThinking !== undefined) updateFields.decisionThinking = data.decisionThinking;
       if (data.name !== undefined) updateFields.name = data.name;
       if (data.provider !== undefined) updateFields.provider = data.provider;
       if (data.baseUrl !== undefined) updateFields.baseUrl = data.baseUrl;
@@ -809,6 +811,7 @@ export function createConnectionsStorage(db: DB) {
         credentialsFromConnectionId: source.credentialsFromConnectionId,
         maxStateTokens: source.maxStateTokens,
         decisionTimeoutMs: source.decisionTimeoutMs,
+        decisionThinking: source.decisionThinking,
         audioVoice: source.audioVoice,
         audioTimeoutMs: source.audioTimeoutMs,
         audioSoundEffects: source.audioSoundEffects,
