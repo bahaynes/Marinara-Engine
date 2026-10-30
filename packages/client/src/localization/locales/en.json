@@ -2072,6 +2072,7 @@
   "connections.decision.thinking.allowed": "Allowed (let the model think first)",
   "connections.decision.thinking.auto": "Auto (try one word, allow thinking if the model cannot)",
   "connections.decision.thinking.off": "Off (always answer in one word)",
+  "connections.decision.thinkingHelp": "Most models answer in a single word, which is fastest. A model that has to think first is switched over automatically in Auto.",
   "connections.decision.thinkingLabel": "Thinking",
   "connections.decision.timeLimit": "Time limit (seconds)",
   "connections.decision.unavailable.needs_relinking": "Needs relinking",

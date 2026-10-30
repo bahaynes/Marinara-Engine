@@ -74,8 +74,8 @@ export type ChatDecisionTarget = Pick<
 /**
  * A chat-model Decision connection as a target.
  *
- * It has no Thinking setting of its own, so it runs on Auto, and the verdict is cached
- * per connection and model so changing either starts on the fast path again. How many
+ * Its Thinking setting is the connection's own, Auto when unset, and Auto's verdict is
+ * cached per connection and model so changing either starts on the fast path again. How many
  * requests the user's server works on at once is unknown, so it is asked one at a
  * time: each statement's time limit then starts when the server takes it, rather than
  * running out while it waits behind the others.
@@ -87,7 +87,7 @@ export function connectionChatTarget(id: string, label: string, connection: Deci
     model: connection.model,
     modelIdentity: `connection:${id}:${connection.model}`,
     label,
-    thinking: "auto",
+    thinking: connection.thinking ?? "auto",
     connection,
   };
 }
