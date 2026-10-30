@@ -98,6 +98,8 @@ def healthy(commit):
 
 def deploy(tree, commit, deadline, retry_seconds, allow_untested):
     """Builds `tree` (a clean checkout of `commit`) and deploys it to marinara. Returns one line for the report."""
+    if datetime.datetime.now() > deadline:  # the nightly's cutoff keeps it clear of the 04:00 reboot
+        return f"NOT DEPLOYED: already past {deadline:%H:%M}"
     validated = open(VALIDATED).read().split() if os.path.exists(VALIDATED) else []
     if not allow_untested and git("rev-parse", "HEAD^{tree}", cwd=tree) not in validated:
         return f"NOT DEPLOYED: {commit} never passed check + regression; push it (the pre-push hook runs them) first"
