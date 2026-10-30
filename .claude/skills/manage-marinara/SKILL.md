@@ -1,5 +1,6 @@
 ---
 name: Manage Marinara
+model: sonnet
 description: Inspect, troubleshoot, mutate database records, and rebuild Marinara Engine instances (primary `marinara` and secondary `marinara-wife`). Explains the dual-container profile architecture, storage concurrency rules, `mari` CLI commands, and rebuild lifecycles. For UI/browser checks (screenshots, console errors) use the `drive-marinara-ui` skill.
 ---
 
