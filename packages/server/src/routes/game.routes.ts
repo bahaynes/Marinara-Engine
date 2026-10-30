@@ -483,7 +483,7 @@ import {
   type GameDynamicImagePromptKind,
   type GameDynamicImagePromptRequest,
 } from "../services/game/game-asset-generation.js";
-import { saveImageToDisk } from "../services/image/image-generation.js";
+import { linkImageToDisk } from "../services/image/image-generation.js";
 import { resolveGalleryImagePath } from "../services/image/gallery-image-path.js";
 import {
   generateVideo,
@@ -1893,7 +1893,7 @@ async function addGeneratedIllustrationToGallery(opts: {
 
   try {
     const ext = extname(assetPath).toLowerCase().replace(/^\./, "") || "png";
-    const filePath = saveImageToDisk(opts.chatId, readFileSync(assetPath).toString("base64"), ext);
+    const filePath = linkImageToDisk(opts.chatId, assetPath, ext);
     const dimensions = await readImageDimensionsFromFile(assetPath).catch((err) => {
       logger.debug(err, "[game/generate-assets] Could not read illustration dimensions for %s", assetPath);
       return null;

@@ -5,7 +5,7 @@
 // based on a user's configured image_generation connection.
 
 import { createHash, createHmac, randomBytes, randomUUID } from "crypto";
-import { existsSync, mkdirSync, readdirSync, renameSync, unlinkSync, writeFileSync } from "fs";
+import { copyFileSync, existsSync, linkSync, mkdirSync, readdirSync, renameSync, unlinkSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import { inflateRawSync } from "zlib";
 import { WebSocket } from "undici";
@@ -562,6 +562,26 @@ export function saveImageToDisk(
     throw error;
   }
   return `${ownerDir}/${filename}`;
+}
+
+/**
+ * Add an image file that already exists under the data dir to a chat's gallery as a hardlink, so the
+ * gallery and the original share one copy on disk. Gallery files are only ever replaced, never written
+ * in place, so neither name can change the other's image; deleting one leaves the other intact.
+ * Falls back to a copy where a hardlink isn't possible (another filesystem). Returns a path relative
+ * to data/gallery/.
+ */
+export function linkImageToDisk(chatId: string, sourcePath: string, ext: string): string {
+  const dir = assertInsideDir(GALLERY_DIR, join(GALLERY_DIR, chatId));
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  const filename = `${newId()}.${ext}`;
+  const filePath = assertInsideDir(GALLERY_DIR, join(dir, filename));
+  try {
+    linkSync(sourcePath, filePath);
+  } catch {
+    copyFileSync(sourcePath, filePath);
+  }
+  return `${chatId}/${filename}`;
 }
 
 export function removeSavedImageFromDisk(filePath: string): void {
