@@ -24,6 +24,14 @@ export function createGalleryStorage(db: DB) {
       return db.select().from(chatImages).where(eq(chatImages.chatId, chatId)).orderBy(desc(chatImages.createdAt));
     },
 
+    /** Images the user flagged as not matching their scene, newest first; one chat, or all of them. */
+    async listFlagged(chatId?: string) {
+      const rows = chatId
+        ? await this.listByChatId(chatId)
+        : await db.select().from(chatImages).orderBy(desc(chatImages.createdAt));
+      return rows.filter((row) => row.flag);
+    },
+
     async listByChatIds(chatIds: string[]) {
       if (chatIds.length === 0) return [];
       return db
@@ -63,6 +71,14 @@ export function createGalleryStorage(db: DB) {
         createdAt: now(),
       });
       return this.getById(id, input.chatId);
+    },
+
+    /** Mark (or, with null, unmark) an image as not matching its scene. */
+    async setFlag(id: string, chatId: string, flag: { note: string; messageId: string | null } | null) {
+      await db
+        .update(chatImages)
+        .set({ flag: flag ? JSON.stringify({ ...flag, flaggedAt: now() }) : null })
+        .where(and(eq(chatImages.chatId, chatId), eq(chatImages.id, id)));
     },
 
     async remove(id: string, chatId?: string) {

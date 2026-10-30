@@ -262,6 +262,12 @@ const extractedGalleryCharacterPromptSchema = galleryCharacterPromptSchema
   .extend({ position: galleryCharacterPromptSchema.shape.position.catch(undefined) })
   .strict();
 
+/** "This image doesn't match its scene." The note is optional; the scene and prompts are read from the image's message and agent run later. */
+const flagGalleryImageSchema = z.object({
+  note: z.string().trim().max(2000).default(""),
+  messageId: z.string().trim().min(1).max(200).optional(),
+});
+
 /** Re-send an existing image's final request, possibly edited (#7767). */
 const regenerateGalleryImageSchema = z.object({
   prompt: z.string().trim().min(1).max(200_000),
@@ -2502,6 +2508,23 @@ export async function galleryRoutes(app: FastifyInstance) {
       };
     },
   );
+
+  app.post<{ Params: { chatId: string; imageId: string } }>("/:chatId/images/:imageId/flag", async (req, reply) => {
+    const { chatId, imageId } = req.params;
+    if (!isValidChatId(chatId)) return reply.status(400).send({ error: "Invalid chatId" });
+    const input = flagGalleryImageSchema.parse(req.body);
+    if (!(await storage.getById(imageId, chatId))) return reply.status(404).send({ error: "Image not found" });
+    await storage.setFlag(imageId, chatId, { note: input.note, messageId: input.messageId ?? null });
+    return { success: true };
+  });
+
+  app.delete<{ Params: { chatId: string; imageId: string } }>("/:chatId/images/:imageId/flag", async (req, reply) => {
+    const { chatId, imageId } = req.params;
+    if (!isValidChatId(chatId)) return reply.status(400).send({ error: "Invalid chatId" });
+    if (!(await storage.getById(imageId, chatId))) return reply.status(404).send({ error: "Image not found" });
+    await storage.setFlag(imageId, chatId, null);
+    return { success: true };
+  });
 
   // Regenerate an existing image from its final request, optionally edited (#7767). The new image
   // replaces the old one wherever a message or storyboard frame shows it; the old one stays in the

@@ -495,7 +495,6 @@ import {
   experienceDressedNpc,
   storyPerson,
   worldPersonNpc,
-  MAX_INSPIRATION_CAP,
   isRoleplayCommandEnabled,
   type RPGStatsConfig,
 } from "@marinara-engine/shared";
@@ -566,7 +565,7 @@ import {
   type GameDynamicImagePromptKind,
   type GameDynamicImagePromptRequest,
 } from "../services/game/game-asset-generation.js";
-import { readNovelAiPngSeed, saveImageToDisk } from "../services/image/image-generation.js";
+import { linkImageToDisk, readNovelAiPngSeed } from "../services/image/image-generation.js";
 import { resolveGalleryImagePath } from "../services/image/gallery-image-path.js";
 import {
   generateVideo,
@@ -1964,9 +1963,8 @@ async function addGeneratedIllustrationToGallery(opts: {
 
   try {
     const ext = extname(assetPath).toLowerCase().replace(/^\./, "") || "png";
-    const assetBuffer = readFileSync(assetPath);
-    const filePath = saveImageToDisk(opts.chatId, assetBuffer.toString("base64"), ext);
-    const fileSeed = opts.generation?.seed ?? readNovelAiPngSeed(assetBuffer) ?? undefined;
+    const filePath = linkImageToDisk(opts.chatId, assetPath, ext);
+    const fileSeed = opts.generation?.seed ?? readNovelAiPngSeed(readFileSync(assetPath)) ?? undefined;
     const generation =
       opts.generation && opts.generation.seed === undefined && fileSeed !== undefined
         ? { ...opts.generation, seed: fileSeed }
