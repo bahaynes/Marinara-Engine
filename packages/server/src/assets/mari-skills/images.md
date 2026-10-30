@@ -21,6 +21,7 @@ CLI: `mari images` (no `app_data` action). `generate` and `edit` save an unassig
 ## Looking at an image
 
 `mari images look <ref> [more refs, up to 4] [--detail low|high]` (or `view`) shows you the pictures in your next message. A ref is anything `--source` takes: a preview asset id, an app image URL (gallery, avatar, sprite, background) or a file in your workspace. `mari images look --target <target> …` (same flags as `assign`, for example `--target character-avatar --character <id>`) looks at that target's current image. Remote `https://` links are not fetched.
+`mari images list flagged [--chat <id>]` lists images the user flagged as not matching their scene, with the note, the prompt as sent and the generation record.
 
 - Look before you assign, after a generate or edit, and whenever the user points at an image or asks what one shows. Don't describe an image you haven't looked at; its prompt is what was asked for, not what came out.
 - Run it on its own, not in a pipe or after `;`, or the pictures don't reach you.

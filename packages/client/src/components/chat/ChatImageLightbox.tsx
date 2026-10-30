@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { Download, Pin, RefreshCw, Trash2 } from "lucide-react";
+import { Download, Flag, Pin, RefreshCw, Trash2 } from "lucide-react";
 import {
   groupChatImageVariants,
   parseChatImageGenerationRecord,
   type GeneratedSceneVideo,
 } from "@marinara-engine/shared";
 import { toast } from "sonner";
-import { useGalleryImages, type ChatImage } from "../../hooks/use-gallery";
+import { showPromptDialog } from "../../lib/app-dialogs";
+import { useFlagGalleryImage, useGalleryImages, type ChatImage } from "../../hooks/use-gallery";
 import { useGalleryStore } from "../../stores/gallery.store";
 import { ImageDownloadButton } from "../ui/ImageDownloadButton";
 import {
@@ -121,6 +122,9 @@ export function ChatImageLightbox({
   const selectingVersion = useRef(false);
   const [selectionPending, setSelectionPending] = useState(false);
   const selectVersion = useSelectChatImageVersion(activeImage.chatId);
+  const flagImage = useFlagGalleryImage();
+  // Per image: paging to another picture must not inherit the last one's flag.
+  const [flagOverrides, setFlagOverrides] = useState<Record<string, boolean>>({});
 
   const resetMask = useCallback((options?: { resetToolAndBrush?: boolean }) => {
     setMaskDataUrl(null);
@@ -155,6 +159,27 @@ export function ChatImageLightbox({
   const prompt = record?.prompt ?? image.prompt;
   const meta = [formatChatImageMeta(image), extraMeta].filter(Boolean).join(" | ");
   const downloadName = getChatImageDownloadName(image);
+  const flagged = flagOverrides[image.id] ?? !!image.flag;
+  const toggleFlag = async () => {
+    let note = "";
+    if (!flagged) {
+      const answer = await showPromptDialog({
+        title: localizeUi("ui.chat.chatimagelightbox.flagTitle"),
+        message: localizeUi("ui.chat.chatimagelightbox.flagMessage"),
+        placeholder: localizeUi("ui.chat.chatimagelightbox.flagPlaceholder"),
+        confirmLabel: localizeUi("ui.chat.chatimagelightbox.flagConfirm"),
+      });
+      if (answer === null) return;
+      note = answer.trim();
+    }
+    flagImage.mutate(
+      { chatId: image.chatId, imageId: image.id, flag: !flagged, note, messageId: regenerate?.messageId },
+      {
+        onSuccess: () => setFlagOverrides((prev) => ({ ...prev, [image.id]: !flagged })),
+        onError: () => toast.error(localizeUi("ui.chat.chatimagelightbox.flagFailed")),
+      },
+    );
+  };
   const loadingDetails = needsGalleryRow && gallery.isFetching && !gallery.data;
   const detailsFailed = needsGalleryRow && gallery.isError && !gallery.data;
   // Entity adapters can start from a blank prompt; ordinary chat uploads need one to resend.
@@ -297,6 +322,24 @@ export function ChatImageLightbox({
                 title={localizeUi("ui.chat.chatimagelightbox.regenerateImage")}
               >
                 <RefreshCw size="0.875rem" />
+              </button>
+            )}
+            {/* Flags live on gallery rows; a Mari preview asset (it has a `regenerator`) has none. */}
+            {regenerate && !regenerator && !editing && (
+              <button
+                type="button"
+                disabled={busy || navigating}
+                onClick={() => void toggleFlag()}
+                aria-label={localizeUi(
+                  flagged ? "ui.chat.chatimagelightbox.unflagImage" : "ui.chat.chatimagelightbox.flagImage",
+                )}
+                aria-pressed={flagged}
+                className={cn(VIEWER_BUTTON_CLASS, flagged && "text-amber-300")}
+                title={localizeUi(
+                  flagged ? "ui.chat.chatimagelightbox.unflagImage" : "ui.chat.chatimagelightbox.flagImage",
+                )}
+              >
+                <Flag size="0.875rem" fill={flagged ? "currentColor" : "none"} />
               </button>
             )}
             {pinEnabled && !editing && (

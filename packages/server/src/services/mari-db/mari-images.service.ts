@@ -17,6 +17,8 @@ import {
 } from "@marinara-engine/shared";
 import type { DB } from "../../db/connection.js";
 import { flushDB } from "../../db/connection.js";
+import { and, eq } from "../../db/file-query.js";
+import { agentRuns } from "../../db/schema/index.js";
 import { logger } from "../../lib/logger.js";
 import { realPathInAppFolder } from "../../utils/app-folder.js";
 import { DATA_DIR } from "../../utils/data-dir.js";
@@ -2302,6 +2304,56 @@ export class MariImagesService {
         const images = await createGalleryStorage(this.db).listByChatId(chatId);
         return { ok: true, mode: "read", command: context.command, output: images.slice(0, limit) };
       }
+      case "flagged": {
+        // Images the user flagged as not matching their scene: the note, the prompt as sent and the
+        // generation record, so a ComfyUI workflow or Illustrator prompt can be tuned against them.
+        const chatId = normalizeId(flagString(flags, "chat", "chat-id", "id"));
+        const rows = await createGalleryStorage(this.db).listFlagged(chatId || undefined);
+        const parse = (raw: string | null) => {
+          try {
+            return raw ? JSON.parse(raw) : null;
+          } catch {
+            return null;
+          }
+        };
+        // The record saved on the image keeps only name, prompt and position; the Illustrator's raw answer
+        // (role, stance, transformed, bbox, props) lives on its agent run, so join it through the flag's messageId.
+        const illustratorRun = async (row: (typeof rows)[number]) => {
+          const messageId = parse(row.flag)?.messageId;
+          if (!messageId) return null;
+          const runs = await this.db
+            .select()
+            .from(agentRuns)
+            .where(
+              and(
+                eq(agentRuns.messageId, messageId),
+                eq(agentRuns.agentConfigId, "builtin:illustrator"),
+                eq(agentRuns.resultType, "image_prompt"),
+              ),
+            );
+          // Newest run that existed when the image was made, else the newest of all.
+          const before = runs.filter((run) => run.createdAt <= row.createdAt);
+          const pool = before.length ? before : runs;
+          const run = pool.sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+          return run ? { runId: run.id, createdAt: run.createdAt, result: parse(run.resultData) } : null;
+        };
+        const output = await Promise.all(
+          rows.slice(0, limit).map(async (row) => ({
+            illustratorRun: await illustratorRun(row),
+            id: row.id,
+            chatId: row.chatId,
+            filePath: row.filePath,
+            provider: row.provider,
+            model: row.model,
+            width: row.width,
+            height: row.height,
+            prompt: row.prompt,
+            flag: parse(row.flag),
+            generation: parse(row.generation),
+          })),
+        );
+        return { ok: true, mode: "read", command: context.command, output };
+      }
       case "character-gallery": {
         const characterId = normalizeId(flagString(flags, "character", "character-id", "id"));
         if (!characterId) throw new Error("character-gallery list requires --character <id>");
@@ -2387,7 +2439,7 @@ export class MariImagesService {
   private helpText() {
     return [
       "Usage: mari images <command> (mari images help shows this)",
-      "Discovery: connections [--edit], capabilities [--edit], list assets|backgrounds|sprites|chat-gallery|character-gallery, get <asset-id>",
+      "Discovery: connections [--edit], capabilities [--edit], list assets|backgrounds|sprites|chat-gallery|character-gallery|flagged [--chat <id>], get <asset-id>",
       "Styles: styles (short list), styles <id|name> (one profile in full, with its per-image tags)",
       "Look at images: look <asset-id|app-url|file> [up to 4] [--detail low|high], or look --target <target> for its current image (alias: view). You see the pictures in your next message.",
       "HITL preview: preview --operation generate|edit --prompt <text> [--negative <text>] [--kind <kind>] [--target <target>] [--source <asset|url|file>] [--connection <id|name|default>] [--style [default|<id|name>] | --no-style]",

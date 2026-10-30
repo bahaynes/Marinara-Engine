@@ -34,6 +34,8 @@ export const chatImages = fileTable("chat_images", {
   customName: text("custom_name"),
   /** What the picture shows, written by hand or by the Image reading model. Null when none. */
   description: text("description"),
+  /** JSON {note, messageId, flaggedAt}: the user marked this image as not matching its scene. Null when unflagged. */
+  flag: text("flag"),
   createdAt: text("created_at").notNull(),
 });
 
