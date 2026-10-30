@@ -197,6 +197,12 @@ export interface PrepareAdvancedMemoryInput extends AdvancedMemoryOperationOptio
 
 /** Fork: share of the live budget a re-cut open-scene window leaves free to grow into before it must move again. */
 const CACHE_WINDOW_REGROW_SHARE = 0.25;
+// Fork: rolling scenes keep the last finished scene in live history at rollover. A chat's
+// advancedMemoryRollingScenes wins; otherwise MARINARA_AM_ROLLING_SCENES=true makes it the instance default.
+const rollsScenes = (metadata: Record<string, unknown>) =>
+  typeof metadata.advancedMemoryRollingScenes === "boolean"
+    ? metadata.advancedMemoryRollingScenes
+    : process.env.MARINARA_AM_ROLLING_SCENES === "true";
 
 type StoredRecord = Omit<AdvancedMemoryRecord, "startIndex" | "endIndex" | "embeddingStatus"> & {
   embedding: number[] | null;
@@ -4597,8 +4603,8 @@ export function createAdvancedMemoryService(db: DB, { includeExcerptsInStatus = 
       .map((record) => indexes.get(record.endMessageId) ?? -1)
       .filter((index) => index > boundaryIndex && index < ctx.messages.length - 1)
       .sort((a, b) => b - a);
-    // Fork: advancedMemoryRollingScenes keeps the last finished scene here too.
-    const end = ends[ctx.metadata.advancedMemoryRollingScenes === true ? 1 : 0] ?? boundaryIndex;
+    // Fork: rolling scenes keep the last finished scene here too.
+    const end = ends[rollsScenes(ctx.metadata) ? 1 : 0] ?? boundaryIndex;
     if (end <= boundaryIndex) return; // No newer scene boundary: do not invent a cutoff inside an ongoing scene.
     if (await saveContextStart(ctx, ctx.messages[end + 1]!.id, options))
       await progress(ctx, { status: "ready", stage: "ready", error: null }, options);
@@ -5373,10 +5379,10 @@ export function createAdvancedMemoryService(db: DB, { includeExcerptsInStatus = 
     const scenes = available
       .filter((record) => record.kind === "scene" && record.id === record.sceneId && record.status === "closed")
       .sort((a, b) => indexes.get(b.endMessageId)! - indexes.get(a.endMessageId)!);
-    // Fork: with advancedMemoryRollingScenes, roll over to the second-newest closed scene's end so
+    // Fork: with rolling scenes, roll over to the second-newest closed scene's end so
     // live history keeps the last finished scene plus the open one; upstream jumps to the newest
     // end, which can leave only a few messages.
-    const rollingScenes = ctx.metadata.advancedMemoryRollingScenes === true;
+    const rollingScenes = rollsScenes(ctx.metadata);
     const rolloverEnds = scenes
       .map((scene) => indexes.get(scene.endMessageId))
       .filter(
