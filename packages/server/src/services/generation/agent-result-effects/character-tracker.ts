@@ -200,6 +200,7 @@ export async function applyCharacterTrackerResult(result: AgentResult, deps: Age
     });
     const lockedPatch = applyTrackerFieldLocksToGameStatePatch({ presentCharacters: characters }, lockState);
     characters = Array.isArray(lockedPatch.presentCharacters) ? lockedPatch.presentCharacters : characters;
+    if (target.filterPresentCharacters) characters = await target.filterPresentCharacters(characters);
 
     if (steps.fillAvatars) await fillAvatars(characters, cardCharacterIds, deps);
 

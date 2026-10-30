@@ -17,6 +17,8 @@ export const ROLEPLAY_COMMAND_KEYS = [
   "inspire",
   // Fork: the story model names the current scene; Advanced Memory splits scenes when it changes.
   "scene",
+  // Fork: the story model opens each reply with who is in the scene; the Engine owns presentCharacters from it.
+  "present",
 ] as const;
 
 export type RoleplayCommandKey = (typeof ROLEPLAY_COMMAND_KEYS)[number];
@@ -58,7 +60,8 @@ export type RoleplayCommand =
   | { type: "whisper"; character: string; text: string }
   | { type: "interrupt"; part: string }
   | { type: "inspire" }
-  | { type: "scene"; title: string };
+  | { type: "scene"; title: string }
+  | { type: "present"; names: string[] };
 
 export interface RoleplayWhisperRecipient {
   id: string;
@@ -299,8 +302,12 @@ export function getRoleplayCommandNoticeVisibility(
   for (let index = 0; index < activity.length; index++) {
     const item = activity[index];
     if (!item) continue;
-    // Fork: a scene title rides on every reply; it is bookkeeping for Advanced Memory, not a visible event.
-    if ((item.command.type === "whisper" || item.command.type === "scene") && !item.error) continue;
+    // Fork: scene titles and [present] rosters ride on replies as bookkeeping, not visible events.
+    if (
+      (item.command.type === "whisper" || item.command.type === "scene" || item.command.type === "present") &&
+      !item.error
+    )
+      continue;
     if (display === "hide" && !item.error) continue;
     noticeIndices.push(index);
   }

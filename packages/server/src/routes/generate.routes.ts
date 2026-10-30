@@ -95,6 +95,7 @@ import {
 } from "../services/generation/smart-group-decision.js";
 import { SCENE_PRESENCE_TRANSCRIPT_DEPTH } from "../services/generation/scene-presence-decision.js";
 import { decideSceneCharacters } from "../services/generation/scene-presence.service.js";
+import { applyTrackerDepartureCheck } from "../services/generation/tracker-departure-check.js";
 import {
   activationQuestionSettings,
   bypassActivationQuestion,
@@ -14292,6 +14293,19 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                   trackerBaseGameStateSnapshot ??
                   (allowLatestGameStateFallback ? await gameStateStore.getLatest(input.chatId) : null),
                 save: saveCharacters,
+                filterPresentCharacters: (chars) =>
+                  applyTrackerDepartureCheck({
+                    characters: chars,
+                    appSettings,
+                    connections,
+                    debugMode: requestDebug,
+                    signal: generationSignal,
+                    recentMessages: agentContext.recentMessages,
+                    personaName,
+                    impersonate: input.impersonate,
+                    response: agentCompletedResponse,
+                    skip: (character) => isManualTrackerCharacterId(character.characterId),
+                  }),
                 loadForBackgroundSave: async () => (await readTargetRow()) ?? trackerBaseGameStateSnapshot,
                 saveInBackground: saveCharacters,
                 drawPortrait: (character, { connectionId, includeOutfit }) =>

@@ -8,7 +8,9 @@ import {
   decisionSourceTakesUrl,
   defaultDecisionStateTokens,
   normalizeCustomRequestHeaders,
+  normalizeDecisionThinking,
   resolveDecisionConnectionTimeoutMs,
+  type DecisionThinkingMode,
 } from "@marinara-engine/shared";
 import { decryptCustomHeaders } from "../../utils/stored-secrets.js";
 
@@ -30,6 +32,7 @@ export interface DecisionConnectionRow {
    * Connection's catalog says about the model: a decision model (NanoGPT's `decisions` output) and its context.
    */
   account?: { provider: string; baseUrl: string; decisionModel?: boolean; context?: number } | null;
+  decisionThinking?: string | null;
 }
 
 export interface DecisionConnection {
@@ -49,6 +52,8 @@ export interface DecisionConnection {
   headers?: Record<string, string>;
   /** Gemini's Decisions API: `input` for the state, `x-goog-api-key` for the key, plain ids for the questions. */
   dialect?: "gemini";
+  /** Thinking mode for a chat-model connection; System One never reasons. */
+  thinking?: DecisionThinkingMode;
 }
 
 export type DecisionConnectionError =
@@ -211,6 +216,7 @@ export async function resolveDecisionConnection(
       timeoutMs: resolveDecisionConnectionTimeoutMs(row.decisionTimeoutMs, source),
       ...(headers ? { headers } : {}),
       ...(source === "google" ? { dialect: "gemini" as const } : {}),
+      ...(chat ? { thinking: normalizeDecisionThinking(row.decisionThinking) } : {}),
     },
   };
 }

@@ -1,6 +1,7 @@
 // ──────────────────────────────────────────────
 // API Connection Types
 // ──────────────────────────────────────────────
+import type { DecisionThinkingMode } from "./decision.js";
 
 /** Supported API providers. */
 export type APIProvider =
@@ -281,6 +282,8 @@ export interface APIConnection {
   imageInput?: "reads" | "text" | null;
   /** Whether this image Model draws see-through pictures; null (Automatic) lets the known models decide. */
   imageTransparency?: "supported" | "unsupported" | null;
+  /** A chat-model Decision connection's Thinking mode; null is Auto. */
+  decisionThinking?: DecisionThinkingMode | null;
   /** Default voice id/name for speech synthesis on this audio connection. */
   audioVoice: string | null;
   /** How long a speech request on this audio connection may take, in milliseconds; null is the default. */
