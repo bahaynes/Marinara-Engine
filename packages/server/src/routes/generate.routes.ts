@@ -1072,6 +1072,7 @@ import {
   shouldDeferExpressionAgentEvent,
 } from "../services/generation/agent-event-dispatcher.js";
 import { findLastUserMessageIdBefore } from "../services/generation/message-history.js";
+import { backgroundsVisibleToChat } from "../services/backgrounds/background-ownership.js";
 import {
   explicitlyRequestsTextRewrite,
   getTextRewritePendingState,
@@ -7008,8 +7009,8 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
               const exts = new Set([".jpg", ".jpeg", ".png", ".gif", ".webp", ".avif"]);
               const files = readdirSync(bgDir).filter((f: string) => exts.has(extname(f).toLowerCase()));
 
-              // Load metadata (tags)
-              let meta: Record<string, { tags: string[] }> = {};
+              // Load metadata (tags; chatId marks a generated background as one story's own)
+              let meta: Record<string, { tags: string[]; chatId?: string }> = {};
               const metaPath = join(bgDir, "meta.json");
               if (existsSync(metaPath)) {
                 try {
@@ -7019,7 +7020,8 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                 }
               }
 
-              agentContext.memory._availableBackgrounds = files.map((f: string) => ({
+              const visible = await backgroundsVisibleToChat(files, meta, chat, (id) => chats.getById(id));
+              agentContext.memory._availableBackgrounds = visible.map((f: string) => ({
                 filename: f,
                 tags: meta[f]?.tags ?? [],
               }));
