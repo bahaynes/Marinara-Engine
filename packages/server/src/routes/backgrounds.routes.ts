@@ -49,6 +49,8 @@ function ensureDir() {
 
 interface BgMeta {
   tags: string[];
+  /** Set on a generated background that belongs to one chat; see generateChatBackground. */
+  chatId?: string;
 }
 type MetaMap = Record<string, BgMeta>;
 
@@ -60,7 +62,11 @@ export function normalizeBackgroundMeta(value: unknown): MetaMap {
     if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
     const tags = (entry as { tags?: unknown }).tags;
     if (!Array.isArray(tags)) continue;
-    meta[filename] = { tags: tags.filter((tag): tag is string => typeof tag === "string") };
+    const chatId = (entry as { chatId?: unknown }).chatId;
+    meta[filename] = {
+      tags: tags.filter((tag): tag is string => typeof tag === "string"),
+      ...(typeof chatId === "string" && chatId ? { chatId } : {}),
+    };
   }
   return meta;
 }

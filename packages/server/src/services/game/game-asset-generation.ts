@@ -98,7 +98,8 @@ type GameBackgroundImage = {
   ext: string;
 };
 
-type ChatBackgroundMeta = Record<string, { tags: string[] }>;
+/** chatId marks a generated background as that chat's own: other chats' background agents don't see it. */
+type ChatBackgroundMeta = Record<string, { tags: string[]; chatId?: string }>;
 
 function atomicWriteBuffer(filePath: string, buffer: Buffer): void {
   const tmpPath = `${filePath}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`;
@@ -1295,8 +1296,16 @@ export async function generateChatBackground(req: ChatBackgroundGenRequest): Pro
   const baseSlug = safeGeneratedAssetSlug(req.locationSlug || req.sceneDescription.slice(0, 80), { maxBytes: 160 });
   if (!baseSlug) return null;
 
-  const slug = `generated-${baseSlug}`;
+  let slug = `generated-${baseSlug}`;
   if (!existsSync(CHAT_BACKGROUND_DIR)) mkdirSync(CHAT_BACKGROUND_DIR, { recursive: true });
+
+  // Another chat's background under the same slug isn't this chat's to reuse: render this chat its own.
+  // ponytail: compares chat ids, not stories (no chat storage here), so a sibling game session renders
+  // its own copy; the agent already sees the story's backgrounds via backgroundsVisibleToChat. Upgrade:
+  // pass a story check in from the callers.
+  const sameSlug = existingGeneratedBackgroundPath(CHAT_BACKGROUND_DIR, slug);
+  const sameSlugOwner = sameSlug ? readChatBackgroundMeta()[basename(sameSlug)]?.chatId : undefined;
+  if (sameSlugOwner && sameSlugOwner !== req.chatId) slug = `${slug}-${safeGeneratedAssetSlug(req.chatId)}`;
 
   const existingPath = !req.force ? existingGeneratedBackgroundPath(CHAT_BACKGROUND_DIR, slug) : null;
   if (existingPath) return basename(existingPath);
@@ -1342,6 +1351,7 @@ export async function generateChatBackground(req: ChatBackgroundGenRequest): Pro
     const meta = readChatBackgroundMeta();
     meta[filename] = {
       tags: chatBackgroundTags(req, baseSlug),
+      ...(req.chatId ? { chatId: req.chatId } : {}),
     };
     writeChatBackgroundMeta(meta);
 
