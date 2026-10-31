@@ -27,7 +27,7 @@ concrete questions or next steps). He decides when the session ends.
 ```bash
 J=.claude/skills/world-jam/jam.py
 python3 $J bundle <chatId> [--last 12]   # -> /tmp/jam/<chatId>/{chat,cards,persona,lore,preset,messages,active}.md
-python3 $J preview <chatId>              # -> prompt.md: the exact prompt the next turn sends, plus an outline
+python3 $J preview <chatId> [--decisions run]  # -> prompt.md: the exact next-turn prompt (generate dry run), plus an outline
 ```
 
 - Run `bundle` once at the start, then `Read`/`grep` the file you need. Do not

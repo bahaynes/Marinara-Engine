@@ -2,7 +2,8 @@
 """World-jam helper: one cheap read of a chat's world, and safe exact-text edits.
 
   jam.py bundle  <chatId> [--last N]     write /tmp/jam/<chatId>/*.md, print a small index
-  jam.py preview <chatId>                render the real prompt to prompt.md, print its outline
+  jam.py preview <chatId> [--decisions run]  render the real next-turn prompt (generate dry run, incl. World Maps
+                                         location lore) to prompt.md; --decisions run asks the Decision model
   jam.py edit <table> <id> <field> --old TEXT --new TEXT [--apply --reason R]
         field may be a dotted path into a JSON-string column, e.g. data.extensions.backstory
 
@@ -150,18 +151,23 @@ def bundle(chat_id, last):
         print(f"  {name:12} {len(text):>7} chars  {'; '.join(heads)[:160]}")
 
 
-def preview(chat_id):
-    chat = mari("db", "get", "chats", chat_id)
-    data = api(f"/api/prompts/{chat['promptPresetId']}/preview", {"chatId": chat_id})
-    msgs = data.get("messages") or sys.exit(f"no preview: {str(data)[:300]}")
+def text(content):
+    return content if isinstance(content, str) else json.dumps(content, ensure_ascii=False)
+
+
+def preview(chat_id, decisions="inspect"):
+    body = {"chatId": chat_id, "returnPrompt": True, "injectLorebook": True, "streaming": False,
+            "decisionDebug": decisions}
+    data = api("/api/generate/dryRun", body)
+    msgs = (data.get("prompt") or {}).get("messages") or sys.exit(f"no preview: {str(data)[:300]}")
     path = os.path.join(OUT, chat_id, "prompt.md")
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w") as f:
-        f.write("\n".join(f"===== [{i}] {m['role']}\n{m['content']}" for i, m in enumerate(msgs)))
-    print(f"prompt: {path}  ({sum(len(m['content']) for m in msgs)} chars, {len(msgs)} messages)")
+        f.write("\n".join(f"===== [{i}] {m['role']}\n{text(m['content'])}" for i, m in enumerate(msgs)))
+    print(f"prompt: {path}  ({sum(len(text(m['content'])) for m in msgs)} chars, {len(msgs)} messages)")
     for i, m in enumerate(msgs):
         tags = re.findall(r"^<([a-z_]+)>", m["content"], re.M)
-        print(f"  [{i}] {m['role']:9} {len(m['content']):>6}  {' '.join(tags)[:150]}")
+        print(f"  [{i}] {m['role']:9} {len(text(m['content'])):>6}  {' '.join(tags)[:150]}")
     left = re.findall(r"\{\{[^}]+\}\}", "\n".join(m["content"] for m in msgs))
     if left:
         print(f"  unresolved macros: {sorted(set(left))}")
@@ -192,7 +198,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
     b = sub.add_parser("bundle"); b.add_argument("chat"); b.add_argument("--last", type=int, default=12)
-    p = sub.add_parser("preview"); p.add_argument("chat")
+    p = sub.add_parser("preview"); p.add_argument("chat"); p.add_argument("--decisions", choices=["inspect", "run"], default="inspect")
     e = sub.add_parser("edit")
     for a in ("table", "id", "field"):
         e.add_argument(a)
@@ -202,7 +208,7 @@ def main():
     if a.cmd == "bundle":
         bundle(a.chat, a.last)
     elif a.cmd == "preview":
-        preview(a.chat)
+        preview(a.chat, a.decisions)
     else:
         edit(a.table, a.id, a.field, a.old, a.new, a.apply, a.reason)
 
