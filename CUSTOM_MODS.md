@@ -9,7 +9,7 @@ This repository is a local fork of [**Pasta-Devs/Marinara-Engine**](https://gith
 This fork exists to host custom mods and operational enhancements that tailor Marinara Engine to our specific workflows and hardware. Examples include:
 - **Tabletop Combat & Mini-games**: ATLS trauma triage mini-game (a combat style on the upstream combat-style registry).
 - **Provider & Generation Tweaks**: GLM 5.x reasoning effort forwarding, custom quota telemetry & polling HUD, context sliding windows.
-- **Deployment Bundles**: Google Compute Engine + Cloudflare Tunnel zero-trust deployment bundle (`deploy/gcp/`), Docker caching optimizations.
+- **Deployment**: homeserver deploy tooling (`scripts/marinara-deploy.py`), Docker caching optimizations.
 - **Developer & Diagnostic Tooling**: Fast staged pre-commit hooks, detailed world-state tracking logs.
 
 Because we want to benefit from the continuous improvements of upstream Marinara Engine without maintaining a permanently diverging codebase, our core operational policy is:
@@ -24,7 +24,7 @@ Because we want to benefit from the continuous improvements of upstream Marinara
 When implementing changes or fixing issues in this repository:
 
 ### A. Keep Changes Minor and Easily Rebased
-- **Minimize the footprint in upstream files**: When adding a feature, place new logic in dedicated files/modules whenever possible (e.g. `packages/client/src/components/combat/`, `deploy/gcp/`). Hook into upstream files with minimal, clean insertion points.
+- **Minimize the footprint in upstream files**: When adding a feature, place new logic in dedicated files/modules whenever possible (e.g. `packages/client/src/components/game/triage/`, `deploy/rulesets/`). Hook into upstream files with minimal, clean insertion points.
 - **Do NOT edit `CHANGELOG.md`**: Upstream updates the changelog continuously across PRs and releases. Carrying local modifications in `CHANGELOG.md` creates guaranteed merge conflicts on every rebase. Local changes are documented in commit messages and this file.
 - **Avoid sweeping changes**: Never perform cosmetic refactorings, wide-ranging file renames, or bulk formatting passes across upstream files. These create merge conflicts during rebasing.
 - **Honor Ponytail discipline**: Skip unnecessary abstractions, reuse existing patterns, write the minimum viable code, and avoid speculative complexity.

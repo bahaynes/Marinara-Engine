@@ -7,7 +7,7 @@ description: Use when planning or implementing changes, debugging, or performing
 
 This repository is a local fork of **Marinara Engine** ([`Pasta-Devs/Marinara-Engine`](https://github.com/Pasta-Devs/Marinara-Engine)) maintained on the **`custom-mods`** branch for our own use ([`bahaynes/Marinara-Engine`](https://github.com/bahaynes/Marinara-Engine)).
 
-It carries local custom enhancements (such as tabletop combat, trauma triage mini-games, quota telemetry, Cloudflare Tunnel GCP deployment bundles, and custom reasoning controls) on top of upstream.
+It carries local custom enhancements (such as tabletop combat, trauma triage mini-games, quota telemetry, and custom reasoning controls) on top of upstream.
 
 The foundational design rule for this fork is:
 > **All changes must be minor, surgical, and easily rebased onto upstream.**
