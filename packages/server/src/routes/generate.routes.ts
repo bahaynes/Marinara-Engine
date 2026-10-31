@@ -52,6 +52,7 @@ import {
 } from "../services/generation/smart-group-decision.js";
 import { SCENE_PRESENCE_TRANSCRIPT_DEPTH } from "../services/generation/scene-presence-decision.js";
 import { decideSceneCharacters } from "../services/generation/scene-presence.service.js";
+import { dropDepartedTrackerCharacters } from "../services/generation/tracker-departure-check.js";
 import {
   activationQuestionSettings,
   bypassActivationQuestion,
@@ -13925,6 +13926,46 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                 });
                 preserveTrackerCharacterUiFields(chars, oldChars);
                 preserveTrackerCharacterUiFields(chars, characterTrackerHistory);
+                // custom-mods: the Decision model removes characters who left (tracker-departure-check.ts).
+                try {
+                  const departureBackend = await resolveDecisionBackend(
+                    {
+                      getLocalDefault: () => appSettings.get(DECISION_SETTINGS_KEYS.localDefault),
+                      getThinkingPreGeneration: async () =>
+                        (await appSettings.get(DECISION_SETTINGS_KEYS.thinkingPreGeneration)) === "true",
+                      getDefaultConnection: () => connections.getDefaultForDecision(),
+                      getConnectionWithKey: (id) => connections.getWithKey(id),
+                      debugMode: requestDebug,
+                    },
+                    generationSignal,
+                  );
+                  if (departureBackend) {
+                    const speaker = (role: string) => (role === "user" ? personaName : "the narrator");
+                    const latestRole = input.impersonate ? "user" : "assistant";
+                    const { kept, dropped } = await dropDepartedTrackerCharacters({
+                      characters: chars,
+                      backend: departureBackend,
+                      messages: [
+                        ...agentContext.recentMessages.map((message) => ({
+                          role: message.role,
+                          name: speaker(message.role),
+                          content: message.content,
+                        })),
+                        { role: latestRole, name: speaker(latestRole), content: agentCompletedResponse ?? "" },
+                      ],
+                      skip: (character) => isManualTrackerCharacterId(character.characterId),
+                    });
+                    if (dropped.length > 0) {
+                      logger.info(
+                        "[generate] character-tracker: Decision model removed departed %s",
+                        dropped.join(", "),
+                      );
+                      chars = kept;
+                    }
+                  }
+                } catch (err) {
+                  logger.warn(err, "[generate] character-tracker departure check failed; keeping the tracker's list");
+                }
                 const lockedCharacterPatch = applyTrackerFieldLocksToGameStatePatch(
                   { presentCharacters: chars },
                   characterLockState,
