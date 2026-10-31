@@ -7,7 +7,13 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import { buildComfyLayoutReplacements } from "../../packages/server/src/services/image/comfyui-layout-placeholders.js";
+import {
+  applyComfyLayoutCharacterCap,
+  buildComfyLayoutReplacements,
+  comfyLayoutLookSourcesFromContext,
+  composeComfyLayoutCharacterPrompts,
+  resolveComfyLayoutLooks,
+} from "../../packages/server/src/services/image/comfyui-layout-placeholders.js";
 import { buildIllustratorCharacterPromptInstruction } from "../../packages/server/src/services/image/character-prompts.js";
 import {
   generateImage,
@@ -103,12 +109,71 @@ assert.equal(resolveComfyLayoutCharacterPromptLimit(comfy("comfyui", null)), 0);
 assert.equal(resolveComfyLayoutCharacterPromptLimit(comfy("swarmui", layoutWorkflow)), 0);
 assert.equal(resolveComfyLayoutCharacterPromptLimit(comfy("runpod_comfyui", layoutWorkflow)), 0);
 
+// The chat setting caps boxes below the connection's own cap; nonsense keeps the connection cap.
+assert.equal(
+  resolveComfyLayoutCharacterPromptLimit(comfy("comfyui", layoutWorkflow), { illustratorLayoutMaxCharacters: 3 }),
+  3,
+);
+assert.equal(applyComfyLayoutCharacterCap(6, { illustratorLayoutMaxCharacters: "2" }), 2);
+assert.equal(applyComfyLayoutCharacterCap(6, { illustratorLayoutMaxCharacters: 9 }), 6, "never above the connection");
+assert.equal(applyComfyLayoutCharacterCap(6, { illustratorLayoutMaxCharacters: 0 }), 6);
+assert.equal(applyComfyLayoutCharacterCap(6, { illustratorLayoutMaxCharacters: 1.5 }), 6);
+assert.equal(applyComfyLayoutCharacterCap(0, { illustratorLayoutMaxCharacters: 3 }), 0, "no layout stays off");
+
+// Looks come from the card first, then a lore Looks: line, then the tracker.
+const lookSources = {
+  cards: [
+    { name: "Mira Vale", appearance: "card look for Mira" },
+    { name: "Oren", appearance: "" },
+  ],
+  lore: [
+    { name: "Oren Hask", content: "Oren Hask (he/him).\nLooks: lore look for Oren\nFamiliar: Pip, a ferret." },
+    { name: "Mira Vale", content: "Looks: lore look Mira should not use\nPip looks: lore look for Pip" },
+  ],
+  tracker: [
+    { name: "Mira Vale", appearance: "tracker look Mira", outfit: null },
+    { name: "Tess", appearance: "tracker look for Tess", outfit: "a grey cloak" },
+  ],
+};
+assert.equal(resolveComfyLayoutLooks("Mira Vale", lookSources), "card look for Mira", "card wins");
+assert.equal(resolveComfyLayoutLooks("Oren", lookSources), "lore look for Oren", "empty card falls to lore");
+assert.equal(resolveComfyLayoutLooks("Pip", lookSources), "lore look for Pip", "a <Name> looks: line anywhere");
+assert.equal(resolveComfyLayoutLooks("Tess", lookSources), "tracker look for Tess. a grey cloak", "tracker last");
+assert.equal(resolveComfyLayoutLooks("Nobody", lookSources), "");
+
+// The composer puts the engine's looks in front of the writer's action.
+assert.deepEqual(
+  composeComfyLayoutCharacterPrompts(
+    [
+      { name: "Oren", prompt: "kneels by the fire.", position: { x: 0.3, y: 0.5 } },
+      { name: "Nobody", prompt: "waves.", position: { x: 0.7, y: 0.5 } },
+    ],
+    lookSources,
+  ).map((entry) => entry.prompt),
+  ["Oren: lore look for Oren. kneels by the fire.", "Nobody: waves."],
+);
+
+// Context adapter: the image-only appearance override beats the card text, persona included.
+const adapted = comfyLayoutLookSourcesFromContext({
+  characters: [{ id: "c1", name: "Mira Vale", appearance: "card text" }],
+  persona: { name: "Rowan", appearance: "persona text" },
+  activatedLorebookEntries: [],
+  gameState: null,
+  memory: { _illustratorImageAppearanceOverrides: { c1: "override text" }, _personaId: "p1" },
+});
+assert.deepEqual(adapted.cards, [
+  { name: "Mira Vale", appearance: "override text" },
+  { name: "Rowan", appearance: "persona text" },
+]);
+
 // The layout instruction asks for natural language and drops NovelAI-only syntax.
 const layoutInstruction = buildIllustratorCharacterPromptInstruction(6, "comfyui_layout");
 assert.match(layoutInstruction, /characterPrompts/);
 assert.match(layoutInstruction, /natural-language/);
 assert.match(layoutInstruction, /x=0 is left/, "position semantics are taught");
 assert.doesNotMatch(layoutInstruction, /NovelAI|source#/);
+assert.match(layoutInstruction, /setting and the moment/, "the base prompt holds no people");
+assert.match(layoutInstruction, /engine adds each character's fixed looks/);
 assert.match(buildIllustratorCharacterPromptInstruction(6), /NovelAI/, "the default flavor is unchanged");
 
 const resolved = await resolveIllustratorCharacterPromptInstruction({
