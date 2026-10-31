@@ -63,6 +63,23 @@ Rules for content:
   gone. No concrete noun lists the model will fixate on.
 - Logic (counting, gating, state) belongs in Engine code, not in prompt text.
 
+## Decision routes (`decision_choice`)
+
+A chat-model Decision connection asks each option as its own one-token question,
+`<question>. Is this true? <criteria>`, and never shows the model the other
+options. So each option's criteria must stand alone:
+- Write criteria as a statement about what happened ("He goes up to the
+  farmhouse or to meet Dolça"), not a label.
+- A catch-all option names its siblings: "He leaves for a place or person other
+  than the stables, Dolça, and the orchard". "None of the other options" is
+  always answered no.
+- A catch-all requires leaving. Do not compare against `"none of these"` for it:
+  the Engine returns that whenever nothing clears the threshold, including when
+  he simply stays.
+- Before applying, replay the drafts on the live model with the chat's state:
+  one case per exit, one off-plan case, one where he stays. Each should answer
+  only its own route.
+
 ## Cache cost of an edit
 
 Every edit to text that is in every prompt costs one full cache rebuild per
