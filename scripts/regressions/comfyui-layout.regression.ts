@@ -142,7 +142,7 @@ const lookSources = {
     { name: "Oren", appearance: "" },
   ],
   lore: [
-    { name: "Oren Hask", content: "Oren Hask (he/him).\nLooks: lore look for Oren\nFamiliar: Pip, a ferret." },
+    { name: "Oren Hask", content: "Oren Hask (he/him).\nLooks: lore look for Oren\nPet: Pip, a ferret." },
     { name: "Mira Vale", content: "Looks: lore look Mira should not use\nPip looks: lore look for Pip" },
   ],
   tracker: [
@@ -212,7 +212,7 @@ assert.deepEqual(
 const companionSources = {
   cards: [],
   lore: [
-    { name: "Oren Hask", content: "Looks: a broad smith\nFamiliar: Pip, a ferret.\nPip looks: a sleek white ferret" },
+    { name: "Oren Hask", content: "Looks: a broad smith\nPet: Pip, a ferret.\nPip looks: a sleek white ferret" },
     { name: "Mira Vale", content: "Mira looks: a small archer" },
   ],
   tracker: [],
