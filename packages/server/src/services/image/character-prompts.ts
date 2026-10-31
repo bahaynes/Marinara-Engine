@@ -175,7 +175,7 @@ function buildComfyLayoutCharacterPromptInstruction(limit: number): string {
     'Extend the JSON you return with "characterPrompts": [ { "name": string, "prompt": string, "negativePrompt": string, "position": { "x": number, "y": number } } ].',
     'Include exactly one characterPrompts entry for every name in "characters", using the exact same spelling, even when only one character is visible.',
     `Never name more than ${limit} characters. If more are present, pick the ones this beat is about and leave the rest out of the picture and out of "characters".`,
-    'A companion animal, familiar, pet or mount that is held by, perched on or ridden by a character belongs to that character: name it in their pose or action, and leave it out of "characters".',
+    'A pet, companion animal or mount that is held by, perched on or ridden by a character belongs to that character: name it in their pose or action, and leave it out of "characters".',
     'Keep "prompt" to the setting and the moment: the place, light, mood, camera framing, shared props, and what is happening between the characters. Do not describe anyone\'s face, body, hair, skin or clothing there.',
     "Each character prompt holds only that character's pose, action, expression and where they are looking, in one or two sentences. Do not describe their face, body, hair, skin or clothing: the engine adds each character's fixed looks to their box.",
     "Write every prompt and character prompt as natural-language descriptive sentences, not comma-separated tags. This overrides any instruction to copy or produce Danbooru tags.",
