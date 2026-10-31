@@ -163,7 +163,7 @@ export function resolveComfyLayoutLooks(name: string, sources: ComfyLayoutLookSo
   return resolveComfyLayoutLookWithSource(name, sources).looks;
 }
 
-/** Every `<Name> looks: ...` line in the lore: companions, familiars and mounts described on their person's entry. */
+/** Every `<Name> looks: ...` line in the lore: pets, companion animals and mounts described on their person's entry. */
 function loreCompanionLooks(lore: ComfyLayoutLookSources["lore"]): Array<{ name: string; looks: string }> {
   const found: Array<{ name: string; looks: string }> = [];
   for (const entry of lore) {
@@ -185,7 +185,7 @@ const trimLook = (value: string) => value.replace(/[.\s]+$/u, "");
 /**
  * Fork scene composer: the prompt writer supplies each boxed character's action and pose; the
  * engine supplies who they look like, so looks stay the same from one picture to the next. A
- * companion the action names (a familiar on a shoulder, a horse being ridden) gets its lore
+ * companion the action names (a cat on a shoulder, a horse being ridden) gets its lore
  * `<Name> looks:` line in the same box.
  */
 export function composeComfyLayoutCharacterPrompts(
