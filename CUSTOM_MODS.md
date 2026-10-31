@@ -169,3 +169,14 @@ RP chats pin a ruleset in Chat Settings > Skill Checks (the same `gameRuleset` p
 - **Medical**: `deploy/rulesets/medical.ruleset.json` is a fork-local ruleset with the Medical Drama skills. Import it once with `POST /api/game-rulesets/import` (body `{"definition": "<the file's text, as a JSON string>"}`); it files under `local/medical`.
 - Give each character a sheet for the ruleset in the character editor's ruleset sheets section.
 - **Inspiration**: a ruleset with a live pool whose id is `inspiration` (the medical ruleset has one: start 1, max 4) gives RP characters their own Inspiration. `[inspire]` awards the persona's pool; the reroll button on a failed roll spends the roller's own point. Rulesets without the pool keep the chat-wide `gameInspiration` counter. The reroll itself is engine code (`rerollRoleplayRoll`), because `resolution.spend` re-throws dice before the result is known and only for dice pools.
+
+## ComfyUI layout scene composer (MOSS-Image bounding boxes)
+
+Code: `packages/server/src/services/image/comfyui-layout-placeholders.ts`, plus short hooks in `generate.routes.ts` and `generate/retry-agents-route.ts` (look for `comfyLayoutActive`), the limit in `illustrator-background-generation.ts`, and the writer instruction in `character-prompts.ts`. Test: `scripts/regressions/comfyui-layout.regression.ts`.
+
+- **Opt-in by workflow.** A plain ComfyUI image connection whose workflow holds `%layout_bboxes%` (Create Bounding Boxes `bboxes` input) and `%layout_character_boxes%` (MOSS-Image Layout Prompt `character_boxes`) gets layout images. Other connections are untouched. Use a separate connection for it rather than editing a shared one.
+- **Writer vs engine.** The Illustrator's writer returns the setting and moment in `prompt` and each character's pose/action in `characterPrompts`; companions ride in their person's action. The engine adds looks per box: card/persona Appearance (image override first), then a lorebook `Looks:` line (entry named for the character) or `<Name> looks:` line, then the Character Tracker's appearance + outfit. A companion named in an action brings its `<Name> looks:` line. Each box logs `[illustrator] layout box <name>: looks from <source>`.
+- **Boxes.** One row of equal full-height columns ordered by the writer's x. In testing, 2-3 people were clean; 4 in even columns duplicated a seated person in 2 of 3 renders.
+- **Cap.** Chat metadata `illustratorLayoutMaxCharacters` (integer, below the connection cap of 6).
+- **Style.** The profile's Style text is writer guidance only (upstream #7357 strips a verbatim copy). Put image-facing style words in the profile's **Positive tags**, which always reach the image model.
+- **Drop when** upstream sends `characterPrompts` to ComfyUI layout workflows itself.

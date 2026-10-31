@@ -4008,6 +4008,14 @@ async function applyRetryResultEffects(args: {
               ? composeComfyLayoutCharacterPrompts(
                   writerCharacterPrompts,
                   comfyLayoutLookSourcesFromContext(agentContext),
+                  ({ name, source, looks, companions }) =>
+                    logger.info(
+                      "[retry-agents] Illustrator layout box %s: looks from %s (%s)%s",
+                      name,
+                      source,
+                      looks.slice(0, 60),
+                      companions.length ? `, with ${companions.join(", ")}` : "",
+                    ),
                 )
               : writerCharacterPrompts;
             if (illustratorCharacterPrompts.length > 0) {
