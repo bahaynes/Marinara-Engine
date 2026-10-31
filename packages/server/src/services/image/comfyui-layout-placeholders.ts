@@ -78,7 +78,7 @@ export function applyComfyLayoutCharacterCap(connectionLimit: number, chatMetada
 export type ComfyLayoutLookSources = {
   /** Character cards and the persona; `appearance` should already prefer the image-only override. */
   cards: ReadonlyArray<{ name: string; appearance?: string | null }>;
-  /** Activated lorebook entries; a `Looks:` line in an entry named for the character, or `<Name> looks:` anywhere. */
+  /** Activated lorebook entries: `Looks:` / `Outfit:` lines in an entry named for the character, or `<Name> looks:` / `<Name> outfit:` anywhere. */
   lore: ReadonlyArray<{ name?: string | null; content: string }>;
   /** Character tracker rows. */
   tracker: ReadonlyArray<{ name: string; appearance?: string | null; outfit?: string | null }>;
@@ -108,35 +108,55 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function loreLooks(name: string, lore: ComfyLayoutLookSources["lore"]): string {
+function loreField(name: string, field: "looks" | "outfit", lore: ComfyLayoutLookSources["lore"]): string {
   const fullName = escapeRegExp(name.trim());
   const firstName = escapeRegExp(name.trim().split(/\s+/)[0] ?? "");
-  const named = new RegExp(`^\\s*(?:${fullName}|${firstName})\\s+looks\\s*:\\s*(.+)$`, "imu");
+  const named = new RegExp(`^\\s*(?:${fullName}|${firstName})\\s+${field}\\s*:\\s*(.+)$`, "imu");
   for (const entry of lore) {
     const match = entry.content.match(named);
     if (match?.[1]?.trim()) return match[1].trim();
   }
+  const bare = new RegExp(`^\\s*${field}\\s*:\\s*(.+)$`, "imu");
   for (const entry of lore) {
     if (!entry.name || !sameLookName(entry.name, name)) continue;
-    const match = entry.content.match(/^\s*looks\s*:\s*(.+)$/imu);
+    const match = entry.content.match(bare);
     if (match?.[1]?.trim()) return match[1].trim();
   }
   return "";
 }
 
+/** The tracker writes "none" or "n/a" for an empty outfit. */
+function trackerValue(value: string | null | undefined): string {
+  const text = value?.trim() ?? "";
+  return /^(?:none|n\/?a|unknown|-)?$/iu.test(text) ? "" : text;
+}
+
 export type ComfyLayoutLookSource = "card" | "lore" | "tracker" | "none";
 
+/**
+ * Body: fixed traits, card or persona first, then the lore `Looks:` line, then the tracker.
+ * Outfit: current clothes, the tracker first (it follows the story), then the lore `Outfit:` line.
+ * Card text may still carry clothing; split it into Appearance and an `Outfit:` lore line to let
+ * the tracker take over.
+ */
 export function resolveComfyLayoutLookWithSource(
   name: string,
   sources: ComfyLayoutLookSources,
-): { looks: string; source: ComfyLayoutLookSource } {
-  const card = sources.cards.find((entry) => sameLookName(entry.name, name))?.appearance?.trim();
-  if (card) return { looks: card, source: "card" };
-  const lore = loreLooks(name, sources.lore);
-  if (lore) return { looks: lore, source: "lore" };
+): { looks: string; source: ComfyLayoutLookSource; outfit: string; outfitSource: ComfyLayoutLookSource } {
   const row = sources.tracker.find((entry) => sameLookName(entry.name, name));
-  const tracker = [row?.appearance?.trim(), row?.outfit?.trim()].filter(Boolean).join(". ");
-  return tracker ? { looks: tracker, source: "tracker" } : { looks: "", source: "none" };
+  const trackerOutfit = trackerValue(row?.outfit);
+  const loreOutfit = loreField(name, "outfit", sources.lore);
+  const outfit = trackerOutfit
+    ? { outfit: trackerOutfit, outfitSource: "tracker" as const }
+    : loreOutfit
+      ? { outfit: loreOutfit, outfitSource: "lore" as const }
+      : { outfit: "", outfitSource: "none" as const };
+  const card = sources.cards.find((entry) => sameLookName(entry.name, name))?.appearance?.trim();
+  if (card) return { looks: card, source: "card", ...outfit };
+  const lore = loreField(name, "looks", sources.lore);
+  if (lore) return { looks: lore, source: "lore", ...outfit };
+  const tracker = trackerValue(row?.appearance);
+  return tracker ? { looks: tracker, source: "tracker", ...outfit } : { looks: "", source: "none", ...outfit };
 }
 
 export function resolveComfyLayoutLooks(name: string, sources: ComfyLayoutLookSources): string {
@@ -171,19 +191,26 @@ const trimLook = (value: string) => value.replace(/[.\s]+$/u, "");
 export function composeComfyLayoutCharacterPrompts(
   characterPrompts: SceneIllustrationCharacterPrompt[],
   sources: ComfyLayoutLookSources,
-  onLook?: (line: { name: string; source: ComfyLayoutLookSource; looks: string; companions: string[] }) => void,
+  onLook?: (line: {
+    name: string;
+    source: ComfyLayoutLookSource;
+    looks: string;
+    outfitSource: ComfyLayoutLookSource;
+    companions: string[];
+  }) => void,
 ): SceneIllustrationCharacterPrompt[] {
   const companions = loreCompanionLooks(sources.lore);
   return characterPrompts.map((entry) => {
-    const { looks, source } = resolveComfyLayoutLookWithSource(entry.name, sources);
+    const { looks, source, outfit, outfitSource } = resolveComfyLayoutLookWithSource(entry.name, sources);
     const action = entry.prompt.trim();
     const carried = companions.filter(
       (companion) =>
         !characterPrompts.some((other) => sameLookName(other.name, companion.name)) && mentions(action, companion.name),
     );
-    onLook?.({ name: entry.name, source, looks, companions: carried.map((companion) => companion.name) });
+    onLook?.({ name: entry.name, source, looks, outfitSource, companions: carried.map((companion) => companion.name) });
     const parts = [
       looks ? `${entry.name}: ${trimLook(looks)}.` : `${entry.name}:`,
+      ...(outfit ? [`Wearing ${trimLook(outfit)}.`] : []),
       action,
       ...carried.map((companion) => `${companion.name}: ${trimLook(companion.looks)}.`),
     ];
@@ -192,15 +219,18 @@ export function composeComfyLayoutCharacterPrompts(
 }
 
 /** Look sources from an agent context, for the generate and retry routes. */
-export function comfyLayoutLookSourcesFromContext(context: {
-  characters: ReadonlyArray<{ id: string; name: string; appearance?: string }>;
-  persona?: { name: string; appearance?: string } | null;
-  activatedLorebookEntries?: ReadonlyArray<{ name?: string; content: string }>;
-  gameState?: {
-    presentCharacters?: ReadonlyArray<{ name: string; appearance?: string | null; outfit?: string | null }>;
-  } | null;
-  memory: Record<string, unknown>;
-}): ComfyLayoutLookSources {
+export function comfyLayoutLookSourcesFromContext(
+  context: {
+    characters: ReadonlyArray<{ id: string; name: string; appearance?: string }>;
+    persona?: { name: string; appearance?: string } | null;
+    activatedLorebookEntries?: ReadonlyArray<{ name?: string; content: string }>;
+    gameState?: {
+      presentCharacters?: ReadonlyArray<{ name: string; appearance?: string | null; outfit?: string | null }>;
+    } | null;
+    memory: Record<string, unknown>;
+  },
+  turnTracker?: ComfyLayoutLookSources["tracker"] | null,
+): ComfyLayoutLookSources {
   const cards = context.characters.map((character) => ({
     name: character.name,
     appearance: readIllustratorImageAppearanceOverride(context.memory, character.id) ?? character.appearance ?? "",
@@ -217,6 +247,7 @@ export function comfyLayoutLookSourcesFromContext(context: {
   return {
     cards,
     lore: context.activatedLorebookEntries ?? [],
-    tracker: context.gameState?.presentCharacters ?? [],
+    // This turn's tracker update when the caller has it; outfits change with the story.
+    tracker: turnTracker ?? context.gameState?.presentCharacters ?? [],
   };
 }

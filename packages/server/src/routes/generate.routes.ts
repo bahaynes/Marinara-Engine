@@ -15080,13 +15080,22 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                       const illustratorCharacterPrompts = comfyLayoutActive
                         ? composeComfyLayoutCharacterPrompts(
                             writerCharacterPrompts,
-                            comfyLayoutLookSourcesFromContext(agentContext),
-                            ({ name, source, looks, companions }) =>
+                            comfyLayoutLookSourcesFromContext(
+                              agentContext,
+                              await gameStateStore
+                                .getByChatAndMessage(input.chatId, messageId, targetSwipeIndex)
+                                .then((row) =>
+                                  row ? parseGameStateRow(row as Record<string, unknown>).presentCharacters : null,
+                                )
+                                .catch(() => null),
+                            ),
+                            ({ name, source, looks, outfitSource, companions }) =>
                               logger.info(
-                                "[illustrator] layout box %s: looks from %s (%s)%s",
+                                "[illustrator] layout box %s: looks from %s (%s), outfit from %s%s",
                                 name,
                                 source,
                                 looks.slice(0, 60),
+                                outfitSource,
                                 companions.length ? `, with ${companions.join(", ")}` : "",
                               ),
                           )

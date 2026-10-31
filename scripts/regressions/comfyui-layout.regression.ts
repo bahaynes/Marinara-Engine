@@ -153,7 +153,46 @@ const lookSources = {
 assert.equal(resolveComfyLayoutLooks("Mira Vale", lookSources), "card look for Mira", "card wins");
 assert.equal(resolveComfyLayoutLooks("Oren", lookSources), "lore look for Oren", "empty card falls to lore");
 assert.equal(resolveComfyLayoutLooks("Pip", lookSources), "lore look for Pip", "a <Name> looks: line anywhere");
-assert.equal(resolveComfyLayoutLooks("Tess", lookSources), "tracker look for Tess. a grey cloak", "tracker last");
+assert.equal(resolveComfyLayoutLooks("Tess", lookSources), "tracker look for Tess", "tracker last");
+
+// Outfit is the other way round: this turn's tracker outfit first, then the lore Outfit: line.
+const outfitSources = {
+  cards: [{ name: "Mira Vale", appearance: "small, freckled" }],
+  lore: [
+    { name: "Mira Vale", content: "Outfit: green hunting leathers" },
+    { name: "Oren Hask", content: "Looks: a broad smith\nOutfit: a scorched apron" },
+  ],
+  tracker: [
+    { name: "Mira Vale", appearance: null, outfit: "a soaked white wedding dress" },
+    { name: "Oren Hask", appearance: null, outfit: "none" },
+  ],
+};
+assert.deepEqual(
+  composeComfyLayoutCharacterPrompts(
+    [
+      { name: "Mira Vale", prompt: "wrings out her hem.", position: { x: 0.3, y: 0.5 } },
+      { name: "Oren Hask", prompt: "laughs.", position: { x: 0.7, y: 0.5 } },
+    ],
+    outfitSources,
+  ).map((entry) => entry.prompt),
+  [
+    "Mira Vale: small, freckled. Wearing a soaked white wedding dress. wrings out her hem.",
+    "Oren Hask: a broad smith. Wearing a scorched apron. laughs.",
+  ],
+  "tracker outfit wins; a tracker 'none' falls back to the lore outfit",
+);
+assert.deepEqual(
+  comfyLayoutLookSourcesFromContext(
+    {
+      characters: [],
+      gameState: { presentCharacters: [{ name: "Old", outfit: "stale" }] },
+      memory: {},
+    },
+    [{ name: "New", outfit: "fresh" }],
+  ).tracker,
+  [{ name: "New", outfit: "fresh" }],
+  "this turn's tracker update beats the context's older state",
+);
 assert.equal(resolveComfyLayoutLooks("Nobody", lookSources), "");
 
 // The composer puts the engine's looks in front of the writer's action.
