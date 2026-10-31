@@ -15,9 +15,8 @@ export const COMFYUI_LAYOUT_BBOXES_PLACEHOLDER = "%layout_bboxes%";
 export const COMFYUI_LAYOUT_CHARACTER_BOXES_PLACEHOLDER = "%layout_character_boxes%";
 export const COMFYUI_LAYOUT_MAX_CHARACTER_PROMPTS = 6;
 
-// Share of the canvas the boxes of one row (or one column) take together; the rest is margin.
+// Share of the canvas width (and height) the boxes take together; the rest is an even margin.
 const LAYOUT_FILL = 0.9;
-const LAYOUT_COLUMNS = 3;
 
 export function comfyWorkflowTakesLayout(workflowText: string | null | undefined): boolean {
   return typeof workflowText === "string" && workflowText.includes(COMFYUI_LAYOUT_BBOXES_PLACEHOLDER);
@@ -28,31 +27,33 @@ function toGrid(value: number): number {
 }
 
 /**
- * One box per character, centred on the prompt writer's normalized position and sized to the
- * same rows of three as `defaultCharacterPromptPosition`. Create Bounding Boxes reads each
+ * One full-height box per character, side by side in a single row of equal columns, ordered left
+ * to right by the prompt writer's x position (its y is ignored: writers put everyone on the same
+ * line, and short stacked boxes duplicated people in testing). Create Bounding Boxes reads each
  * element's `bbox` as [ymin, xmin, ymax, xmax] on a 0-1000 grid; an empty list leaves the MOSS
  * prompt as the plain scene prompt.
  */
 export function buildComfyLayoutReplacements(
   characterPrompts: readonly SceneIllustrationCharacterPrompt[] | undefined,
 ): Record<string, string> {
-  const entries = (characterPrompts ?? []).slice(0, COMFYUI_LAYOUT_MAX_CHARACTER_PROMPTS);
-  const columns = Math.min(entries.length, LAYOUT_COLUMNS);
-  const rows = Math.ceil(entries.length / LAYOUT_COLUMNS);
-  const width = LAYOUT_FILL / Math.max(1, columns);
-  const height = LAYOUT_FILL / Math.max(1, rows);
-  const elements = entries.map((entry, index) => {
-    // Gallery regenerations may arrive without a position.
-    const center = entry.position ?? defaultCharacterPromptPosition(index, entries.length);
-    // Keep the whole box on the canvas by sliding it inward rather than shrinking it.
-    const left = Math.min(1 - width, Math.max(0, center.x - width / 2));
-    const top = Math.min(1 - height, Math.max(0, center.y - height / 2));
-    return {
-      type: "obj",
-      desc: entry.prompt,
-      bbox: [toGrid(top), toGrid(left), toGrid(top + height), toGrid(left + width)],
-    };
-  });
+  const entries = (characterPrompts ?? [])
+    .slice(0, COMFYUI_LAYOUT_MAX_CHARACTER_PROMPTS)
+    // Gallery regenerations may arrive without a position; they keep their order.
+    .map((entry, index) => ({ entry, x: entry.position?.x ?? defaultCharacterPromptPosition(index, 1).x, index }))
+    .sort((a, b) => a.x - b.x || a.index - b.index)
+    .map(({ entry }) => entry);
+  const margin = (1 - LAYOUT_FILL) / 2;
+  const width = LAYOUT_FILL / Math.max(1, entries.length);
+  const elements = entries.map((entry, index) => ({
+    type: "obj",
+    desc: entry.prompt,
+    bbox: [
+      toGrid(margin),
+      toGrid(margin + index * width),
+      toGrid(margin + LAYOUT_FILL),
+      toGrid(margin + (index + 1) * width),
+    ],
+  }));
   return {
     [COMFYUI_LAYOUT_BBOXES_PLACEHOLDER]: JSON.stringify(elements),
     [COMFYUI_LAYOUT_CHARACTER_BOXES_PLACEHOLDER]: elements.map((_, index) => index + 1).join(", "),
@@ -123,27 +124,70 @@ function loreLooks(name: string, lore: ComfyLayoutLookSources["lore"]): string {
   return "";
 }
 
-export function resolveComfyLayoutLooks(name: string, sources: ComfyLayoutLookSources): string {
+export type ComfyLayoutLookSource = "card" | "lore" | "tracker" | "none";
+
+export function resolveComfyLayoutLookWithSource(
+  name: string,
+  sources: ComfyLayoutLookSources,
+): { looks: string; source: ComfyLayoutLookSource } {
   const card = sources.cards.find((entry) => sameLookName(entry.name, name))?.appearance?.trim();
-  if (card) return card;
+  if (card) return { looks: card, source: "card" };
   const lore = loreLooks(name, sources.lore);
-  if (lore) return lore;
+  if (lore) return { looks: lore, source: "lore" };
   const row = sources.tracker.find((entry) => sameLookName(entry.name, name));
-  return [row?.appearance?.trim(), row?.outfit?.trim()].filter(Boolean).join(". ");
+  const tracker = [row?.appearance?.trim(), row?.outfit?.trim()].filter(Boolean).join(". ");
+  return tracker ? { looks: tracker, source: "tracker" } : { looks: "", source: "none" };
 }
+
+export function resolveComfyLayoutLooks(name: string, sources: ComfyLayoutLookSources): string {
+  return resolveComfyLayoutLookWithSource(name, sources).looks;
+}
+
+/** Every `<Name> looks: ...` line in the lore: companions, familiars and mounts described on their person's entry. */
+function loreCompanionLooks(lore: ComfyLayoutLookSources["lore"]): Array<{ name: string; looks: string }> {
+  const found: Array<{ name: string; looks: string }> = [];
+  for (const entry of lore) {
+    for (const match of entry.content.matchAll(/^\s*([\p{L}][\p{L}\p{N}' -]{0,40}?)\s+looks\s*:\s*(.+)$/gimu)) {
+      const name = match[1]!.trim();
+      const looks = match[2]!.trim();
+      if (looks && !found.some((item) => sameLookName(item.name, name))) found.push({ name, looks });
+    }
+  }
+  return found;
+}
+
+function mentions(text: string, name: string): boolean {
+  return new RegExp(`(^|[^\\p{L}])${escapeRegExp(name)}(?![\\p{L}])`, "iu").test(text);
+}
+
+const trimLook = (value: string) => value.replace(/[.\s]+$/u, "");
 
 /**
  * Fork scene composer: the prompt writer supplies each boxed character's action and pose; the
- * engine supplies who they look like, so looks stay the same from one picture to the next.
+ * engine supplies who they look like, so looks stay the same from one picture to the next. A
+ * companion the action names (a familiar on a shoulder, a horse being ridden) gets its lore
+ * `<Name> looks:` line in the same box.
  */
 export function composeComfyLayoutCharacterPrompts(
   characterPrompts: SceneIllustrationCharacterPrompt[],
   sources: ComfyLayoutLookSources,
+  onLook?: (line: { name: string; source: ComfyLayoutLookSource; looks: string; companions: string[] }) => void,
 ): SceneIllustrationCharacterPrompt[] {
+  const companions = loreCompanionLooks(sources.lore);
   return characterPrompts.map((entry) => {
-    const looks = resolveComfyLayoutLooks(entry.name, sources).replace(/[.\s]+$/u, "");
+    const { looks, source } = resolveComfyLayoutLookWithSource(entry.name, sources);
     const action = entry.prompt.trim();
-    return { ...entry, prompt: looks ? `${entry.name}: ${looks}. ${action}` : `${entry.name}: ${action}` };
+    const carried = companions.filter(
+      (companion) =>
+        !characterPrompts.some((other) => sameLookName(other.name, companion.name)) && mentions(action, companion.name),
+    );
+    onLook?.({ name: entry.name, source, looks, companions: carried.map((companion) => companion.name) });
+    const parts = [
+      looks ? `${entry.name}: ${trimLook(looks)}.` : `${entry.name}:`,
+      action,
+      ...carried.map((companion) => `${companion.name}: ${trimLook(companion.looks)}.`),
+    ];
+    return { ...entry, prompt: parts.join(" ") };
   });
 }
 

@@ -27,52 +27,56 @@ import {
 type Element = { type: string; desc: string; bbox: number[] };
 const parse = (replacements: Record<string, string>) => JSON.parse(replacements["%layout_bboxes%"]!) as Element[];
 
-// Two characters at the default left/right centers split the canvas into two tall boxes.
+// Two characters: two full-height columns side by side, inside an even 5% margin.
 const pair = [
   { name: "A", prompt: "a tall knight in silver armor", position: { x: 1 / 3, y: 0.5 } },
   { name: "B", prompt: "a small mage casting a blue spell", position: { x: 2 / 3, y: 0.5 } },
 ];
 const pairReplacements = buildComfyLayoutReplacements(pair);
 assert.deepEqual(parse(pairReplacements), [
-  { type: "obj", desc: "a tall knight in silver armor", bbox: [50, 108, 950, 558] },
-  { type: "obj", desc: "a small mage casting a blue spell", bbox: [50, 442, 950, 892] },
+  { type: "obj", desc: "a tall knight in silver armor", bbox: [50, 50, 950, 500] },
+  { type: "obj", desc: "a small mage casting a blue spell", bbox: [50, 500, 950, 950] },
 ]);
 assert.equal(pairReplacements["%layout_character_boxes%"], "1, 2");
 
-// Four characters wrap onto rows of three; every box stays on the canvas and ordered yxyx.
+// Four characters stay in one row (stacked short boxes duplicated people), ordered by the
+// writer's x; its y is ignored.
 const four = buildComfyLayoutReplacements(
   ["A", "B", "C", "D"].map((name, index) => ({
     name,
     prompt: `person ${name}`,
-    position: { x: [0.25, 0.5, 0.75, 0.5][index]!, y: [1 / 3, 1 / 3, 1 / 3, 2 / 3][index]! },
+    position: { x: [0.8, 0.2, 0.6, 0.4][index]!, y: [0.1, 0.9, 0.5, 0.5][index]! },
   })),
 );
-for (const { bbox } of parse(four)) {
+assert.deepEqual(
+  parse(four).map((entry) => entry.desc),
+  ["person B", "person D", "person C", "person A"],
+);
+for (const [index, { bbox }] of parse(four).entries()) {
   const [ymin, xmin, ymax, xmax] = bbox as [number, number, number, number];
-  assert.ok(ymin >= 0 && xmin >= 0 && ymax <= 1000 && xmax <= 1000, `on canvas: ${bbox}`);
-  assert.ok(ymin < ymax && xmin < xmax, `yxyx order: ${bbox}`);
-  assert.equal(xmax - xmin, 300, "three columns of 0.3");
-  assert.equal(ymax - ymin, 450, "two rows of 0.45");
+  assert.deepEqual([ymin, ymax], [50, 950], `full height: ${bbox}`);
+  assert.equal(xmin, 50 + index * 225, `column ${index}`);
+  assert.equal(xmax - xmin, 225, "four columns of 0.225");
 }
 assert.equal(four["%layout_character_boxes%"], "1, 2, 3, 4");
 
-// A box centered on the edge slides inward instead of leaving the canvas.
+// A single character gets one centred full-height box.
 assert.deepEqual(
-  parse(buildComfyLayoutReplacements([{ name: "A", prompt: "edge", position: { x: 0, y: 1 } }]))[0]!.bbox,
-  [100, 0, 1000, 900],
+  parse(buildComfyLayoutReplacements([{ name: "A", prompt: "solo", position: { x: 0, y: 1 } }]))[0]!.bbox,
+  [50, 50, 950, 950],
 );
 
-// Gallery regenerations may omit position; the default layout fills it in.
+// Gallery regenerations may omit position; entries keep their order.
 assert.deepEqual(
   parse(
     buildComfyLayoutReplacements([
       { name: "A", prompt: "p" },
       { name: "B", prompt: "q" },
     ] as never),
-  ).map((entry) => entry.bbox),
+  ).map((entry) => [entry.desc, entry.bbox]),
   [
-    [50, 108, 950, 558],
-    [50, 442, 950, 892],
+    ["p", [50, 50, 950, 500]],
+    ["q", [50, 500, 950, 950]],
   ],
 );
 
@@ -89,6 +93,17 @@ const substituted = replaceComfyUiPlaceholders(
 ) as Record<string, unknown>;
 assert.equal(typeof substituted.bboxes, "string");
 assert.equal(substituted.character_boxes, "1, 2");
+
+// Lore text with quotes, backslashes and newlines survives substitution as the same JSON.
+const awkward = [
+  { name: "Q", prompt: 'a scarf reading "home", a path C:\\road\nand a second line', position: { x: 0.5, y: 0.5 } },
+];
+const awkwardReplacements = buildComfyLayoutReplacements(awkward);
+const awkwardRun = replaceComfyUiPlaceholders(
+  JSON.parse(JSON.stringify({ node: { inputs: { bboxes: "%layout_bboxes%" } } })),
+  awkwardReplacements,
+) as { node: { inputs: { bboxes: string } } };
+assert.equal((JSON.parse(awkwardRun.node.inputs.bboxes) as Element[])[0]!.desc, awkward[0]!.prompt);
 
 // Only a plain ComfyUI connection whose workflow holds the placeholder takes layout captions.
 const layoutWorkflow = JSON.stringify({
@@ -152,6 +167,33 @@ assert.deepEqual(
   ).map((entry) => entry.prompt),
   ["Oren: lore look for Oren. kneels by the fire.", "Nobody: waves."],
 );
+
+// A companion the action names brings its lore "<Name> looks:" line into its person's box;
+// another boxed character named in the action does not.
+const companionSources = {
+  cards: [],
+  lore: [
+    { name: "Oren Hask", content: "Looks: a broad smith\nFamiliar: Pip, a ferret.\nPip looks: a sleek white ferret" },
+    { name: "Mira Vale", content: "Mira looks: a small archer" },
+  ],
+  tracker: [],
+};
+const logged: string[] = [];
+assert.deepEqual(
+  composeComfyLayoutCharacterPrompts(
+    [
+      { name: "Oren Hask", prompt: "holds Pip up to the light and grins at Mira.", position: { x: 0.3, y: 0.5 } },
+      { name: "Mira Vale", prompt: "laughs.", position: { x: 0.7, y: 0.5 } },
+    ],
+    companionSources,
+    (line) => logged.push(`${line.name}:${line.source}:${line.companions.join("+")}`),
+  ).map((entry) => entry.prompt),
+  [
+    "Oren Hask: a broad smith. holds Pip up to the light and grins at Mira. Pip: a sleek white ferret.",
+    "Mira Vale: a small archer. laughs.",
+  ],
+);
+assert.deepEqual(logged, ["Oren Hask:lore:Pip", "Mira Vale:lore:"]);
 
 // Context adapter: the image-only appearance override beats the card text, persona included.
 const adapted = comfyLayoutLookSourcesFromContext({
