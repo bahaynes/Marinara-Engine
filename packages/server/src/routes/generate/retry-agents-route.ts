@@ -172,6 +172,10 @@ import {
   resolveNovelAiCharacterPromptLimit,
   supportsNovelAiCharacterPrompts,
 } from "../../services/image/character-prompts.js";
+import {
+  composeComfyLayoutCharacterPrompts,
+  comfyLayoutLookSourcesFromContext,
+} from "../../services/image/comfyui-layout-placeholders.js";
 import { resolveImagePromptReviewSize } from "../../services/image/image-prompt-review.js";
 import {
   parseIllustratorPromptReviewOverride,
@@ -3993,12 +3997,23 @@ async function applyRetryResultEffects(args: {
             const imgModel = imgConnFull.model || "";
             const characterPromptLimit = supportsNovelAiCharacterPrompts(imgConnFull)
               ? resolveNovelAiCharacterPromptLimit(imgModel)
-              : resolveComfyLayoutCharacterPromptLimit(imgConnFull);
-            const illustratorCharacterPrompts = readCharacterPrompts(
+              : resolveComfyLayoutCharacterPromptLimit(
+                  imgConnFull,
+                  typeof chat.metadata === "string" ? JSON.parse(chat.metadata) : (chat.metadata ?? {}),
+                );
+            // custom-mods: on a layout workflow the engine, not the writer, supplies each boxed character's looks.
+            const comfyLayoutActive = !supportsNovelAiCharacterPrompts(imgConnFull) && characterPromptLimit > 0;
+            const writerCharacterPrompts = readCharacterPrompts(
               illData,
               illCharacters.filter((name): name is string => typeof name === "string"),
               characterPromptLimit,
             );
+            const illustratorCharacterPrompts = comfyLayoutActive
+              ? composeComfyLayoutCharacterPrompts(
+                  writerCharacterPrompts,
+                  comfyLayoutLookSourcesFromContext(agentContext),
+                )
+              : writerCharacterPrompts;
             if (illustratorCharacterPrompts.length > 0) {
               logger.debug(
                 "[retry-agents] Illustrator sending %d native NovelAI character caption(s): %s",
@@ -4122,7 +4137,8 @@ async function applyRetryResultEffects(args: {
               orderByRequest: requestOrderedReferences,
             });
             assertRetryActive();
-            if (includeCharacterAppearance) {
+            // custom-mods: layout boxes already carry each character's looks.
+            if (includeCharacterAppearance && !comfyLayoutActive) {
               const appearanceBlock =
                 illustratorCharacterPrompts.length > 0
                   ? buildUncaptionedCharacterAppearanceBlock(

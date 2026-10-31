@@ -508,6 +508,10 @@ import {
   resolveNovelAiCharacterPromptLimit,
   supportsNovelAiCharacterPrompts,
 } from "../services/image/character-prompts.js";
+import {
+  composeComfyLayoutCharacterPrompts,
+  comfyLayoutLookSourcesFromContext,
+} from "../services/image/comfyui-layout-placeholders.js";
 import { resolveCustomAgentStyleProfileId } from "../services/generation/custom-agent-image-settings.js";
 import { buildSpotifyDjConstraints } from "../services/spotify/spotify-dj-constraints.js";
 import {
@@ -15064,12 +15068,21 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                       const imgModel = imgConnFull.model || "";
                       const characterPromptLimit = supportsNovelAiCharacterPrompts(imgConnFull)
                         ? resolveNovelAiCharacterPromptLimit(imgModel)
-                        : resolveComfyLayoutCharacterPromptLimit(imgConnFull);
-                      const illustratorCharacterPrompts = readCharacterPrompts(
+                        : resolveComfyLayoutCharacterPromptLimit(imgConnFull, chatMeta);
+                      // custom-mods: on a layout workflow the engine, not the writer, supplies each boxed character's looks.
+                      const comfyLayoutActive =
+                        !supportsNovelAiCharacterPrompts(imgConnFull) && characterPromptLimit > 0;
+                      const writerCharacterPrompts = readCharacterPrompts(
                         illData,
                         illCharacters.filter((name): name is string => typeof name === "string"),
                         characterPromptLimit,
                       );
+                      const illustratorCharacterPrompts = comfyLayoutActive
+                        ? composeComfyLayoutCharacterPrompts(
+                            writerCharacterPrompts,
+                            comfyLayoutLookSourcesFromContext(agentContext),
+                          )
+                        : writerCharacterPrompts;
                       if (illustratorCharacterPrompts.length > 0) {
                         logger.debug(
                           "[illustrator] Sending %d native NovelAI character caption(s): %s",
@@ -15190,7 +15203,8 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                         maxReferences: spatialLocationReferenceImage ? 5 : 6,
                         orderByRequest: requestOrderedReferences,
                       });
-                      if (includeCharacterAppearance) {
+                      // custom-mods: layout boxes already carry each character's looks.
+                      if (includeCharacterAppearance && !comfyLayoutActive) {
                         const appearanceBlock =
                           illustratorCharacterPrompts.length > 0
                             ? buildUncaptionedCharacterAppearanceBlock(
