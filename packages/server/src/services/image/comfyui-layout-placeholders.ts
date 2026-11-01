@@ -127,10 +127,13 @@ function loreField(name: string, field: "looks" | "outfit", lore: ComfyLayoutLoo
   return "";
 }
 
-/** The tracker writes "none" or "n/a" for an empty outfit. */
+/**
+ * The tracker writes "none" or "n/a" for an empty outfit, sometimes with a note: "None (Dragon
+ * form)" became "Wearing None (Dragon form)" on the card's human body and drew a nude figure.
+ */
 function trackerValue(value: string | null | undefined): string {
   const text = value?.trim() ?? "";
-  return /^(?:none|n\/?a|unknown|-)?$/iu.test(text) ? "" : text;
+  return /^(?:(?:none|n\/?a|unknown)(?![\p{L}\p{N}]).*|-)?$/isu.test(text) ? "" : text;
 }
 
 export type ComfyLayoutLookSource = "card" | "lore" | "tracker" | "none";
