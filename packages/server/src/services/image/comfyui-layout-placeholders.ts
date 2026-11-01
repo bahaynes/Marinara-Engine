@@ -305,13 +305,29 @@ export function isComfyLayoutCharacterPromptInstruction(instruction: unknown): b
 }
 
 /** The Illustrator template with the scene-field contract swapped in, or null when its wording isn't the default's. */
-export function rewriteIllustratorTemplateForComfyLayout(template: string): string | null {
+export function rewriteIllustratorTemplateForComfyLayout(template: string, limit = 0): string | null {
   if (!template.includes(UPSTREAM_ILLUSTRATOR_PROMPT_FIELD) || !template.includes(UPSTREAM_ILLUSTRATOR_PEOPLE_RULES)) {
     return null;
   }
-  return template
+  const rewritten = template
     .replace(UPSTREAM_ILLUSTRATOR_PROMPT_FIELD, () => COMFY_LAYOUT_SCENE_FIELDS)
     .replace(UPSTREAM_ILLUSTRATOR_PEOPLE_RULES, () => COMFY_LAYOUT_SCENE_RULES);
+  if (limit <= 0) return rewritten;
+  return rewritten
+    .replace(UPSTREAM_ILLUSTRATOR_CHARACTERS_FIELD, () => `"characters": ["up to ${limit} names"]`)
+    .replace(UPSTREAM_ILLUSTRATOR_ALL_NAMES, () => comfyLayoutNamesRule(limit));
+}
+
+/**
+ * The writer named up to 7 characters against a cap of 3 (Caldera bench) while the template still
+ * said "Put all visible names in characters"; the cap replaces that sentence and the schema hint.
+ */
+const UPSTREAM_ILLUSTRATOR_CHARACTERS_FIELD = '"characters": ["visible character name"]';
+const UPSTREAM_ILLUSTRATOR_ALL_NAMES = "Put all visible names in characters.";
+const UPSTREAM_MANUAL_CHARACTERS_FIELD = '"characters":["visible names"]';
+const UPSTREAM_MANUAL_ALL_NAMES = "Name every character who should be visible in the characters array.";
+function comfyLayoutNamesRule(limit: number): string {
+  return `Put at most ${limit} names in characters: the ones this moment is about.`;
 }
 
 const UPSTREAM_MANUAL_PROMPT_FIELD = '{"prompt":"detailed provider-ready image prompt",';
@@ -329,8 +345,14 @@ const COMFY_LAYOUT_MANUAL_SCENE_FIELDS =
  * layout workflow it gets the same scene fields and rule as the automatic writer. Unmatched
  * wording is left as is.
  */
-export function adaptManualIllustratorPromptForComfyLayout(systemPrompt: string): string {
-  return systemPrompt
+export function adaptManualIllustratorPromptForComfyLayout(systemPrompt: string, limit = 0): string {
+  const capped =
+    limit > 0
+      ? systemPrompt
+          .replace(UPSTREAM_MANUAL_CHARACTERS_FIELD, () => `"characters":["up to ${limit} names"]`)
+          .replace(UPSTREAM_MANUAL_ALL_NAMES, () => comfyLayoutNamesRule(limit))
+      : systemPrompt;
+  return capped
     .replace(UPSTREAM_MANUAL_PROMPT_FIELD, () => COMFY_LAYOUT_MANUAL_SCENE_FIELDS)
     .replace(UPSTREAM_MANUAL_DESCRIBE_RULE, () => COMFY_LAYOUT_SCENE_RULES)
     .replace(UPSTREAM_MANUAL_CARD_TRAITS, () => "keep identities, relationships, and setting details consistent.");

@@ -23,7 +23,10 @@ import {
   buildManualIllustratorPromptMessages,
   parseManualIllustratorPromptPlan,
 } from "../../packages/server/src/services/generation/illustrator-manual-prompt-generation.js";
-import { buildIllustratorCharacterPromptInstruction } from "../../packages/server/src/services/image/character-prompts.js";
+import {
+  buildIllustratorCharacterPromptInstruction,
+  readComfyLayoutCharacterLimit,
+} from "../../packages/server/src/services/image/character-prompts.js";
 import {
   generateImage,
   replaceComfyUiPlaceholders,
@@ -346,6 +349,23 @@ assert.equal(
   parseManualIllustratorPromptPlan('{"setting":"a frozen pass","lighting":"moonlight","characters":["A"]}')?.prompt,
   "a frozen pass moonlight",
 );
+
+// The box cap replaces the "name everyone" sentences instead of sitting beside them.
+assert.equal(readComfyLayoutCharacterLimit(buildIllustratorCharacterPromptInstruction(3, "comfyui_layout")), 3);
+assert.equal(readComfyLayoutCharacterLimit(buildIllustratorCharacterPromptInstruction(6)), 0);
+const cappedTemplate = renderAgentPromptTemplate(
+  defaultIllustratorTemplate,
+  {},
+  hookContext(buildIllustratorCharacterPromptInstruction(3, "comfyui_layout")),
+);
+assert.match(cappedTemplate, /"characters": \["up to 3 names"\]/);
+assert.match(cappedTemplate, /Put at most 3 names in characters: the ones this moment is about\./);
+assert.doesNotMatch(cappedTemplate, /Put all visible names in characters/);
+const cappedManual = manualSystem(buildIllustratorCharacterPromptInstruction(3, "comfyui_layout"));
+assert.match(cappedManual, /"characters":\["up to 3 names"\]/);
+assert.match(cappedManual, /Put at most 3 names in characters/);
+assert.doesNotMatch(cappedManual, /Name every character who should be visible/);
+assert.match(manualSystem(), /Name every character who should be visible/, "non-layout manual writer unchanged");
 
 // Readers keep one scene prompt: the fields fold into "prompt" only when the writer left it empty.
 assert.deepEqual(
