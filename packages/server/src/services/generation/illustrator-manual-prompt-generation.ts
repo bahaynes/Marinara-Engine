@@ -8,6 +8,7 @@ import {
   buildCharacterAppearanceReferenceBlock,
   NOVELAI_V5_MAX_CHARACTER_PROMPTS,
   personaEntityId,
+  readComfyLayoutCharacterLimit,
   readIllustratorImageAppearanceOverride,
 } from "../image/character-prompts.js";
 import {
@@ -248,10 +249,11 @@ export function buildManualIllustratorPromptMessages(args: {
   // Preserve them intact; the manual contract below overrides only when/how to return the prompt.
   // custom-mods: on a ComfyUI layout workflow the writer returns people-free scene fields, not prompt.
   const comfyLayout = isComfyLayoutCharacterPromptInstruction(args.characterPromptInstruction);
+  const comfyLayoutLimit = readComfyLayoutCharacterLimit(args.characterPromptInstruction);
   const selectedTemplate = args.selectedPromptTemplate?.trim();
   const promptModeInstruction =
     comfyLayout && selectedTemplate
-      ? (rewriteIllustratorTemplateForComfyLayout(selectedTemplate) ?? selectedTemplate)
+      ? (rewriteIllustratorTemplateForComfyLayout(selectedTemplate, comfyLayoutLimit) ?? selectedTemplate)
       : selectedTemplate;
   // The current location, lorebook entries, summary and author notes follow the Illustrator's
   // Context Sources, exactly as in an automatic Illustrator run (#8246, #8251).
@@ -267,7 +269,7 @@ export function buildManualIllustratorPromptMessages(args: {
         ].join("\n")
       : "No selected Illustrator prompt mode supplied; use one coherent scene illustration.",
     comfyLayout
-      ? adaptManualIllustratorPromptForComfyLayout(MANUAL_ILLUSTRATION_SYSTEM_PROMPT)
+      ? adaptManualIllustratorPromptForComfyLayout(MANUAL_ILLUSTRATION_SYSTEM_PROMPT, comfyLayoutLimit)
       : MANUAL_ILLUSTRATION_SYSTEM_PROMPT,
     args.styleInstruction
       ? `Additional Image Style instruction for the image prompt you write: ${args.styleInstruction}\nCombine it with the selected Illustrator prompt mode. It may refine rendering and visual treatment, but it must not replace or weaken the selected format, layout, framing, or text requirements. Express it as words for the image model; never copy its sentences into the JSON fields.`

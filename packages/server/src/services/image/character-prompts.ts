@@ -168,6 +168,12 @@ export function buildIllustratorCharacterPromptInstruction(
   ].join("\n");
 }
 
+/** Fork: the layout block's box cap, read back by the template rewrite; 0 when absent. */
+export function readComfyLayoutCharacterLimit(instruction: unknown): number {
+  const match = typeof instruction === "string" ? instruction.match(/Never name more than (\d+) characters\./) : null;
+  return match ? Number(match[1]) : 0;
+}
+
 /** Fork: opening words of the layout block; agent-executor keys the layout template rewrite on them. */
 export const COMFY_LAYOUT_INSTRUCTION_MARKER = "The image connection is a ComfyUI layout workflow";
 

@@ -6,6 +6,7 @@ import { existsSync, readdirSync, statSync, type Dirent } from "node:fs";
 import {
   buildCharacterAppearanceReferenceBlock,
   personaEntityId,
+  readComfyLayoutCharacterLimit,
   readIllustratorImageAppearanceOverride,
 } from "../image/character-prompts.js";
 import {
@@ -350,7 +351,10 @@ export function buildAgentPromptMacroContext(
 function applyComfyLayoutTemplate(template: string, context: AgentContext): string {
   if (!isComfyLayoutCharacterPromptInstruction(context.memory?._illustratorCharacterPromptInstruction)) return template;
   if (!template.includes('"shouldGenerate"')) return template;
-  const rewritten = rewriteIllustratorTemplateForComfyLayout(template);
+  const rewritten = rewriteIllustratorTemplateForComfyLayout(
+    template,
+    readComfyLayoutCharacterLimit(context.memory?._illustratorCharacterPromptInstruction),
+  );
   if (rewritten === null) {
     logger.warn("[illustrator] layout scene fields not applied: the Illustrator template is not the default wording");
     return template;
