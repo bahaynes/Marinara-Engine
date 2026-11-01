@@ -1,5 +1,7 @@
 import type { SceneIllustrationCharacterPrompt } from "@marinara-engine/shared";
+import { logger } from "../../lib/logger.js";
 import {
+  COMFY_LAYOUT_INSTRUCTION_MARKER,
   defaultCharacterPromptPosition,
   personaEntityId,
   readIllustratorImageAppearanceOverride,
@@ -182,6 +184,31 @@ function mentions(text: string, name: string): boolean {
 
 const trimLook = (value: string) => value.replace(/[.\s]+$/u, "");
 
+/** The `onLook` log line for composeComfyLayoutCharacterPrompts. */
+export function logComfyLayoutBox(prefix: string) {
+  return ({
+    name,
+    source,
+    looks,
+    outfitSource,
+    companions,
+  }: {
+    name: string;
+    source: ComfyLayoutLookSource;
+    looks: string;
+    outfitSource: ComfyLayoutLookSource;
+    companions: string[];
+  }) =>
+    logger.info(
+      `${prefix} %s: looks from %s (%s), outfit from %s%s`,
+      name,
+      source,
+      looks.slice(0, 60),
+      outfitSource,
+      companions.length ? `, with ${companions.join(", ")}` : "",
+    );
+}
+
 /**
  * Fork scene composer: the prompt writer supplies each boxed character's action and pose; the
  * engine supplies who they look like, so looks stay the same from one picture to the next. A
@@ -250,4 +277,77 @@ export function comfyLayoutLookSourcesFromContext(
     // This turn's tracker update when the caller has it; outfits change with the story.
     tracker: turnTracker ?? context.gameState?.presentCharacters ?? [],
   };
+}
+
+/**
+ * Fork: on a layout workflow the Illustrator's scene prompt is split into setting, lighting and
+ * props that never mention a person. The default template's "describe every visible character"
+ * rule made the writer put people in the scene prompt, and MOSS drew them as extra figures outside
+ * the boxes (bench 2026-11-01, 20 scenes: 5/18 images with an extra person as shipped, 5/19 with
+ * the rule reworded, 0/20 with these fields). Only the default template's exact wording is
+ * rewritten; any other template is left alone and the caller logs it.
+ */
+const UPSTREAM_ILLUSTRATOR_PROMPT_FIELD = '"prompt": "detailed prompt if shouldGenerate is true",';
+const UPSTREAM_ILLUSTRATOR_PEOPLE_RULES =
+  "Prompt rules: describe composition, lighting, mood, environment, and every visible character/persona directly. For each visible character/persona, " +
+  "include available body build (chubby, slim, muscular, etc.), clothing/outfit, hair, face, distinguishing features, and other appearance details from context. Do not invent missing traits.";
+const COMFY_LAYOUT_SCENE_FIELDS =
+  '"setting": "the place itself: architecture, ground, plants, furniture. No people or animals.",\n' +
+  '  "lighting": "light, weather, time of day and mood. No people or animals.",\n' +
+  '  "props": "loose objects in the scene that nobody is holding. No people or animals.",';
+const COMFY_LAYOUT_SCENE_RULES =
+  "Prompt rules: setting, lighting and props describe the empty set the characters stand in and never mention a person, animal or body. " +
+  "Everything about a character (pose, action, expression, what they hold, who they look at) goes only in their characterPrompts entry.";
+const COMFY_LAYOUT_SCENE_KEYS = ["setting", "lighting", "props"] as const;
+
+export function isComfyLayoutCharacterPromptInstruction(instruction: unknown): boolean {
+  return typeof instruction === "string" && instruction.includes(COMFY_LAYOUT_INSTRUCTION_MARKER);
+}
+
+/** The Illustrator template with the scene-field contract swapped in, or null when its wording isn't the default's. */
+export function rewriteIllustratorTemplateForComfyLayout(template: string): string | null {
+  if (!template.includes(UPSTREAM_ILLUSTRATOR_PROMPT_FIELD) || !template.includes(UPSTREAM_ILLUSTRATOR_PEOPLE_RULES)) {
+    return null;
+  }
+  return template
+    .replace(UPSTREAM_ILLUSTRATOR_PROMPT_FIELD, () => COMFY_LAYOUT_SCENE_FIELDS)
+    .replace(UPSTREAM_ILLUSTRATOR_PEOPLE_RULES, () => COMFY_LAYOUT_SCENE_RULES);
+}
+
+const UPSTREAM_MANUAL_PROMPT_FIELD = '{"prompt":"detailed provider-ready image prompt",';
+const UPSTREAM_MANUAL_DESCRIBE_RULE =
+  "The prompt should describe subjects, actions, expressions, environment, camera/framing, lighting, atmosphere, and important props without narrating your reasoning.";
+const UPSTREAM_MANUAL_CARD_TRAITS =
+  "keep identities, clothing, physical traits, relationships, and setting details consistent.";
+const COMFY_LAYOUT_MANUAL_SCENE_FIELDS =
+  '{"setting":"the place itself: architecture, ground, plants, furniture. No people or animals.",' +
+  '"lighting":"light, weather, time of day and mood. No people or animals.",' +
+  '"props":"loose objects in the scene that nobody is holding. No people or animals.",';
+
+/**
+ * The manual Illustrate (Gallery button) writer has its own schema that demands "prompt"; on a
+ * layout workflow it gets the same scene fields and rule as the automatic writer. Unmatched
+ * wording is left as is.
+ */
+export function adaptManualIllustratorPromptForComfyLayout(systemPrompt: string): string {
+  return systemPrompt
+    .replace(UPSTREAM_MANUAL_PROMPT_FIELD, () => COMFY_LAYOUT_MANUAL_SCENE_FIELDS)
+    .replace(UPSTREAM_MANUAL_DESCRIBE_RULE, () => COMFY_LAYOUT_SCENE_RULES)
+    .replace(UPSTREAM_MANUAL_CARD_TRAITS, () => "keep identities, relationships, and setting details consistent.");
+}
+
+/**
+ * Joins setting, lighting and props into "prompt" whenever the writer returned any of them, so
+ * every reader of the Illustrator result keeps reading one scene prompt, built only from the
+ * people-free fields as in the bench. Writers outside layout mode never return these fields, so
+ * their results pass through unchanged.
+ */
+export function foldComfyLayoutSceneFields<T>(data: T): T {
+  if (!data || typeof data !== "object" || Array.isArray(data)) return data;
+  const record = data as Record<string, unknown>;
+  const parts = COMFY_LAYOUT_SCENE_KEYS.map((key) =>
+    typeof record[key] === "string" ? (record[key] as string).trim() : "",
+  ).filter(Boolean);
+  if (parts.length === 0) return data;
+  return { ...record, prompt: parts.join(" ") } as T;
 }
