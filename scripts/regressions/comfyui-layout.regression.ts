@@ -12,8 +12,17 @@ import {
   buildComfyLayoutReplacements,
   comfyLayoutLookSourcesFromContext,
   composeComfyLayoutCharacterPrompts,
+  foldComfyLayoutSceneFields,
+  isComfyLayoutCharacterPromptInstruction,
   resolveComfyLayoutLooks,
+  rewriteIllustratorTemplateForComfyLayout,
 } from "../../packages/server/src/services/image/comfyui-layout-placeholders.js";
+import type { AgentContext } from "../../packages/shared/src/index.js";
+import { renderAgentPromptTemplate } from "../../packages/server/src/services/agents/agent-executor.js";
+import {
+  buildManualIllustratorPromptMessages,
+  parseManualIllustratorPromptPlan,
+} from "../../packages/server/src/services/generation/illustrator-manual-prompt-generation.js";
 import { buildIllustratorCharacterPromptInstruction } from "../../packages/server/src/services/image/character-prompts.js";
 import {
   generateImage,
@@ -253,7 +262,112 @@ assert.match(layoutInstruction, /characterPrompts/);
 assert.match(layoutInstruction, /natural-language/);
 assert.match(layoutInstruction, /x=0 is left/, "position semantics are taught");
 assert.doesNotMatch(layoutInstruction, /NovelAI|source#/);
-assert.match(layoutInstruction, /setting and the moment/, "the base prompt holds no people");
+assert.match(
+  layoutInstruction,
+  /Leave "prompt" out; setting, lighting and props replace it\./,
+  "the base prompt holds no people",
+);
+assert.ok(isComfyLayoutCharacterPromptInstruction(layoutInstruction));
+assert.ok(
+  !isComfyLayoutCharacterPromptInstruction(buildIllustratorCharacterPromptInstruction(6)),
+  "NovelAI block is not layout",
+);
+
+// The default Illustrator template trades "prompt" and its describe-everyone rule for people-free scene fields.
+// Illustrator capability package 1.0.4 defaultPromptTemplate (data/ is a runtime install, not in git).
+const defaultIllustratorTemplate = [
+  "Create an image-generation prompt only when the latest assistant response contains a visually important moment. Use recent context only for continuity; do not illustrate older scenes.",
+  "Generate for: dramatic action, key emotion, major reveal, transformation, important location, or newly described character. If not worth illustrating, set shouldGenerate false and keep prompt empty.",
+  'Independently set generateBackground true only when an <illustrator_background_generation enabled="true"> block is present and the latest scene enters a meaningfully different reusable location or setting. Prefer tracker location changes; otherwise infer from recent context. Background generation is independent of shouldGenerate. Keep it false when the block is absent or the location is unchanged.',
+  "Return valid JSON only:",
+  "{",
+  '  "shouldGenerate": boolean,',
+  '  "generateBackground": boolean,',
+  '  "reason": "why generate or why not",',
+  '  "prompt": "detailed prompt if shouldGenerate is true",',
+  '  "negativePrompt": "what to avoid",',
+  '  "style": "visual style",',
+  '  "aspectRatio": "landscape|portrait|square",',
+  '  "characters": ["visible character name"]',
+  "}",
+  "Prompt rules: describe composition, lighting, mood, environment, and every visible character/persona directly. For each visible character/persona, include available body build (chubby, slim, muscular, etc.), clothing/outfit, hair, face, distinguishing features, and other appearance details from context. Do not invent missing traits. Put all visible names in characters. Include no UI, watermark, logo, signature, captions, speech bubbles, subtitles, manga SFX, or meta-instructions.",
+].join("\n");
+const layoutTemplate = rewriteIllustratorTemplateForComfyLayout(defaultIllustratorTemplate);
+assert.ok(layoutTemplate, "default template wording is recognised");
+assert.doesNotMatch(layoutTemplate, /"prompt": "detailed prompt/);
+assert.doesNotMatch(layoutTemplate, /every visible character\/persona/);
+assert.match(
+  layoutTemplate,
+  /\n {2}"setting": "the place itself[^\n]*\n {2}"lighting": [^\n]*\n {2}"props": [^\n]*No people or animals\.",\n {2}"negativePrompt"/,
+);
+assert.match(
+  layoutTemplate,
+  /Prompt rules: setting, lighting and props describe the empty set[^\n]*characterPrompts entry\. Put all visible names/,
+);
+assert.equal(
+  rewriteIllustratorTemplateForComfyLayout('Return JSON: {"prompt": "anything"}'),
+  null,
+  "custom templates untouched",
+);
+
+// The hook: agent templates are rewritten only while the layout block is on the context.
+const hookContext = (instruction?: string) =>
+  ({
+    chatId: "fixture",
+    chatMode: "roleplay",
+    recentMessages: [],
+    mainResponse: null,
+    characters: [],
+    persona: null,
+    gameState: null,
+    memory: instruction === undefined ? {} : { _illustratorCharacterPromptInstruction: instruction },
+    writableLorebookIds: null,
+    chatSummary: null,
+  }) satisfies AgentContext;
+assert.match(renderAgentPromptTemplate(defaultIllustratorTemplate, {}, hookContext(layoutInstruction)), /"setting": /);
+for (const context of [hookContext(), hookContext(buildIllustratorCharacterPromptInstruction(6))]) {
+  assert.equal(renderAgentPromptTemplate(defaultIllustratorTemplate, {}, context), defaultIllustratorTemplate);
+}
+
+// The manual Illustrate (Gallery) writer gets the same scene fields on a layout workflow and reads them back.
+const manualSystem = (instruction?: string) =>
+  buildManualIllustratorPromptMessages({
+    context: hookContext(),
+    selectedPromptTemplate: defaultIllustratorTemplate,
+    characterPromptInstruction: instruction,
+  })[0]!.content as string;
+const manualLayout = manualSystem(layoutInstruction);
+assert.doesNotMatch(manualLayout, /"prompt":"detailed provider-ready image prompt"/);
+assert.match(manualLayout, /\{"setting":"the place itself[^\n]*"props":"[^"]*","negativePrompt"/);
+assert.doesNotMatch(manualLayout, /every visible character\/persona|clothing, physical traits/);
+assert.match(manualSystem(), /\{"prompt":"detailed provider-ready image prompt"/, "non-layout manual writer unchanged");
+assert.match(manualSystem(buildIllustratorCharacterPromptInstruction(6)), /\{"prompt":"detailed provider-ready/);
+assert.equal(
+  parseManualIllustratorPromptPlan('{"setting":"a frozen pass","lighting":"moonlight","characters":["A"]}')?.prompt,
+  "a frozen pass moonlight",
+);
+
+// Readers keep one scene prompt: the fields fold into "prompt" only when the writer left it empty.
+assert.deepEqual(
+  foldComfyLayoutSceneFields({ shouldGenerate: true, setting: " a stone quay ", lighting: "dusk", props: "" }),
+  {
+    shouldGenerate: true,
+    setting: " a stone quay ",
+    lighting: "dusk",
+    props: "",
+    prompt: "a stone quay dusk",
+  },
+);
+assert.deepEqual(
+  foldComfyLayoutSceneFields({ prompt: "a woman on the quay", setting: "a stone quay" }),
+  { prompt: "a stone quay", setting: "a stone quay" },
+  "scene fields win over a stray prompt",
+);
+assert.deepEqual(foldComfyLayoutSceneFields({ prompt: "kept" }), { prompt: "kept" });
+assert.deepEqual(foldComfyLayoutSceneFields({ shouldGenerate: false, prompt: "" }), {
+  shouldGenerate: false,
+  prompt: "",
+});
 assert.match(layoutInstruction, /engine adds each character's fixed looks/);
 assert.match(buildIllustratorCharacterPromptInstruction(6), /NovelAI/, "the default flavor is unchanged");
 

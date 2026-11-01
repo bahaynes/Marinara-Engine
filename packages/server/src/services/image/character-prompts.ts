@@ -168,15 +168,18 @@ export function buildIllustratorCharacterPromptInstruction(
   ].join("\n");
 }
 
+/** Fork: opening words of the layout block; agent-executor keys the layout template rewrite on them. */
+export const COMFY_LAYOUT_INSTRUCTION_MARKER = "The image connection is a ComfyUI layout workflow";
+
 function buildComfyLayoutCharacterPromptInstruction(limit: number): string {
   return [
     "<illustrator_character_prompts>",
-    "The image connection is a ComfyUI layout workflow that draws each named character inside their own box of the picture.",
+    `${COMFY_LAYOUT_INSTRUCTION_MARKER} that draws each named character inside their own box of the picture.`,
     'Extend the JSON you return with "characterPrompts": [ { "name": string, "prompt": string, "negativePrompt": string, "position": { "x": number, "y": number } } ].',
     'Include exactly one characterPrompts entry for every name in "characters", using the exact same spelling, even when only one character is visible.',
     `Never name more than ${limit} characters. If more are present, pick the ones this beat is about and leave the rest out of the picture and out of "characters".`,
     'A pet, companion animal or mount that is held by, perched on or ridden by a character belongs to that character: name it in their pose or action, and leave it out of "characters".',
-    'Keep "prompt" to the setting and the moment: the place, light, mood, camera framing, shared props, and what is happening between the characters. Do not describe anyone\'s face, body, hair, skin or clothing there.',
+    'Leave "prompt" out; setting, lighting and props replace it.',
     "Each character prompt holds only that character's pose, action, expression and where they are looking, in one or two sentences. Do not describe their face, body, hair, skin or clothing: the engine adds each character's fixed looks to their box.",
     "Write every prompt and character prompt as natural-language descriptive sentences, not comma-separated tags. This overrides any instruction to copy or produce Danbooru tags.",
     "Use an empty string for negativePrompt; this workflow has no per-character negative prompt.",
