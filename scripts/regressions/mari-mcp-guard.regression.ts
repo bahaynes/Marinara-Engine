@@ -23,6 +23,8 @@ assert.throws(() => wife("mari_characters", { action: "update", apply: true }), 
 assert.throws(() => wife("mari_cli", { argv: ["chats", "list"] }), /raw mari commands/);
 assert.throws(() => wife("mari_db", { action: "patch", table: "chats" }), /db patch/);
 assert.equal(wife("mari_db", { action: "select", table: "chats" }).action, "select");
+assert.throws(() => wife("mari_packages", { action: "uninstall", id: "x", apply: true }), /Blocked on marinara-wife/);
+assert.equal(wife("mari_packages", { action: "uninstall", id: "x" }).apply, false, "uninstall previews only");
 assert.equal(
   guardInstanceCall(
     "mari_characters",

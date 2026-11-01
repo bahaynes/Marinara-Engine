@@ -21,14 +21,16 @@ const DEPLOY_LOG = join(homedir(), ".cache", "marinara-deploy.log");
 // The privileged workspace routes answer loopback only, and a request from the host arrives through the
 // Docker gateway. So each call runs inside the container, where `mari` itself runs, with the container's
 // own server URL and admin secret.
-const POST_JS = `
+const REQUEST_JS = `
 let input = "";
 process.stdin.on("data", (c) => (input += c)).on("end", async () => {
-  const { path, body } = JSON.parse(input);
+  const { method, path, body } = JSON.parse(input);
+  const headers = { "x-marinara-csrf": "1", "X-Admin-Secret": process.env.ADMIN_SECRET || "" };
+  if (body !== undefined) headers["Content-Type"] = "application/json";
   const res = await fetch((process.env.MARI_SERVER_URL || "http://127.0.0.1:7860") + path, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "x-marinara-csrf": "1", "X-Admin-Secret": process.env.ADMIN_SECRET || "" },
-    body: JSON.stringify(body),
+    method,
+    headers,
+    body: body === undefined ? undefined : JSON.stringify(body),
   });
   process.stdout.write(JSON.stringify({ status: res.status, text: await res.text() }));
 });`;
@@ -47,6 +49,11 @@ function run(command, args, { input, timeoutMs = 120_000 } = {}) {
 }
 
 async function postInContainer(instanceName, path, body) {
+  return requestInContainer(instanceName, "POST", path, body);
+}
+
+/** Any method; `body` undefined sends no body (GET, DELETE). */
+async function requestInContainer(instanceName, method, path, body) {
   const container = instanceName === "marinara-wife" ? "marinara-wife" : "marinara";
   const { code, stdout, stderr } = await run(
     "docker",
@@ -60,9 +67,9 @@ async function postInContainer(instanceName, path, body) {
       container,
       "node",
       "-e",
-      POST_JS,
+      REQUEST_JS,
     ],
-    { input: JSON.stringify({ path, body }) },
+    { input: JSON.stringify({ method, path, body }) },
   );
   if (code !== 0) throw new Error(`docker exec ${container} failed: ${(stderr || stdout).trim().slice(-500)}`);
   const { status, text } = JSON.parse(stdout);
@@ -497,6 +504,22 @@ const TOOLS = [
     },
   },
   {
+    name: "mari_packages",
+    description:
+      "List installed capability packages (id, name, version, kind), or uninstall one by id. Uninstall dry-runs by default: it shows the installed entry. With apply=true it deactivates the package, removes it, drops it from every chat's active agents and deletes its agent configs; packages with server or client code need a container restart (marinara_idle, then marinara_deploy) to unload fully.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        instance: INSTANCE_PROP,
+        action: { type: "string", enum: ["list", "uninstall"] },
+        id: { type: "string", description: "Package id, e.g. foreshadow-vault (uninstall only)." },
+        apply: APPLY_PROP,
+        reason: REASON_PROP,
+      },
+      required: ["action"],
+    },
+  },
+  {
     name: "marinara_idle",
     description:
       "Whether restarting a Marinara container now would cut off a generation on either instance or the local model. Check this before anything that restarts a container.",
@@ -625,6 +648,26 @@ async function dispatchTool(name, rawArgs) {
       if (apply) argv.push("--apply");
       if (reason) argv.push("--reason", String(reason));
       return callCommand(instance, argv);
+    }
+    case "mari_packages": {
+      const installed = await requestInContainer(instance, "GET", "/api/capability-packages/installed");
+      const list = Array.isArray(installed) ? installed : (installed?.packages ?? []);
+      // Full manifests run to ~250k chars; the summary is what a caller needs to pick an id.
+      if (rest.action === "list")
+        return list.map((pkg) => ({
+          id: pkg?.id ?? pkg?.manifest?.id,
+          name: pkg?.manifest?.name,
+          version: pkg?.version ?? pkg?.manifest?.version,
+          kind: pkg?.manifest?.kind,
+        }));
+      if (rest.action !== "uninstall") throw new Error(`Unknown mari_packages action: ${rest.action}`);
+      const id = String(rest.id ?? "").trim();
+      if (!id) throw new Error("uninstall needs an id");
+      const entry = list.find((pkg) => pkg?.id === id || pkg?.manifest?.id === id);
+      if (!entry) throw new Error(`Package ${id} is not installed on ${instance || "marinara"}`);
+      if (rest.apply !== true) return { mode: "dry-run", wouldUninstall: entry };
+      const result = await requestInContainer(instance, "DELETE", `/api/capability-packages/${encodeURIComponent(id)}`);
+      return { mode: "applied", uninstalled: id, reason: rest.reason ?? null, ...result };
     }
     case "mari_cli": {
       const argv = Array.isArray(rest.argv) ? rest.argv.map(String) : [];
