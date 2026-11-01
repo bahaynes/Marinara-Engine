@@ -367,6 +367,22 @@ assert.match(cappedManual, /Put at most 3 names in characters/);
 assert.doesNotMatch(cappedManual, /Name every character who should be visible/);
 assert.match(manualSystem(), /Name every character who should be visible/, "non-layout manual writer unchanged");
 
+// A tracker outfit of "None (...)" is no outfit, not clothing called "None".
+const noneOutfit = composeComfyLayoutCharacterPrompts(
+  [{ name: "Tora", prompt: "stands at the hearth.", position: { x: 0.5, y: 0.5 } }],
+  {
+    cards: [{ name: "Tora", appearance: "a tall woman with amethyst horns" }],
+    lore: [],
+    tracker: [{ name: "Tora", appearance: "", outfit: "None (Dragon form)" }],
+  },
+);
+assert.equal(noneOutfit[0]!.prompt, "Tora: a tall woman with amethyst horns. stands at the hearth.");
+const realOutfit = composeComfyLayoutCharacterPrompts(
+  [{ name: "Tora", prompt: "stands.", position: { x: 0.5, y: 0.5 } }],
+  { cards: [], lore: [], tracker: [{ name: "Tora", appearance: "", outfit: "Nonesuch-silk robes" }] },
+);
+assert.match(realOutfit[0]!.prompt, /Wearing Nonesuch-silk robes\./, "only a bare none word empties the outfit");
+
 // Readers keep one scene prompt: the fields fold into "prompt" only when the writer left it empty.
 assert.deepEqual(
   foldComfyLayoutSceneFields({ shouldGenerate: true, setting: " a stone quay ", lighting: "dusk", props: "" }),
