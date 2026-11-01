@@ -10,6 +10,12 @@ import {
   personaEntityId,
   readIllustratorImageAppearanceOverride,
 } from "../image/character-prompts.js";
+import {
+  adaptManualIllustratorPromptForComfyLayout,
+  foldComfyLayoutSceneFields,
+  isComfyLayoutCharacterPromptInstruction,
+  rewriteIllustratorTemplateForComfyLayout,
+} from "../image/comfyui-layout-placeholders.js";
 import { debugJson, logger } from "../../lib/logger.js";
 import {
   agentRequestOptions,
@@ -106,7 +112,8 @@ function normalizeAspectRatio(value: unknown): ManualIllustratorPromptPlan["aspe
 }
 
 export function parseManualIllustratorPromptPlan(value: unknown): ManualIllustratorPromptPlan | null {
-  const record = parseRecord(value);
+  // custom-mods: a layout writer returns setting/lighting/props instead of prompt.
+  const record = foldComfyLayoutSceneFields(parseRecord(value));
   const prompt = readTrimmedString(record.prompt ?? record.imagePrompt ?? record.description);
   if (!prompt) return null;
   return {
@@ -239,7 +246,13 @@ export function buildManualIllustratorPromptMessages(args: {
 }): ChatMessage[] {
   // Custom prompts may mix visual instructions with schemas or generation conditions.
   // Preserve them intact; the manual contract below overrides only when/how to return the prompt.
-  const promptModeInstruction = args.selectedPromptTemplate?.trim();
+  // custom-mods: on a ComfyUI layout workflow the writer returns people-free scene fields, not prompt.
+  const comfyLayout = isComfyLayoutCharacterPromptInstruction(args.characterPromptInstruction);
+  const selectedTemplate = args.selectedPromptTemplate?.trim();
+  const promptModeInstruction =
+    comfyLayout && selectedTemplate
+      ? (rewriteIllustratorTemplateForComfyLayout(selectedTemplate) ?? selectedTemplate)
+      : selectedTemplate;
   // The current location, lorebook entries, summary and author notes follow the Illustrator's
   // Context Sources, exactly as in an automatic Illustrator run (#8246, #8251).
   const currentLocation = buildAgentCurrentLocationBlock(args.context, args.contextSources);
@@ -253,7 +266,9 @@ export function buildManualIllustratorPromptMessages(args: {
           "</selected_illustrator_prompt_mode>",
         ].join("\n")
       : "No selected Illustrator prompt mode supplied; use one coherent scene illustration.",
-    MANUAL_ILLUSTRATION_SYSTEM_PROMPT,
+    comfyLayout
+      ? adaptManualIllustratorPromptForComfyLayout(MANUAL_ILLUSTRATION_SYSTEM_PROMPT)
+      : MANUAL_ILLUSTRATION_SYSTEM_PROMPT,
     args.styleInstruction
       ? `Additional Image Style instruction for the image prompt you write: ${args.styleInstruction}\nCombine it with the selected Illustrator prompt mode. It may refine rendering and visual treatment, but it must not replace or weaken the selected format, layout, framing, or text requirements. Express it as words for the image model; never copy its sentences into the JSON fields.`
       : "No visual style profile is selected. Infer only the visual treatment supported by the scene context.",

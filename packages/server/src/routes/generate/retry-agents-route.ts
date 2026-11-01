@@ -174,6 +174,7 @@ import {
 } from "../../services/image/character-prompts.js";
 import {
   composeComfyLayoutCharacterPrompts,
+  logComfyLayoutBox,
   comfyLayoutLookSourcesFromContext,
 } from "../../services/image/comfyui-layout-placeholders.js";
 import { resolveImagePromptReviewSize } from "../../services/image/image-prompt-review.js";
@@ -4012,15 +4013,7 @@ async function applyRetryResultEffects(args: {
               ? composeComfyLayoutCharacterPrompts(
                   writerCharacterPrompts,
                   comfyLayoutLookSourcesFromContext(agentContext),
-                  ({ name, source, looks, outfitSource, companions }) =>
-                    logger.info(
-                      "[retry-agents] Illustrator layout box %s: looks from %s (%s), outfit from %s%s",
-                      name,
-                      source,
-                      looks.slice(0, 60),
-                      outfitSource,
-                      companions.length ? `, with ${companions.join(", ")}` : "",
-                    ),
+                  logComfyLayoutBox("[retry-agents] Illustrator layout box"),
                 )
               : writerCharacterPrompts;
             if (illustratorCharacterPrompts.length > 0) {
