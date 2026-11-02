@@ -636,7 +636,8 @@ export function RoleplayCommandResults({
     : [];
   // Fork: a scene title rides on every reply; it is bookkeeping for Advanced Memory, not a visible event.
   const hidden = (item: RoleplayCommandActivity) =>
-    (item.command.type === "whisper" || item.command.type === "scene") && !item.error;
+    (item.command.type === "whisper" || item.command.type === "scene" || item.command.type === "present") &&
+    !item.error;
   if (!activity.some((item) => !hidden(item)) && !sounds.length) return null;
   return (
     <div className="mt-3 space-y-2" data-roleplay-command-results onDoubleClick={(event) => event.stopPropagation()}>

@@ -698,6 +698,7 @@ import {
   type PromptAttachment,
   type SimpleMessage,
 } from "./generate/generate-route-utils.js";
+import { buildPresentRows, resolvePresentNames } from "./generate/present-command.js";
 import {
   customAgentCanApplyResult,
   customAgentCanEmitResult,
@@ -8313,6 +8314,9 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
         let turnShownScenes: readonly string[] = [];
         // The earlier parts of the last reply, when it was split at scene breaks; its last part is the last response.
         let lastReplyEarlierParts: Array<{ message: any; content: string }> = [];
+        // custom-mods: the last reply's commands and full text as saved, for the [present] write after the agents.
+        let lastReplyRoleplayActivity: RoleplayCommandActivity[] = [];
+        let lastReplyFullContent = "";
         const allResponseSegments: NonNullable<AgentContext["mainResponseSegments"]> = [];
         const roleplayResponseIndexes = new Map<string, number>();
         let continuedMessageRewriteSource: string | null = null;
@@ -8882,6 +8886,8 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
           commandCharacterIds: (string | null)[] | null;
           oocMessages: string[];
           characterId: string | null;
+          /** custom-mods: the reply's accepted roleplay commands, captured at save time ([present]). */
+          roleplayActivity: RoleplayCommandActivity[];
         } | null> => {
           if (
             chatMode === "conversation" &&
@@ -11158,6 +11164,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                 commandCharacterIds: parsedCommandCharacterIds,
                 oocMessages,
                 characterId: targetCharId,
+                roleplayActivity,
               };
             }
             logger.warn(
@@ -12176,6 +12183,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
             commandCharacterIds: recoveredAlreadyAppliedSpatialTurn ? [] : parsedCommandCharacterIds,
             oocMessages: recoveredAlreadyAppliedSpatialTurn ? [] : oocMessages,
             characterId: targetCharId,
+            roleplayActivity,
           };
         };
 
@@ -12360,6 +12368,10 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                   data: { messageId: part.message.id, editedText: part.content, changes: [], rewriteApplied: false },
                 });
             lastReplyEarlierParts = genResult.earlierParts ?? [];
+            lastReplyRoleplayActivity = genResult.roleplayActivity;
+            lastReplyFullContent = [...lastReplyEarlierParts.map((part) => part.content), genResult.response].join(
+              "\n\n",
+            );
             currentIterationSavedMsg = genResult.savedMsg;
             for (const part of replyParts) {
               if (typeof part.message?.id === "string") {
@@ -12541,6 +12553,10 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
               });
             }
             lastReplyEarlierParts = genResult.earlierParts ?? [];
+            lastReplyRoleplayActivity = genResult.roleplayActivity;
+            lastReplyFullContent = [...lastReplyEarlierParts.map((part) => part.content), genResult.response].join(
+              "\n\n",
+            );
             firstSavedMsg ??= genResult.savedMsg;
             lastSavedMsg = genResult.savedMsg;
             lastSavedSwipeIndex = genResult.savedSwipeIndex;
@@ -15832,6 +15848,57 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
             }
           } catch (err) {
             logger.warn(err, "[generate] Could not keep Tracker Panel edits on the regenerated swipe");
+          }
+        }
+
+        // custom-mods: the narrator's [present] line owns the scene roster (generate/present-command.ts). It runs after
+        // the agents so a world-state snapshot rebuild or a character-tracker merge this turn cannot overwrite it.
+        if (
+          chatMode === "roleplay" &&
+          !input.impersonate &&
+          isRoleplayCommandEnabled(chatMeta, "present") &&
+          lastSavedMsg?.role === "assistant" &&
+          typeof lastSavedSwipeIndex === "number" &&
+          !generationSignal.aborted
+        ) {
+          try {
+            const previous = parseJsonField<Array<Record<string, unknown>>>(
+              baseGameStateSnapshot?.presentCharacters,
+              [],
+            );
+            const { names, fromLine } = resolvePresentNames({
+              // Captured when the reply was saved: re-reading the message could see a swipe the user picked since.
+              activity: lastReplyRoleplayActivity,
+              content: lastReplyFullContent,
+              previousNames: previous.map((row) => String(row.name ?? "")),
+              personaName,
+            });
+            const rows = buildPresentRows(names, previous);
+            applyTrackerCharacterCardIdentity(rows, charInfo, { previousCharacters: previous });
+            const current = await gameStateStore.getByChatAndMessage(
+              input.chatId,
+              lastSavedMsg.id,
+              lastSavedSwipeIndex,
+            );
+            const locks = current ?? baseGameStateSnapshot;
+            const patch = applyTrackerFieldLocksToGameStatePatch(
+              // Rows are tracker-shaped records, typed loosely like the tracker's own merge above.
+              { presentCharacters: rows as any[] },
+              locks ? parseGameStateRow(locks as Record<string, unknown>) : null,
+            );
+            await gameStateStore.updateByMessage(lastSavedMsg.id, lastSavedSwipeIndex, input.chatId, patch, undefined, {
+              baseSnapshot: baseGameStateSnapshot ?? null,
+            });
+            logger.info(
+              "[present] chat %s msg %s swipe %d: %s (%s)",
+              input.chatId,
+              lastSavedMsg.id,
+              lastSavedSwipeIndex,
+              names.join(", ") || "nobody",
+              fromLine ? "line" : "fallback",
+            );
+          } catch (err) {
+            logger.warn(err, "[present] Could not write presentCharacters from the [present] line");
           }
         }
 

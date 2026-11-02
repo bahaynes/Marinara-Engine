@@ -6625,6 +6625,8 @@
   "roleplay.commands.narrator.required": "Choose a Narrator character below to allow this command.",
   "roleplay.commands.notes.description": "Remember motives, secrets, lies, deceptions, cover stories, and plans privately.",
   "roleplay.commands.notes.label": "Personal Notes",
+  "roleplay.commands.present.description": "The narrator begins each reply by listing who is in the scene. That list becomes the scene roster; use it with the Character Tracker off.",
+  "roleplay.commands.present.label": "Scene roster",
   "roleplay.commands.roll.audience": "Who can roll dice",
   "roleplay.commands.roll.description": "Roll real dice and use the result before continuing the narration.",
   "roleplay.commands.roll.label": "Rolls",
