@@ -56,6 +56,9 @@ Rules for content:
 - **His premise wins.** Change only lines that contradict what he said. Ask for
   the premise when it is missing; do not fill the gap with your own.
 - **Invent when invited**, inside his premise, and show exactly what you wrote.
+- **Sealed secrets never contradict a world rule.** A sealed twist that makes an
+  established rule or agreed fact false needs Ben's yes first: ask, naming the
+  rule. (Open stories may do it; he can see and steer those.)
 - **Lore gaps cause drift.** When a reply makes up a number, age, date or
   history that the lore does not pin, the fix is usually one lore line with his
   answer, not a prompt rule. Ask him for the fact.
