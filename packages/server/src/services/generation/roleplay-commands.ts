@@ -165,6 +165,15 @@ function readCommand(type: string, body: string): RoleplayCommand | null {
       const title = field("title", 160) || (body.match(/^\s*["“]([^"”\n]{1,160})["”]/u)?.[1]?.trim() ?? "");
       return title ? { type, title } : null;
     }
+    case "present": {
+      // Fork: a bare list, "[present: A, B, C (asleep)]". Parentheticals are states, not names.
+      const names = body
+        .split(",")
+        .map((name) => name.replace(/\([^)]*\)/gu, "").replace(/^[\s"“]+|[\s"”.]+$/gu, ""))
+        .filter((name) => name.length > 0 && name.length <= 120)
+        .slice(0, 40);
+      return names.length ? { type, names } : null;
+    }
     case "interrupt": {
       const part = field("part", 8_000);
       return part ? { type, part } : null;
@@ -897,6 +906,10 @@ export function buildRoleplayCommandsReminder(args: {
     lines.push(
       '- [scene: title="short scene title"] ends every reply: name the scene as it stands at the end of your reply, by place and situation (e.g. "Interrogation in the east vestry"). Repeat the exact same title while the scene continues. Change it only when the scene truly ends: a new location, a major time skip, or a resolved episode.' +
         (args.sceneTitle ? ` The current title is "${args.sceneTitle}".` : ""),
+    );
+  if (enabled("present"))
+    lines.push(
+      "- [present: Name, Name, Name (asleep)] begins every reply, before anything else: list everyone physically in the scene by the end of your reply, including the player's character when present. People only mentioned, remembered or elsewhere are not present.",
     );
   if (enabled("music") && args.availableAgentIds.has("spotify"))
     lines.push(
