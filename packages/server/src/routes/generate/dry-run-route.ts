@@ -2262,14 +2262,10 @@ export async function registerDryRunRoute(app: FastifyInstance) {
         personaName,
         personaDescription,
       });
-      if (impersonateWithChatPrompt) {
-        finalMessages.push({ role: "user", content: impersonateInstruction });
-      } else {
-        // fork: same tail placement as POST /api/generate.
-        const pulled = pullHistoryInjectionsIntoInstruction(finalMessages, impersonateInstruction);
-        finalMessages = pulled.messages;
-        finalMessages.push({ role: "user", content: pulled.instruction });
-      }
+      // fork: keep depth injections and tracker context out of the history so the cached prefix stays append-only.
+      const pulled = pullHistoryInjectionsIntoInstruction(finalMessages, impersonateInstruction);
+      finalMessages = pulled.messages;
+      finalMessages.push({ role: "user", content: pulled.instruction });
     }
 
     // Optional post-processing: in preset mode, re-wrap conversation as <chat_history> + <last_message>.

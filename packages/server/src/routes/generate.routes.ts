@@ -8273,14 +8273,10 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
             personaName,
             personaDescription: resolvePromptMacros(personaDescription),
           });
-          if (impersonateWithChatPrompt) {
-            finalMessages.push({ role: "user", content: impersonateInstruction });
-          } else {
-            // fork: keep depth injections out of the history so the cached prefix stays append-only.
-            const pulled = pullHistoryInjectionsIntoInstruction(finalMessages, impersonateInstruction);
-            finalMessages = pulled.messages;
-            finalMessages.push({ role: "user", content: pulled.instruction });
-          }
+          // fork: keep depth injections and tracker context out of the history so the cached prefix stays append-only.
+          const pulled = pullHistoryInjectionsIntoInstruction(finalMessages, impersonateInstruction);
+          finalMessages = pulled.messages;
+          finalMessages.push({ role: "user", content: pulled.instruction });
         }
 
         const tailMessages = appendGenerationTailMessages(finalMessages, {

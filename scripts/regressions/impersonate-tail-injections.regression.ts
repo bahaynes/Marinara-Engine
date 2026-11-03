@@ -31,6 +31,16 @@ assert.ok(!first.slice(0, -1).some((m) => m.content.includes(note)), "no note le
 assert.equal(first.at(-1)!.content, `${note}\n\nWrite as the persona.`, "note moves into the instruction");
 assert.deepEqual(second.slice(0, first.length - 1), first.slice(0, -1), "next turn's history extends the last one");
 
+// The tracker context attaches to the persona's previous post, before the last reply; it moves too.
+const tracker: Msg[] = [
+  { role: "user", content: "post 0", contextKind: "history" },
+  { role: "user", content: "Context:\n- mood: calm", contextKind: "injection" },
+  { role: "assistant", content: "post 1", contextKind: "history" },
+];
+const pulledTracker = pullHistoryInjectionsIntoInstruction(tracker, "Write as the persona.");
+assert.deepEqual(pulledTracker.messages, [tracker[0], tracker[2]]);
+assert.equal(pulledTracker.instruction, "Context:\n- mood: calm\n\nWrite as the persona.");
+
 // Injections before the first history message never shift, so they stay where they are.
 const early: Msg[] = [
   { role: "system", content: "lore", contextKind: "injection" },
