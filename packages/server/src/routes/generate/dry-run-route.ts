@@ -91,6 +91,7 @@ import {
   resolveOwnerSpatialProjection,
 } from "../../services/spatial-context/projection.js";
 import { buildImpersonateInstruction } from "../../services/conversation/impersonate-prompt.js";
+import { pullHistoryInjectionsIntoInstruction } from "../../services/prompt/impersonate-tail.js";
 import { processLorebooks } from "../../services/lorebook/index.js";
 import { resolveLorebookScopeExclusions } from "../../services/lorebook/game-lorebook-scope.js";
 import { injectAtDepth } from "../../services/lorebook/prompt-injector.js";
@@ -2261,7 +2262,14 @@ export async function registerDryRunRoute(app: FastifyInstance) {
         personaName,
         personaDescription,
       });
-      finalMessages.push({ role: "user", content: impersonateInstruction });
+      if (impersonateWithChatPrompt) {
+        finalMessages.push({ role: "user", content: impersonateInstruction });
+      } else {
+        // fork: same tail placement as POST /api/generate.
+        const pulled = pullHistoryInjectionsIntoInstruction(finalMessages, impersonateInstruction);
+        finalMessages = pulled.messages;
+        finalMessages.push({ role: "user", content: pulled.instruction });
+      }
     }
 
     // Optional post-processing: in preset mode, re-wrap conversation as <chat_history> + <last_message>.

@@ -590,6 +590,7 @@ import {
 } from "../services/conversation/autonomous.service.js";
 import { buildIntentCooldownPatch, isMessageIntent } from "../services/conversation/intent.service.js";
 import { buildImpersonateInstruction } from "../services/conversation/impersonate-prompt.js";
+import { pullHistoryInjectionsIntoInstruction } from "../services/prompt/impersonate-tail.js";
 import {
   isRepeatedConversationResponse,
   stripConversationPromptTimestamps,
@@ -8272,7 +8273,14 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
             personaName,
             personaDescription: resolvePromptMacros(personaDescription),
           });
-          finalMessages.push({ role: "user", content: impersonateInstruction });
+          if (impersonateWithChatPrompt) {
+            finalMessages.push({ role: "user", content: impersonateInstruction });
+          } else {
+            // fork: keep depth injections out of the history so the cached prefix stays append-only.
+            const pulled = pullHistoryInjectionsIntoInstruction(finalMessages, impersonateInstruction);
+            finalMessages = pulled.messages;
+            finalMessages.push({ role: "user", content: pulled.instruction });
+          }
         }
 
         const tailMessages = appendGenerationTailMessages(finalMessages, {
