@@ -156,7 +156,7 @@ python3 scripts/marinara-deploy.py deploy          # custom-mods; or pass a comm
 It refuses commits whose tree never passed the pre-push checks (push first), storage-format changes
 (back up, then deploy by hand), and a second concurrent deploy. It builds `marinara-engine:nightly` from a
 clean worktree, waits up to `--wait-minutes` (default 30, retry every `--retry-seconds` 60) for both
-instances and `llama-backend` to be idle, tags the running image `:nightly-prev`, recreates `marinara`, and
+instances and the local model backend (`llama-backend` or `strata-backend`) to be idle, tags the running image `:nightly-prev`, recreates `marinara`, and
 rolls back if `/api/health` doesn't report the commit. Never `docker build` from the main working tree:
 other sessions' uncommitted edits ship under the wrong commit.
 
