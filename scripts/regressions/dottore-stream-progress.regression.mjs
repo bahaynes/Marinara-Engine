@@ -97,7 +97,7 @@ class StreamProgress(unittest.TestCase):
             "httpx2": NS(TimeoutException=TimeoutError, TransportError=OSError),
         }
         with patch.dict(sys.modules, modules):
-            message, _ = reviewer.claude_reply(ctx, settings, [{"role": "user", "content": "Review."}], [], "auto", 600, 0, {}, "")
+            message, _ = reviewer.claude_reply(ctx, settings, [{"role": "user", "content": "Review."}], [], "auto", 600, reviewer.time.monotonic(), {}, "")
         self.assertEqual(captured["thinking"], {"type": "adaptive", "display": "summarized"})
         self.assertEqual(message.stop_reason, "end_turn")
         self.assertEqual(captured["output_config"], {"effort": "xhigh"})
@@ -180,7 +180,7 @@ class StreamProgress(unittest.TestCase):
                        "httpx2": NS(TimeoutException=TimeoutError, TransportError=OSError)}
             settings = {"slot": "large", "model": "gpt-5.6-sol", "effort": "xhigh", "max_tokens": 0}
             with patch.dict(sys.modules, modules):
-                return reviewer.responses_reply(NS(clients={"large": client}), settings, [{"role": "user", "content": "Review."}], [], "auto", 600, 0, {}, "")
+                return reviewer.responses_reply(NS(clients={"large": client}), settings, [{"role": "user", "content": "Review."}], [], "auto", 600, reviewer.time.monotonic(), {}, "")
         # A response cut short before any output is resent like a failure without a code; a filter stops every resend.
         for reason, code in (("max_output_tokens", ""), (None, ""), ("content_filter", "content_filter")):
             with self.subTest(reason=reason):
@@ -206,7 +206,7 @@ class StreamProgress(unittest.TestCase):
         for reply in (reviewer.openai_reply, reviewer.responses_reply, reviewer.claude_reply):
             with self.subTest(provider=reply.__name__), patch.dict(sys.modules, modules):
                 with self.assertRaisesRegex(reviewer.StreamStalled, "stream disconnected"):
-                    reply(ctx, settings, [{"role": "user", "content": "Review."}], [], "auto", 600, 0, {}, "")
+                    reply(ctx, settings, [{"role": "user", "content": "Review."}], [], "auto", 600, reviewer.time.monotonic(), {}, "")
 
         class DroppedStream:
             def __enter__(self): return self
@@ -218,7 +218,7 @@ class StreamProgress(unittest.TestCase):
             for reply in (reviewer.openai_reply, reviewer.responses_reply):
                 with self.subTest(provider=reply.__name__, error=expected), patch.dict(sys.modules, modules):
                     with self.assertRaises(expected) as stopped:
-                        reply(ctx, settings, [{"role": "user", "content": "Review."}], [], "auto", 600, 0, {}, "")
+                        reply(ctx, settings, [{"role": "user", "content": "Review."}], [], "auto", 600, reviewer.time.monotonic(), {}, "")
                     self.assertIs(type(stopped.exception), expected)
 
     def test_chat_completions_reply_keeps_its_stop_reason(self):
