@@ -6,7 +6,7 @@
   marinara-deploy.py deploy [REF] [--tree DIR] [--wait-minutes N | --until HH:MM] [--retry-seconds N]
                             [--allow-untested]
       Builds marinara-engine:nightly from a clean worktree of REF (default custom-mods), waits until both
-      instances and llama-backend are idle, keeps the running image as :nightly-prev, recreates marinara, and
+      instances and the local model backend (llama-backend or strata-backend) are idle, keeps the running image as :nightly-prev, recreates marinara, and
       rolls back if /api/health doesn't report REF. --tree builds an existing clean checkout instead.
 
 Refuses: a tree that never passed `pnpm check` + `pnpm regression` (the pre-push hook and the nightly record
@@ -73,6 +73,22 @@ def busy_reason():
                 return f"{container}: generation status unreadable ({line[:120]})"
             if body.get("active") or body.get("translating"):
                 return f"{container}: chat {st['id']} is generating"
+    return backend_busy_reason()
+
+
+def backend_busy_reason():
+    """The local model is served by llama-backend or strata-backend, whichever is up; neither up means nothing to cut off."""
+    ok, state = docker("inspect", "-f", "{{.State.Running}}", "strata-backend", timeout=30)
+    if ok and state == "true":
+        ok, text = docker("exec", "strata-backend", "strata", "status", "--json", timeout=30)
+        try:
+            work = json.loads(text)["snapshot"]["work"]
+            return "strata-backend: a request is running" if work["active"] or work["queued"] or work["occupied_slots"] else ""
+        except Exception:
+            return "strata-backend: status unreadable"
+    ok, state = docker("inspect", "-f", "{{.State.Running}}", "llama-backend", timeout=30)
+    if not (ok and state == "true"):
+        return ""
     ok, text = docker("exec", "llama-backend", "sh", "-c", SLOTS_SH, timeout=30)
     try:
         if any(slot.get("is_processing") for slot in json.loads(text)):
