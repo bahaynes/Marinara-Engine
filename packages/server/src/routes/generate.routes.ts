@@ -6757,6 +6757,17 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
         }
 
         const illustratorAgentForInterval = resolvedAgents.find((a) => a.type === "illustrator");
+        // custom-mods: the chat's switch turns on the same setting Illustrator 2 uses.
+        if (
+          illustratorAgentForInterval &&
+          chatMode === "roleplay" &&
+          chatMeta.illustratorPresentCharactersOnly === true
+        ) {
+          illustratorAgentForInterval.settings = {
+            ...illustratorAgentForInterval.settings,
+            presentCharactersOnly: true,
+          };
+        }
         const storyboardAgentConfig = pipelineConfiguredPromptAgents.find(
           (agent) => agent.type === STORYBOARD_AGENT_ID,
         );
@@ -7605,6 +7616,9 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
         agentContext.memory._mainPromptPreview = promptPreviewForAgents(
           roleplayAgentPrompt(sharedPromptForAgents(finalMessages), roleplayTimeline, agentWhisperNames),
         );
+        // custom-mods: this reply's roster, set once the reply is saved so image agents read presentCharacters current.
+        let turnPresentRows: Array<Record<string, unknown>> | null = null;
+        const presentCommandOn = chatMode === "roleplay" && isRoleplayCommandEnabled(chatMeta, "present");
         const resolveAgentContext = async (agent: AgentExecConfig, context: AgentContext): Promise<AgentContext> => {
           const resolvedContext = customLorebookReadBehindTargets.get(agent.id)?.context ?? context;
           const trackerContext = applyTrackerLorebookContextPolicy({
@@ -7645,9 +7659,16 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
             : null;
           if (videoOffer) memory._generatedVideos = videoOffer;
           return applyImageAgentContextExtensions(
-            { ...trackerContext, memory },
+            {
+              ...trackerContext,
+              memory,
+              ...(turnPresentRows && trackerContext.gameState
+                ? { gameState: { ...trackerContext.gameState, presentCharacters: turnPresentRows as any[] } }
+                : {}),
+            },
             agent.settings,
             imageConnection?.comfyuiWorkflow,
+            presentCommandOn,
           );
         };
         // Decision statements in agent prompt templates (#6569), planned from the agents
@@ -8308,6 +8329,24 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
         // custom-mods: the last reply's commands and full text as saved, for the [present] write after the agents.
         let lastReplyRoleplayActivity: RoleplayCommandActivity[] = [];
         let lastReplyFullContent = "";
+        const presentWriteApplies = () =>
+          presentCommandOn &&
+          !input.impersonate &&
+          lastSavedMsg?.role === "assistant" &&
+          typeof lastSavedSwipeIndex === "number";
+        const resolveTurnPresent = () => {
+          const previous = parseJsonField<Array<Record<string, unknown>>>(baseGameStateSnapshot?.presentCharacters, []);
+          const { names, fromLine } = resolvePresentNames({
+            // Captured when the reply was saved: re-reading the message could see a swipe the user picked since.
+            activity: lastReplyRoleplayActivity,
+            content: lastReplyFullContent,
+            previousNames: previous.map((row) => String(row.name ?? "")),
+            personaName,
+          });
+          const rows = buildPresentRows(names, previous);
+          applyTrackerCharacterCardIdentity(rows, charInfo, { previousCharacters: previous });
+          return { names, fromLine, rows };
+        };
         const allResponseSegments: NonNullable<AgentContext["mainResponseSegments"]> = [];
         const roleplayResponseIndexes = new Map<string, number>();
         let continuedMessageRewriteSource: string | null = null;
@@ -13131,6 +13170,14 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
           const postReplySpatialProjection = hierarchicalMapsEnabledForChat
             ? await resolveOwnerSpatialProjection(input.chatId, {}, chatMeta)
             : ownerSpatialProjection;
+          // custom-mods: image agents and the picture filter use this reply's roster. The saved write stays after the agents.
+          if (presentWriteApplies()) {
+            try {
+              turnPresentRows = resolveTurnPresent().rows;
+            } catch (err) {
+              logger.warn(err, "[present] Could not resolve this reply's roster for image agents");
+            }
+          }
           const postAgentContext: AgentContext = {
             ...agentContext,
             ...postReplyDecisionContext,
@@ -15080,9 +15127,33 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                       // custom-mods: on a layout workflow the engine, not the writer, supplies each boxed character's looks.
                       const comfyLayoutActive =
                         !supportsNovelAiCharacterPrompts(imgConnFull) && characterPromptLimit > 0;
+                      // custom-mods (Illustrator 2): opt-in present-character gating and request-ordered refs.
+                      const requestOrderedReferences = imagePromptAgent?.settings?.referenceOrder === "requested";
+                      let requestedReferenceNames = illCharacters.filter(
+                        (name): name is string => typeof name === "string",
+                      );
+                      if (imagePromptAgent?.settings?.presentCharactersOnly === true) {
+                        const turnSnapshot = await gameStateStore
+                          .getByChatAndMessage(input.chatId, messageId, targetSwipeIndex)
+                          .catch(() => null);
+                        const presence = filterToPresentCharacters(
+                          requestedReferenceNames,
+                          turnPresentRows ??
+                            (turnSnapshot
+                              ? parseGameStateRow(turnSnapshot as Record<string, unknown>).presentCharacters
+                              : null),
+                          identity?.source === "persona" ? personaName : null,
+                          // The [present] roster is current, so a name the reply merely mentions stays out.
+                          presentCommandOn ? null : completedResponse,
+                        );
+                        if (presence.dropped.length > 0) {
+                          logger.info("[illustrator] Dropped absent characters: %s", presence.dropped.join(", "));
+                        }
+                        requestedReferenceNames = presence.kept;
+                      }
                       const writerCharacterPrompts = readCharacterPrompts(
                         illData,
-                        illCharacters.filter((name): name is string => typeof name === "string"),
+                        requestedReferenceNames,
                         characterPromptLimit,
                       );
                       const illustratorCharacterPrompts = comfyLayoutActive
@@ -15179,28 +15250,6 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                           postReplySpatialProjection?.ownerMode === "roleplay" ? postReplySpatialProjection : null,
                       });
                       let illustratorRefImages: string[] | undefined;
-                      // custom-mods (Illustrator 2): opt-in present-character gating and request-ordered refs.
-                      const requestOrderedReferences = imagePromptAgent?.settings?.referenceOrder === "requested";
-                      let requestedReferenceNames = illCharacters.filter(
-                        (name): name is string => typeof name === "string",
-                      );
-                      if (imagePromptAgent?.settings?.presentCharactersOnly === true) {
-                        const turnSnapshot = await gameStateStore
-                          .getByChatAndMessage(input.chatId, messageId, targetSwipeIndex)
-                          .catch(() => null);
-                        const presence = filterToPresentCharacters(
-                          requestedReferenceNames,
-                          turnSnapshot
-                            ? parseGameStateRow(turnSnapshot as Record<string, unknown>).presentCharacters
-                            : null,
-                          identity?.source === "persona" ? personaName : null,
-                          completedResponse,
-                        );
-                        if (presence.dropped.length > 0) {
-                          logger.debug("[illustrator] Dropped absent characters: %s", presence.dropped.join(", "));
-                        }
-                        requestedReferenceNames = presence.kept;
-                      }
                       const referenceResolution = await resolveIllustratorCharacterReferences({
                         charactersStore: chars,
                         characterGallery,
@@ -15845,27 +15894,13 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
         // custom-mods: the narrator's [present] line owns the scene roster (generate/present-command.ts). It runs after
         // the agents so a world-state snapshot rebuild or a character-tracker merge this turn cannot overwrite it.
         if (
-          chatMode === "roleplay" &&
-          !input.impersonate &&
-          isRoleplayCommandEnabled(chatMeta, "present") &&
-          lastSavedMsg?.role === "assistant" &&
+          presentWriteApplies() &&
+          lastSavedMsg &&
           typeof lastSavedSwipeIndex === "number" &&
           !generationSignal.aborted
         ) {
           try {
-            const previous = parseJsonField<Array<Record<string, unknown>>>(
-              baseGameStateSnapshot?.presentCharacters,
-              [],
-            );
-            const { names, fromLine } = resolvePresentNames({
-              // Captured when the reply was saved: re-reading the message could see a swipe the user picked since.
-              activity: lastReplyRoleplayActivity,
-              content: lastReplyFullContent,
-              previousNames: previous.map((row) => String(row.name ?? "")),
-              personaName,
-            });
-            const rows = buildPresentRows(names, previous);
-            applyTrackerCharacterCardIdentity(rows, charInfo, { previousCharacters: previous });
+            const { names, fromLine, rows } = resolveTurnPresent();
             const current = await gameStateStore.getByChatAndMessage(
               input.chatId,
               lastSavedMsg.id,

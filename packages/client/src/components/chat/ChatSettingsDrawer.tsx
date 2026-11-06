@@ -9084,6 +9084,19 @@ export function ChatSettingsDrawer({
                             }
                             onReset={resetIllustratorAvatarReferences}
                           />
+                          <AgentSettingsToggle
+                            label={localizeUi("ui.chat.chatsettingsdrawer.illustratorPresentCharactersOnly")}
+                            description={localizeUi("ui.chat.chatsettingsdrawer.illustratorPresentCharactersOnlyHelp")}
+                            enabled={metadata.illustratorPresentCharactersOnly === true}
+                            onToggle={() =>
+                              updateMeta.mutate({
+                                id: chat.id,
+                                illustratorPresentCharactersOnly: metadata.illustratorPresentCharactersOnly !== true,
+                              })
+                            }
+                            overridden={metadata.illustratorPresentCharactersOnly === true}
+                            onReset={() => updateMeta.mutate({ id: chat.id, illustratorPresentCharactersOnly: null })}
+                          />
                           <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-[var(--background)]/75 px-3 py-2 ring-1 ring-[var(--border)]">
                             <p className="min-w-0 flex-1 text-[0.625rem] leading-snug text-[var(--muted-foreground)]">
                               {localizeUi(

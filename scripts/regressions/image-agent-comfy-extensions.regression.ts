@@ -6,6 +6,7 @@
 // agent writes [[Name]] and the handler binds it. Workflow variables must always resolve to a valid
 // value or ComfyUI rejects the graph, and present-character gating must not filter without tracker data.
 import assert from "node:assert/strict";
+import { buildPresentRows, resolvePresentNames } from "../../packages/server/src/routes/generate/present-command.js";
 import {
   buildComfyReferenceSlotReplacements,
   COMFYUI_MAX_REFERENCE_IMAGES,
@@ -175,3 +176,44 @@ const noTracker = applyImageAgentContextExtensions(
 assert.equal(noTracker.characters.length, 4, "no tracker data → no filtering");
 
 console.log("image-agent-comfy-extensions regression passed");
+
+// custom-mods: with the [present] command, presentCharacters is current, so a name the reply only mentions stays out.
+{
+  const context = {
+    characters: [
+      { id: "a", name: "Anna" },
+      { id: "b", name: "Bruno" },
+    ],
+    memory: {},
+    mainResponse: "Anna frowns. 'Bruno wanted white,' she says.",
+    gameState: { presentCharacters: [{ name: "Anna" }] },
+  } as never;
+  const trimmed = (rosterIsCurrent: boolean) =>
+    applyImageAgentContextExtensions(context, { presentCharactersOnly: true }, null, rosterIsCurrent).characters.map(
+      (character) => character.name,
+    );
+  assert.deepEqual(trimmed(true), ["Anna"]);
+  assert.deepEqual(trimmed(false), ["Anna", "Bruno"], "a tracker roster keeps the rescue for late arrivals");
+  assert.deepEqual(
+    applyImageAgentContextExtensions(context, {}, null, true).characters.map((character) => character.name),
+    ["Anna", "Bruno"],
+    "setting off changes nothing",
+  );
+  assert.deepEqual(filterToPresentCharacters(["Anna", "Bruno"], [{ name: "Anna" }], null, null).dropped, ["Bruno"]);
+}
+
+// custom-mods: this reply's line sets the roster.
+{
+  const present = { command: { type: "present", names: ["Anna"] } } as never;
+  const { names, fromLine } = resolvePresentNames({
+    activity: [present],
+    content: "",
+    previousNames: ["Bruno"],
+    personaName: "Me",
+  });
+  assert.deepEqual([names, fromLine], [["Anna"], true]);
+  assert.deepEqual(
+    buildPresentRows(names, [{ name: "Anna", outfit: "red cloak" }]).map((row) => row.outfit),
+    ["red cloak"],
+  );
+}
