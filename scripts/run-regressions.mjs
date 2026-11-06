@@ -9,6 +9,8 @@ import { fileURLToPath } from 'node:url';
 
 const FILE_TIMEOUT_MS = 30_000;
 const SERIAL_RETRY_LIMIT = 20;
+// custom-mods: one worker per core starves the live instances on the homeserver. --concurrency and the env var still override.
+const DEFAULT_MAX_CONCURRENCY = 8;
 const REGRESSION_SUFFIXES = ['.regression.ts', '.regression.mjs', '.regression.js'];
 const SIGNAL_EXIT_CODES = { SIGINT: 130, SIGTERM: 143, SIGBREAK: 1 };
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -107,7 +109,7 @@ function parseArguments(args) {
   const fromEnv = process.env.REGRESSION_CONCURRENCY;
   concurrency ??= fromEnv
     ? parseConcurrency(fromEnv, 'REGRESSION_CONCURRENCY must be a positive whole number.')
-    : os.availableParallelism();
+    : Math.min(DEFAULT_MAX_CONCURRENCY, os.availableParallelism());
   return { concurrency, filters, list, shard };
 }
 
