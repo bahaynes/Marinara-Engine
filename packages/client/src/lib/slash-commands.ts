@@ -13,15 +13,12 @@ import { rollWithPersonalExtensionDiceFormats } from "./personal-extension-dice-
 export { isMessageHidden } from "./message-visibility";
 import {
   SUPPORTED_MACROS,
-  MAX_INSPIRATION_CAP,
   buildGuidedGenerationInstructionMessage,
   buildNarratorInstructionMessage,
-  createSkillCheckTagRegex,
   isWithinDiceLimits,
   normalizeTextForMatch,
   formatKeptRolls,
   parseDicePool,
-  parseSkillCheckTagBody,
   rollParsedDice,
   type MessageReply,
   type ParsedDiceNotation,
@@ -764,50 +761,6 @@ const COMMANDS: SlashCommand[] = [
         },
       });
       return { handled: true };
-    },
-  },
-  {
-    name: "reroll",
-    aliases: ["inspire-reroll", "reroll-check"],
-    description: "Reroll the latest failed skill check using Inspiration",
-    usage: "/reroll",
-    local: true,
-    async execute(_args, ctx) {
-      try {
-        const messages = await api.get<Array<{ id: string; role: string; content: string }>>(
-          `/chats/${ctx.chatId}/messages`,
-        );
-        const assistantMsgs = messages.filter((m) => m.role === "assistant" || m.role === "narrator");
-        const latestAssistant = assistantMsgs[assistantMsgs.length - 1];
-        if (!latestAssistant) {
-          return { handled: true, feedback: "No Game Master message found to reroll." };
-        }
-
-        const checkRegex = createSkillCheckTagRegex();
-        let targetCheck: ReturnType<typeof parseSkillCheckTagBody> | null = null;
-        let match: RegExpExecArray | null;
-        while ((match = checkRegex.exec(latestAssistant.content)) !== null) {
-          const parsed = parseSkillCheckTagBody(match[1] ?? "");
-          if (parsed?.resolvedResult && !parsed.resolvedResult.success) {
-            targetCheck = parsed;
-          }
-        }
-
-        // Roleplay rolls leave no tags; the server finds their failed roll in the message's records.
-        const res = await api.post<{ inspirationRemaining: number }>("/game/inspiration-reroll", {
-          chatId: ctx.chatId,
-          messageId: latestAssistant.id,
-          ...(targetCheck ? { skill: targetCheck.skill, dc: targetCheck.dc } : {}),
-        });
-
-        ctx.invalidate();
-        toast.success(
-          `Rerolled ${targetCheck?.skill ?? "the failed roll"}! (${res.inspirationRemaining}/${MAX_INSPIRATION_CAP} Inspiration left)`,
-        );
-        return { handled: true };
-      } catch (err: any) {
-        return { handled: true, feedback: err.message || "Failed to reroll with Inspiration." };
-      }
     },
   },
   {
