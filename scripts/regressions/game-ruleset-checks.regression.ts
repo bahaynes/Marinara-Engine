@@ -582,8 +582,8 @@ try {
             !line.startsWith("  Something made to last only so long"),
         )
         .join("\n");
-    // Fork: the Inspiration tag and failing-forward coaching stay out of ruleset games.
-    const forkCoaching = /\n- \[inspiration:[^\n]*|\n\nCONSEQUENCES & FAILING FORWARD:(?:\n- [^\n]*){4}/g;
+    // Fork: the failing-forward coaching stays out of ruleset games.
+    const forkCoaching = /\n\nCONSEQUENCES & FAILING FORWARD:(?:\n- [^\n]*){4}/g;
     assert.equal(strip(reminder), strip(legacyReminder.replace(forkCoaching, "")));
 
     // The tool is still there for damage and the like, but it is never how a check is recorded.

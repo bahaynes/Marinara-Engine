@@ -691,7 +691,6 @@ export function useInspirationReroll() {
       api.post<{
         success: boolean;
         swipeIndex: number;
-        result: import("@marinara-engine/shared").SkillCheckResult;
         inspirationRemaining: number;
         content: string;
       }>("/game/inspiration-reroll", data),

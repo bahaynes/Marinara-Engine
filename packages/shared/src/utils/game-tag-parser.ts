@@ -20,7 +20,7 @@ import {
 import { stripGameBranchDelimiters } from "./dice-branch.js";
 import { stripClockCommandTags } from "./clock-command-tag.js";
 import { stripSheetCommandTags } from "./sheet-command-tag.js";
-import { parseInspirationAwards, stripInspirationTags } from "../constants/inspiration.js";
+import { stripInspirationTags } from "../constants/inspiration.js";
 import { readResolvedInventoryTagBody, type ResolvedInventoryTag } from "./inventory-command-tag.js";
 import type { DirectionCommand, DirectionEffect, WidgetUpdate } from "../types/game.js";
 
@@ -110,8 +110,6 @@ export interface ParsedGmTags {
    * that exact patient instead of re-guessing "who's the patient" from raw chat history.
    */
   stateChangeSubject: string | null;
-  /** Inspiration awards parsed from narration (e.g. [inspiration: +1]) */
-  inspirationAwards: number;
   /** NPC reputation changes */
   reputationActions: Array<{ npcName: string; action: string; id?: string }>;
   /** Combat encounter with enemy data */
@@ -572,7 +570,6 @@ export function parseGmTags(content: string): ParsedGmTags {
     qte: null,
     stateChange: null,
     stateChangeSubject: null,
-    inspirationAwards: 0,
     reputationActions: [],
     combatEncounter: null,
     directions: [],
@@ -659,8 +656,7 @@ export function parseGmTags(content: string): ParsedGmTags {
   result.reputationActions.push(...readReputationTags(text));
   text = stripReputationTags(text);
 
-  // [inspiration: ...]
-  result.inspirationAwards = parseInspirationAwards(text);
+  // [inspiration: ...] from before Game Mode dropped Inspiration: old messages still hold the tag.
   text = stripInspirationTags(text);
 
   // The Engine resolves every sheet command and rewrites it with the outcome it actually

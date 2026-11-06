@@ -1,6 +1,6 @@
 // ──────────────────────────────────────────────
-// A ruleset game brings its own GM text, so none of the fork's D&D coaching reaches it: not the
-// Inspiration tag and not the natural-1 failing-forward block. A game without a ruleset keeps both.
+// A ruleset game brings its own GM text, so the fork's natural-1 failing-forward block stays out of
+// it. A game without a ruleset keeps it.
 // ──────────────────────────────────────────────
 
 import assert from "node:assert/strict";
@@ -24,11 +24,11 @@ const base = {
   partyNames: ["Mari"],
   playerName: "Player",
 } as ReminderContext;
-// ── No Inspiration or d20 coaching in a ruleset game ──
+// ── No d20 coaching in a ruleset game ──
 
 const plain = buildGmFormatReminder(base);
 const ruled = buildGmFormatReminder({ ...base, ruleset: parsed.definition } as ReminderContext);
-for (const marker of ["[inspiration:", "Natural 1", "FAILING FORWARD"]) {
+for (const marker of ["Natural 1", "FAILING FORWARD"]) {
   assert.ok(plain.includes(marker), `a game without a ruleset keeps ${marker}`);
   assert.ok(!ruled.includes(marker), `a ruleset game drops ${marker}`);
 }
