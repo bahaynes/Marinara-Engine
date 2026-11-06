@@ -19,7 +19,7 @@ if [ -z "$(git status --porcelain --untracked-files=no)" ] && grep -qx "$tree" "
   echo "[pre-push] tree $tree already passed check + regression; skipping."
   exit 0
 fi
-# MARINARA_REGRESSION_CONCURRENCY caps the regression workers (default: one per core) to run cooler.
+# MARINARA_REGRESSION_CONCURRENCY sets the regression workers (default: at most 8, see scripts/run-regressions.mjs).
 pnpm check && pnpm regression -- ${MARINARA_REGRESSION_CONCURRENCY:+--concurrency "$MARINARA_REGRESSION_CONCURRENCY"} || exit 1
 if [ -z "$(git status --porcelain --untracked-files=no)" ]; then
   mkdir -p "$(dirname "$validated")" && echo "$tree" >> "$validated"
