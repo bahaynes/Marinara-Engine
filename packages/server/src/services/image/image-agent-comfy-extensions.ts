@@ -290,6 +290,7 @@ export function applyImageAgentContextExtensions(
   context: AgentContext,
   agentSettings: Record<string, unknown> | undefined,
   comfyWorkflow: string | null | undefined,
+  rosterIsCurrent = false,
 ): AgentContext {
   let next = context;
   const variableInstructions = renderWorkflowVariableInstructions(readWorkflowVariableDeclarations(comfyWorkflow));
@@ -307,7 +308,8 @@ export function applyImageAgentContextExtensions(
   if (agentSettings?.presentCharactersOnly === true) {
     const present = presentNames(next.gameState?.presentCharacters);
     if (present.length > 0) {
-      const response = normalizeName(next.mainResponse ?? "");
+      // A current roster needs no rescue from the reply, which also names people who are only mentioned.
+      const response = rosterIsCurrent ? "" : normalizeName(next.mainResponse ?? "");
       const characters = next.characters.filter(
         (character) =>
           present.some((name) => namesMatch(name, character.name)) ||
