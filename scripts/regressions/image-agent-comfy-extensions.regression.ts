@@ -6,7 +6,11 @@
 // agent writes [[Name]] and the handler binds it. Workflow variables must always resolve to a valid
 // value or ComfyUI rejects the graph, and present-character gating must not filter without tracker data.
 import assert from "node:assert/strict";
-import { buildPresentRows, resolvePresentNames } from "../../packages/server/src/routes/generate/present-command.js";
+import {
+  buildPresentRows,
+  replyAskedForPicture,
+  resolvePresentNames,
+} from "../../packages/server/src/routes/generate/present-command.js";
 import {
   buildComfyReferenceSlotReplacements,
   COMFYUI_MAX_REFERENCE_IMAGES,
@@ -202,7 +206,7 @@ console.log("image-agent-comfy-extensions regression passed");
   assert.deepEqual(filterToPresentCharacters(["Anna", "Bruno"], [{ name: "Anna" }], null, null).dropped, ["Bruno"]);
 }
 
-// custom-mods: this reply's line sets the roster.
+// custom-mods: this reply's line sets the roster; a live [illustrate] replaces the automatic picture.
 {
   const present = { command: { type: "present", names: ["Anna"] } } as never;
   const { names, fromLine } = resolvePresentNames({
@@ -216,4 +220,9 @@ console.log("image-agent-comfy-extensions regression passed");
     buildPresentRows(names, [{ name: "Anna", outfit: "red cloak" }]).map((row) => row.outfit),
     ["red cloak"],
   );
+  const illustrate = (extra: object) => ({ command: { type: "illustrate", subject: "x" }, ...extra }) as never;
+  assert.equal(replyAskedForPicture([present]), false);
+  assert.equal(replyAskedForPicture([illustrate({})]), true);
+  assert.equal(replyAskedForPicture([illustrate({ deleted: true })]), false);
+  assert.equal(replyAskedForPicture([illustrate({ error: "denied" })]), false);
 }
