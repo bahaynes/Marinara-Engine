@@ -1020,7 +1020,6 @@ import {
 } from "../services/game/map-position.service.js";
 import { applyAllSegmentEdits } from "../services/game/segment-edits.js";
 import {
-  parseInspirationAwards,
   type CharacterData,
   type GameMap,
   type GameNpc,
@@ -6052,8 +6051,6 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
             storyStyle: gmCtx.storyStyle,
             contentBoundaries: gmCtx.contentBoundaries,
             enableQuickTimeEvents: gmCtx.enableQuickTimeEvents,
-            enableInspiration: gmCtx.enableInspiration,
-            inspirationCount: gmCtx.inspirationCount,
             gameSpecialInstructions: gmCtx.gameSpecialInstructions,
             canGenerateBackgrounds: gmCtx.canGenerateBackgrounds,
             artStylePrompt: gmCtx.artStylePrompt,
@@ -12412,9 +12409,6 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                   logger.warn(err, "[generate/game/map_update] Failed to apply map_update");
                 }
               }
-
-              const awardedInspiration = parseInspirationAwards(fullResponse);
-              if (awardedInspiration > 0) await announceInspirationAward(awardedInspiration);
             }
 
             // Evict cachedPrompt from older messages to save storage (keep last 2 assistant msgs).
