@@ -492,7 +492,8 @@ try {
   await chats.patchMetadata(artChat.id, { enableAgents: true });
   mainResponse = '[illustrate: subject="The laboratory" characters="Dottore"] The scene changes.';
   const commandRequests = await illustrateTurn();
-  assert.equal(commandRequests.length, 2, "an explicit illustration command adds to the automatic decision");
+  // custom-mods: the narrator's command replaces the automatic picture, so one reply never draws twice.
+  assert.equal(commandRequests.length, 1, "an explicit illustration command replaces the automatic decision");
   assert.equal(commandRequests.filter((prompt) => prompt.includes("manual_gallery_illustration_request")).length, 1);
   mainResponse = "A fixture response.";
   replaceBuiltInAgentDefinitions([]);

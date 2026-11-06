@@ -65,3 +65,12 @@ export function buildPresentRows(names: readonly string[], previous: readonly Ro
         };
   });
 }
+
+/** Added to the prompt tail when the Illustrator's interval says a picture is due. */
+export const PICTURE_DUE_INSTRUCTION =
+  'A picture is due with this reply. Use [illustrate: subject="..." characters="..."] once. The subject names one visible action at one instant, and characters lists only people physically in that moment.';
+
+/** Whether the reply carries a live [illustrate], which replaces the automatic Illustrator run for that reply. */
+export function replyAskedForPicture(activity: readonly RoleplayCommandActivity[]): boolean {
+  return activity.some((item) => item.command.type === "illustrate" && !item.deleted && !item.error);
+}
