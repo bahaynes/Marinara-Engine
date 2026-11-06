@@ -38,7 +38,7 @@ References: [OpenAI agent instructions](https://learn.chatgpt.com/docs/agent-con
 
 ## Custom-Mods Fork Guidelines (Local Fork & Rebase Discipline)
 
-- **Fork Context**: This repository is the `custom-mods` fork (`bahaynes/Marinara-Engine`), maintained locally for our own use on top of upstream (`Pasta-Devs/Marinara-Engine`). See `CUSTOM_MODS.md` and the `custom-mods` skill (`.agents/skills/custom-mods/SKILL.md`) for full guidance.
+- **Fork Context**: This repository is the `custom-mods` fork (`bahaynes/Marinara-Engine`), maintained locally for our own use on top of upstream (`Pasta-Devs/Marinara-Engine`). See `CUSTOM_MODS.md` and the `custom-mods` skill (`.claude/skills/custom-mods/SKILL.md`) for full guidance.
 - **Minor & Easily Rebased**: All changes must be minor, clean, and easily rebased onto `upstream/staging`. Keep diffs minimal, avoid unnecessary file churn or broad formatting/refactors across upstream code, and prefer modular additive files.
 - **Drop Commits Fixed Upstream**: Commits on this fork are intentionally ephemeral. When upstream resolves a bug or implements equivalent functionality, we drop our local commit during rebase rather than carrying divergent code.
 - **Separate Bug Fixes from Custom Features**: Never bundle temporary upstream bug fixes with custom mod features. Keep them in separate atomic commits so bug fixes can be cleanly dropped when upstream releases a fix.
