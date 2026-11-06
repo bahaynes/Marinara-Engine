@@ -1873,24 +1873,41 @@ function mergeTrackerStats(previous: unknown, next: unknown) {
 
 const MAX_TRACKER_CHARACTER_HISTORY = 50;
 
+/** Models send null or drop these fields without meaning "clear": a known appearance or outfit stays. */
+function carryTrackerCharacterLooks(character: Record<string, unknown>, previous: Record<string, unknown> | null) {
+  for (const field of ["appearance", "outfit"]) {
+    const value = character[field];
+    const known = previous?.[field];
+    if (!(typeof value === "string" && value.trim()) && typeof known === "string" && known.trim()) {
+      character[field] = known;
+    }
+  }
+}
+
 /** Collect the most recently seen distinct tracker characters within a prompt-safe bound. */
 export function collectLatestTrackerCharacterHistory(
   snapshots: Array<{ presentCharacters?: unknown }>,
 ): Array<Record<string, unknown>> {
   const history: Array<Record<string, unknown>> = [];
-  const seenIds = new Set<string>();
-  const seenNames = new Set<string>();
+  const seenIds = new Map<string, Record<string, unknown>>();
+  const seenNames = new Map<string, Record<string, unknown>>();
   for (const snapshot of snapshots) {
     const characters = parseJsonField<unknown[]>(snapshot.presentCharacters, []);
     for (const value of characters) {
       if (!isPlainRecord(value)) continue;
       const id = trackerCharacterIdKey(value);
       const name = trackerCharacterNameKey(value);
-      if ((id && seenIds.has(id)) || (!id && name && seenNames.has(name))) continue;
-      history.push(value);
-      if (id) seenIds.add(id);
-      if (name) seenNames.add(name);
-      if (history.length >= MAX_TRACKER_CHARACTER_HISTORY) return history;
+      const seen = (id && seenIds.get(id)) || (!id && name && seenNames.get(name));
+      if (seen) {
+        // The newest row may have lost its looks; an older row of the same character can still supply them.
+        if (trackerCharacterNameKey(seen) === name) carryTrackerCharacterLooks(seen, value);
+        continue;
+      }
+      if (history.length >= MAX_TRACKER_CHARACTER_HISTORY) continue;
+      const entry = { ...value };
+      history.push(entry);
+      if (id) seenIds.set(id, entry);
+      if (name) seenNames.set(name, entry);
     }
   }
   return history;
@@ -2169,6 +2186,11 @@ export function preserveTrackerCharacterUiFields(
     const previous =
       (key ? previousByKey.get(key) : null) ??
       (name && previousNameCounts.get(name) === 1 ? previousByName.get(name) : null);
+    // Name must agree: models mislabel characterId, and another character's looks are worse than blank ones.
+    if (name) {
+      carryTrackerCharacterLooks(character, previous && trackerCharacterNameKey(previous) === name ? previous : null);
+      carryTrackerCharacterLooks(character, previousNameCounts.get(name) === 1 ? previousByName.get(name)! : null);
+    }
     const previousPortraitFocusX = previous?.portraitFocusX;
     const previousPortraitFocusY = previous?.portraitFocusY;
     const previousPortraitZoom = previous?.portraitZoom;
