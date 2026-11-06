@@ -697,7 +697,12 @@ import {
   type PromptAttachment,
   type SimpleMessage,
 } from "./generate/generate-route-utils.js";
-import { buildPresentRows, resolvePresentNames } from "./generate/present-command.js";
+import {
+  buildPresentRows,
+  PICTURE_DUE_INSTRUCTION,
+  replyAskedForPicture,
+  resolvePresentNames,
+} from "./generate/present-command.js";
 import {
   customAgentCanApplyResult,
   customAgentCanEmitResult,
@@ -8283,6 +8288,19 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
         // Tool definitions (toolDefs) and custom tool metadata (customToolDefs)
         // were already resolved earlier for the agent pipeline and are reused here.
 
+        // custom-mods: when a picture is due, the narrator names the moment. Depth 0 keeps the cached history intact.
+        if (
+          followUpIteration === 0 &&
+          chatMode === "roleplay" &&
+          createsAssistantMessage &&
+          !skipAutomaticIllustrator &&
+          isRoleplayCommandAllowed(chatMeta, "illustrate", null)
+        ) {
+          finalMessages = injectAtDepth(finalMessages, [
+            { content: PICTURE_DUE_INSTRUCTION, role: "system", depth: 0 },
+          ]);
+        }
+
         // ── Impersonate: inject instruction to respond as the user's character ──
         // Only on the user's actual turn (iteration 0). A Mari follow-up pass
         // is a continuation of the assistant's prior message, not a new user
@@ -13240,6 +13258,12 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
 
             return { ...result, data: spriteData };
           };
+
+          // custom-mods: the narrator asked for this reply's picture, so the automatic writer must not draw another.
+          if (replyAskedForPicture(lastReplyRoleplayActivity)) {
+            const automaticIllustrator = pipelineAgents.findIndex((agent) => agent.type === "illustrator");
+            if (automaticIllustrator >= 0) pipelineAgents.splice(automaticIllustrator, 1);
+          }
 
           let postResults = hasPostProcessingAgents
             ? [
