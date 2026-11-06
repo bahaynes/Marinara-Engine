@@ -10187,6 +10187,8 @@
   "ui.chat.chatsettingsdrawer.illustratorIsEnabledForThisGame": "Illustrator is enabled for this game.",
   "ui.chat.chatsettingsdrawer.illustratorMakes": "Illustrator makes",
   "ui.chat.chatsettingsdrawer.illustratorMakesHelp": "Pictures, pictures it may turn into short clips when motion adds to the moment, a short clip instead of every picture, or a looping GIF instead of every picture.",
+  "ui.chat.chatsettingsdrawer.illustratorPresentCharactersOnly": "Only Present Characters",
+  "ui.chat.chatsettingsdrawer.illustratorPresentCharactersOnlyHelp": "Draw only characters listed as present in the scene. Your persona can still appear. Applies once the scene has a list of present characters.",
   "ui.chat.chatsettingsdrawer.illustratorSettings": "Illustrator Settings",
   "ui.chat.chatsettingsdrawer.illustratorVideoMode.clips_only": "Clips only",
   "ui.chat.chatsettingsdrawer.illustratorVideoMode.gifs": "Looping GIFs",

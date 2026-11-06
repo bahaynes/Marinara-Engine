@@ -404,6 +404,8 @@ export interface ChatMetadata {
   agentLorebookAttachments?: Record<string, { enabled: boolean; lorebookId: string | null }>;
   /** Whether Illustrator should append matched character card appearance text to image prompts. */
   illustratorIncludeCharacterAppearance?: boolean;
+  /** custom-mods: keep Illustrator's cards, references and layout boxes to the scene's present characters. */
+  illustratorPresentCharactersOnly?: boolean;
   /** Whether Illustrator should send matching character/persona avatar references to image providers. */
   illustratorUseAvatarReferences?: boolean;
   /** Whether Roleplay video prompts get matched character appearance lines, like images with the setting above. */
