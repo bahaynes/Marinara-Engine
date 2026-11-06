@@ -700,10 +700,10 @@ import {
   type SimpleMessage,
 } from "./generate/generate-route-utils.js";
 import {
-  buildPresentRows,
   PICTURE_DUE_INSTRUCTION,
   replyAskedForPicture,
-  resolvePresentNames,
+  resolvePresentForTurn,
+  writePresentForTurn,
 } from "./generate/present-command.js";
 import {
   customAgentCanApplyResult,
@@ -8362,19 +8362,15 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
           !input.impersonate &&
           lastSavedMsg?.role === "assistant" &&
           typeof lastSavedSwipeIndex === "number";
-        const resolveTurnPresent = () => {
-          const previous = parseJsonField<Array<Record<string, unknown>>>(baseGameStateSnapshot?.presentCharacters, []);
-          const { names, fromLine } = resolvePresentNames({
+        const resolveTurnPresent = () =>
+          resolvePresentForTurn({
             // Captured when the reply was saved: re-reading the message could see a swipe the user picked since.
             activity: lastReplyRoleplayActivity,
             content: lastReplyFullContent,
-            previousNames: previous.map((row) => String(row.name ?? "")),
+            previous: baseGameStateSnapshot?.presentCharacters,
             personaName,
+            cards: charInfo,
           });
-          const rows = buildPresentRows(names, previous);
-          applyTrackerCharacterCardIdentity(rows, charInfo, { previousCharacters: previous });
-          return { names, fromLine, rows };
-        };
         const allResponseSegments: NonNullable<AgentContext["mainResponseSegments"]> = [];
         const roleplayResponseIndexes = new Map<string, number>();
         let continuedMessageRewriteSource: string | null = null;
@@ -15930,33 +15926,14 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
           typeof lastSavedSwipeIndex === "number" &&
           !generationSignal.aborted
         ) {
-          try {
-            const { names, fromLine, rows } = resolveTurnPresent();
-            const current = await gameStateStore.getByChatAndMessage(
-              input.chatId,
-              lastSavedMsg.id,
-              lastSavedSwipeIndex,
-            );
-            const locks = current ?? baseGameStateSnapshot;
-            const patch = applyTrackerFieldLocksToGameStatePatch(
-              // Rows are tracker-shaped records, typed loosely like the tracker's own merge above.
-              { presentCharacters: rows as any[] },
-              locks ? parseGameStateRow(locks as Record<string, unknown>) : null,
-            );
-            await gameStateStore.updateByMessage(lastSavedMsg.id, lastSavedSwipeIndex, input.chatId, patch, undefined, {
-              baseSnapshot: baseGameStateSnapshot ?? null,
-            });
-            logger.info(
-              "[present] chat %s msg %s swipe %d: %s (%s)",
-              input.chatId,
-              lastSavedMsg.id,
-              lastSavedSwipeIndex,
-              names.join(", ") || "nobody",
-              fromLine ? "line" : "fallback",
-            );
-          } catch (err) {
-            logger.warn(err, "[present] Could not write presentCharacters from the [present] line");
-          }
+          await writePresentForTurn({
+            store: gameStateStore,
+            chatId: input.chatId,
+            messageId: lastSavedMsg.id,
+            swipeIndex: lastSavedSwipeIndex,
+            baseSnapshot: baseGameStateSnapshot,
+            resolve: resolveTurnPresent,
+          });
         }
 
         // Rewriting agents own the final spoken text, so wait for their
