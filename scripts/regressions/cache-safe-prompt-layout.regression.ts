@@ -96,4 +96,33 @@ async function connectedTurn(length: number, impersonate: boolean) {
 assertAppendOnly(await connectedTurn(5, false), await connectedTurn(7, false), "connected chat notes");
 assertAppendOnly(await connectedTurn(6, true), await connectedTurn(8, true), "connected chat notes, impersonate");
 
+// A message limit moved the first message every turn. A Roleplay now holds it while warm and stays within the limit.
+const now = Date.parse("2026-11-06T12:00:00Z");
+const stored = (length: number, minutesAgo: number) =>
+  Array.from({ length }, (_, i) => ({
+    id: `m${i}`,
+    role: i % 2 ? "assistant" : "user",
+    content: `post ${i}`,
+    createdAt: new Date(now - minutesAgo * 60_000).toISOString(),
+    extra: i === 0 ? { pinnedToContext: true } : {},
+  }));
+const roleplay = (length: number, headId: string | null, minutesAgo = 1, chatMode = "roleplay") =>
+  applyContextWindow(stored(length, minutesAgo), {
+    chatMode,
+    limit: 30,
+    chatMeta: { gameWindowHeadId: headId },
+    cacheTtlMs: 5 * 60_000,
+    now,
+  });
+const firstCut = roleplay(31, null);
+const unpinned = (result: { messages: Array<{ id: string }> }) => result.messages.filter((m) => m.id !== "m0");
+assert.equal(unpinned(firstCut).length, 22, "an overflow re-cuts to 75% of the limit");
+const held = roleplay(38, firstCut.headId);
+assert.equal(held.headId, firstCut.headId, "the head holds while the cache is warm");
+assert.equal(unpinned(held)[0]!.id, firstCut.headId);
+assert.ok(unpinned(held).length <= 30, "a held window stays within the limit");
+assert.notEqual(roleplay(40, firstCut.headId).headId, firstCut.headId, "past the limit it re-cuts");
+assert.notEqual(roleplay(32, firstCut.headId, 6).headId, firstCut.headId, "a lapsed cache re-cuts");
+assert.equal(roleplay(31, null, 1, "conversation").headId, null, "other chats keep the plain limit");
+
 console.log("Volatile prompt blocks stay out of the cached prefix.");

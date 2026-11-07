@@ -4,6 +4,7 @@ import type { ChatMessage } from "../../services/llm/base-provider.js";
 import {
   GENERATION_PARAMETER_SEND_KEYS,
   SUMMARY_TAIL_MESSAGES,
+  applyContextMessageLimitWithPins,
   compileChatSummaryEntries,
   normalizeChatSummaryEntries,
   type ChatSummaryEntry,
@@ -2313,4 +2314,44 @@ export function selectGameWindow<T extends { id: string }>(
       ? kept
       : messages.length - opts.limit;
   return { messages: messages.slice(start), headId: messages[start]!.id };
+}
+
+/** Fork: Advanced Memory's cache window leaves this share of its budget free when it re-cuts. */
+const CONTEXT_WINDOW_REGROW_SHARE = 0.25;
+
+/**
+ * Fork: apply a chat's message limit without moving the first message every turn, on the paths that can hold it. A
+ * Roleplay stays within its limit: it re-cuts to 75% of it when it overflows or the cache has lapsed (a miss anyway),
+ * then grows back. Game keeps its `limit + slack` window. Other chats keep the plain per-turn limit.
+ */
+export function applyContextWindow<
+  T extends { id: string; role?: unknown; createdAt?: unknown; content?: unknown; extra?: unknown },
+>(
+  messages: T[],
+  opts: {
+    chatMode: string | null | undefined;
+    limit: number;
+    chatMeta: Record<string, unknown>;
+    cacheTtlMs: number;
+    now?: number;
+  },
+): { messages: T[]; headId: string | null } {
+  const { chatMeta, limit } = opts;
+  const game = opts.chatMode === "game" && chatMeta.gameLoreInTail !== false;
+  if (!game && opts.chatMode !== "roleplay") {
+    return { messages: applyContextMessageLimitWithPins(messages, limit), headId: null };
+  }
+  const cut = game ? limit : Math.max(1, Math.floor(limit * (1 - CONTEXT_WINDOW_REGROW_SHARE)));
+  const lastReply = [...messages].reverse().find((message) => message.role === "assistant");
+  const lastReplyAt = typeof lastReply?.createdAt === "string" ? new Date(lastReply.createdAt).getTime() : null;
+  const windowed = selectGameWindow(messages, {
+    limit: cut,
+    slack: game ? (typeof chatMeta.gameWindowSlack === "number" ? chatMeta.gameWindowSlack : 30) : limit - cut,
+    headId: typeof chatMeta.gameWindowHeadId === "string" ? chatMeta.gameWindowHeadId : null,
+    cacheCold: lastReplyAt === null || (opts.now ?? Date.now()) - lastReplyAt > opts.cacheTtlMs,
+  });
+  // A pinned message before the window comes along; it only changes when the head does.
+  return game
+    ? windowed
+    : { messages: applyContextMessageLimitWithPins(messages, windowed.messages.length), headId: windowed.headId };
 }

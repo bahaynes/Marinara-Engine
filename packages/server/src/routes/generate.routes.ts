@@ -653,7 +653,7 @@ import {
   selectRollingSummaryMessages,
   injectIntoOutputFormatOrLastUser,
   placeGameWorldInfo,
-  selectGameWindow,
+  applyContextWindow,
   getMessageConversationStartCharacterIds,
   getMessageHiddenFromAICharacterIds,
   isManualTrackerCharacterId,
@@ -856,7 +856,7 @@ import {
   resolveGenerationProviderRuntime,
   resolveReasoningMacroValue,
 } from "../services/generation/provider-generation-runtime.js";
-import { applyContextMessageLimitWithPins, supportsNativeToolCalls } from "@marinara-engine/shared";
+import { supportsNativeToolCalls } from "@marinara-engine/shared";
 import { planGameToolCalls } from "../services/generation/game-tool-planning.js";
 import { extractLeadingGmPlanning, stripStrayRuleLines } from "../services/game/gm-planning.js";
 import {
@@ -2494,22 +2494,16 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
         contextMessageLimit > 0 &&
         chatMessages.length > contextMessageLimit
       ) {
-        if (chatMode === "game" && chatMeta.gameLoreInTail !== false) {
-          // Game prompt caching: hold the window head steady until the cache has lapsed anyway.
-          const lastReply = [...chatMessages].reverse().find((m) => m.role === "assistant");
-          const ttlMs = (conn.anthropicExtendedCacheTtl === "true" ? 60 : 5) * 60_000;
-          const windowed = selectGameWindow(chatMessages, {
-            limit: contextMessageLimit,
-            slack: typeof chatMeta.gameWindowSlack === "number" ? chatMeta.gameWindowSlack : 30,
-            headId: typeof chatMeta.gameWindowHeadId === "string" ? chatMeta.gameWindowHeadId : null,
-            cacheCold: !lastReply?.createdAt || Date.now() - new Date(lastReply.createdAt).getTime() > ttlMs,
-          });
-          chatMessages = windowed.messages;
-          if (windowed.headId && windowed.headId !== chatMeta.gameWindowHeadId) {
-            await chats.patchMetadata(input.chatId, { gameWindowHeadId: windowed.headId });
-          }
-        } else {
-          chatMessages = applyContextMessageLimitWithPins(chatMessages, contextMessageLimit);
+        // Prompt caching: hold the window head steady until the cache has lapsed anyway.
+        const windowed = applyContextWindow(chatMessages, {
+          chatMode,
+          limit: contextMessageLimit,
+          chatMeta,
+          cacheTtlMs: (conn.anthropicExtendedCacheTtl === "true" ? 60 : 5) * 60_000,
+        });
+        chatMessages = windowed.messages;
+        if (windowed.headId && windowed.headId !== chatMeta.gameWindowHeadId) {
+          await chats.patchMetadata(input.chatId, { gameWindowHeadId: windowed.headId });
         }
       }
       const pastReasoning = collectPastReasoningMetadata(
