@@ -15,12 +15,14 @@ type ConnectedConversationStore = {
   getById(chatId: string): Promise<{ mode?: string | null; name?: string | null } | null>;
 };
 
+// Fork: tagged so it stays out of the cached history. Untagged, post-processing folds it into the previous user post,
+// and an impersonate would leave it there; tagged, it rides with the newest message like a depth-0 section.
 function injectBeforeLastUser(messages: PromptMessage[], content: string): void {
   const lastUserIdx = messages.map((m) => m.role).lastIndexOf("user");
   if (lastUserIdx >= 0) {
-    messages.splice(lastUserIdx, 0, { role: "system", content });
+    messages.splice(lastUserIdx, 0, { role: "system", content, contextKind: "injection" });
   } else {
-    messages.push({ role: "system", content });
+    messages.push({ role: "system", content, contextKind: "injection" });
   }
 }
 
