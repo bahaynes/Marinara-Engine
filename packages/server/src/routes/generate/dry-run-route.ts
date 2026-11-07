@@ -22,7 +22,6 @@ import {
   isAgentConfigDeleted,
   isBuiltInAgentRuntimeDisabled,
   normalizeAdvancedMemorySettings,
-  applyContextMessageLimitWithPins,
   advancedMemoryDecisionDiagnosticsSchema,
   type DecisionDebugReport,
   type AdvancedMemoryDecisionDiagnostics,
@@ -186,6 +185,7 @@ import {
   resolveBaseUrl,
   shouldEnableAgentsForGeneration,
   type PromptAttachment,
+  applyContextWindow,
 } from "../generate/generate-route-utils.js";
 import { buildGenerationPromptPresetCandidates, type PromptPresetCandidateSource } from "./prompt-preset-selection.js";
 import {
@@ -822,7 +822,12 @@ export async function registerDryRunRoute(app: FastifyInstance) {
       contextMessageLimit > 0 &&
       chatMessages.length > contextMessageLimit
     ) {
-      chatMessages = applyContextMessageLimitWithPins(chatMessages, contextMessageLimit);
+      chatMessages = applyContextWindow(chatMessages, {
+        chatMode,
+        limit: contextMessageLimit,
+        chatMeta,
+        cacheTtlMs: (conn?.anthropicExtendedCacheTtl === "true" ? 60 : 5) * 60_000,
+      }).messages;
     }
 
     // Ephemeral user line (normal dry run only): mirrors an unsaved "what if I said this" turn.
