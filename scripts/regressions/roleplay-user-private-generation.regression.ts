@@ -212,15 +212,21 @@ try {
     payload: { role: "user", content: '[whisper: character="Bob" text="SNEAK_SECRET"]' },
   });
   assert.equal(sneak.statusCode, 200, sneak.body);
+  // Fork: an impersonate closes the history on the last reply instead of marking it, so it shares a narrator's cache.
+  const impersonated = await preview(alice.id, { impersonate: true });
   const unseen = [
     await preview(alice.id),
-    await preview(alice.id, { impersonate: true }),
+    impersonated,
     (await generate("Alice looks around.", alice.id), prompts.at(-1)!),
     await preview(alice.id),
   ];
   for (const content of unseen) {
     assert(!content.includes("SNEAK_SECRET") && !content.includes("[Private whisper"), "no trace for others");
-    assert.equal(content.split("</last_message>").length, 2, "the last message keeps its wrapper");
+    assert.equal(
+      content.split("</last_message>").length,
+      content === impersonated ? 1 : 2,
+      "the last message keeps its wrapper",
+    );
     assert.equal(content.split("</chat_history>").length, 2, "the history keeps its wrapper");
   }
   for (const id of [bob.id, narrator.id])
