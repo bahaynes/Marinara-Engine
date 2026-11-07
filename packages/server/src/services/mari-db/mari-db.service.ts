@@ -8811,7 +8811,12 @@ export class MariDbService {
       const meta = (parseJsonMaybe(chat.metadata) as Row | null) ?? {};
       const advancedMemoryOn = (meta.advancedMemory as Row | undefined)?.enabled === true;
       const causes: string[] = [];
-      if (meta.enableMemoryRecall === true && !advancedMemoryOn)
+      // Same default as generation: on in Conversation and scene chats unless the chat says otherwise.
+      const memoryRecallOn =
+        meta.enableMemoryRecall !== undefined
+          ? meta.enableMemoryRecall === true
+          : chat.mode === "conversation" || meta.sceneStatus === "active";
+      if (memoryRecallOn && !advancedMemoryOn)
         causes.push(
           "Memory Recall is on: it inserts recalled fragments chosen by the latest message near the top of the prompt, so the cache breaks at that point every reply. Turning it off, or using Advanced Memory with Recalled Scenes after Chat History, fixes it.",
         );
@@ -8819,8 +8824,14 @@ export class MariDbService {
         causes.push(
           `The Author's Note is at depth ${meta.authorNotesDepth}, so it moves a few messages from the end every reply. Depth 0 keeps it at the end.`,
         );
+      if (meta.semanticSummaryRetrievalEnabled === true && !advancedMemoryOn)
+        causes.push(
+          "Find older summaries by meaning is on: the latest message picks which summaries go in, and they sit before the history, so the cache can break there every reply. Turning it off, or using Advanced Memory, fixes it.",
+        );
+      // Roleplay, and Game with its lore in the tail, hold the start of their window while the cache is warm.
       const limit = Number(meta.contextMessageLimit ?? 0);
-      if (limit > 0 && messages.filter((m) => m.role !== "system").length >= limit)
+      const heldWindow = chat.mode === "roleplay" || (chat.mode === "game" && meta.gameLoreInTail !== false);
+      if (!heldWindow && !advancedMemoryOn && limit > 0 && messages.filter((m) => m.role !== "system").length >= limit)
         causes.push(
           `The chat is at its context message limit (${limit}), so the oldest message drops every reply and the start of the history changes. Cutting in larger chunks less often keeps the cache between cuts.`,
         );
