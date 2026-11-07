@@ -19,6 +19,8 @@ export const advancedMemorySettingsSchema = z.object({
   decisionEnabled: z.boolean().default(false),
   decisionConnectionId: z.string().nullable().default(null),
   initialProcessingModel: z.enum(["main", "helper"]).default("helper"),
+  /** custom-mods: thinking for scene summaries. Off is the default; audience checks always stay off. */
+  summaryReasoningEffort: z.enum(["none", "low", "medium", "high"]).default("none"),
   /** Cadence and recent-message window for standalone post-generation scene checks. */
   sceneCheckInterval: z.number().int().min(1).max(100).default(5),
   retrieveMaxScenes: z.number().int().min(0).max(50).default(3),

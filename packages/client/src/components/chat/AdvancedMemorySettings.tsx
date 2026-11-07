@@ -562,6 +562,22 @@ export function AdvancedMemorySettings({
               <option value="main">{t("chat.advancedMemory.mainModel")}</option>
             </select>
           </label>
+          <label className="block space-y-1 text-xs">
+            <span>{t("chat.advancedMemory.summaryThinking")}</span>
+            <select
+              value={settings.summaryReasoningEffort}
+              disabled={disabled}
+              className={fieldClass}
+              onChange={(event) =>
+                save({ summaryReasoningEffort: event.target.value as "none" | "low" | "medium" | "high" })
+              }
+            >
+              <option value="none">{t("chat.advancedMemory.summaryThinkingOff")}</option>
+              <option value="low">{t("chat.advancedMemory.summaryThinkingLow")}</option>
+              <option value="medium">{t("chat.advancedMemory.summaryThinkingMedium")}</option>
+              <option value="high">{t("chat.advancedMemory.summaryThinkingHigh")}</option>
+            </select>
+          </label>
           {individual && (
             <label className="block space-y-1 text-xs">
               <span>{t("chat.advancedMemory.narrator")}</span>

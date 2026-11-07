@@ -685,6 +685,7 @@ test("Advanced Memory stays in Chat Settings with confirmed knowledge, resumable
       decisionEnabled: false,
       decisionConnectionId: null,
       initialProcessingModel: "helper",
+      summaryReasoningEffort: "none",
       sceneCheckInterval: 5,
       retrieveMaxScenes: 3,
       retrieveMinMessages: 3,
