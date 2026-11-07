@@ -2,6 +2,7 @@ import { roomAgentAllowed } from "../multiplayer/generation-policy.js";
 // ──────────────────────────────────────────────
 // Agent Executor — Single & Batched LLM execution
 // ──────────────────────────────────────────────
+import { buildBlankWorldStateRequest, placeWorldStateRows } from "./world-state-rows.js";
 import { existsSync, readdirSync, statSync, type Dirent } from "node:fs";
 import {
   buildCharacterAppearanceReferenceBlock,
@@ -3456,6 +3457,11 @@ function buildAgentExtras(
     parts.push("Tracker capability: tracker_incremental_updates: supported. Existing array output remains supported.");
   }
 
+  if (agentTypes.includes("world-state")) {
+    const blankWorldState = buildBlankWorldStateRequest(context.gameState);
+    if (blankWorldState) parts.push(blankWorldState);
+  }
+
   const gameImageStylePrompt =
     context.chatMode === "game" && typeof context.memory._gameImageStylePrompt === "string"
       ? context.memory._gameImageStylePrompt.trim()
@@ -4009,6 +4015,7 @@ function parseAgentResponse(
       // Custom Tracker and Character Tracker each have one row group; tolerate
       // the incremental envelope at the root as well as under its key, then use
       // the usual merge/lock path (#7208).
+      if (config.type === "world-state") data = placeWorldStateRows(data);
       const rowsKey = SINGLE_GROUP_TRACKER_KEYS[resultType];
       if (rowsKey && isTrackerRowsUpdate(data) && !(rowsKey in data)) {
         const { updates, removed } = data;
