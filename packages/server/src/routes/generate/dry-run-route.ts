@@ -49,6 +49,7 @@ import {
 import { prepareAdvancedMemoryContext } from "../../services/generation/advanced-memory-context.js";
 import {
   ADVANCED_MEMORY_MARKER_TYPES,
+  insertAdvancedMemoryFallbacks,
   createAdvancedMemoryPlacement,
   resolveAdvancedMemoryPrompt,
   type AdvancedMemoryPlacement,
@@ -2079,15 +2080,9 @@ export async function registerDryRunRoute(app: FastifyInstance) {
       advancedMemoryPlacements = ADVANCED_MEMORY_MARKER_TYPES.map((type) =>
         createAdvancedMemoryPlacement(type, wrapFormat),
       );
-      const firstHistoryIndex = finalMessages.findIndex((message) => message.contextKind === "history");
-      finalMessages.splice(
-        firstHistoryIndex >= 0 ? firstHistoryIndex : finalMessages.length,
-        0,
-        ...advancedMemoryPlacements.map((placement) => ({
-          role: placement.role,
-          content: placement.token,
-          contextKind: "prompt" as const,
-        })),
+      insertAdvancedMemoryFallbacks(
+        finalMessages as Parameters<typeof insertAdvancedMemoryFallbacks>[0],
+        advancedMemoryPlacements,
       );
     }
 

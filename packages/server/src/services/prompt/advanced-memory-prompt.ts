@@ -94,6 +94,33 @@ export function createAdvancedMemoryPlacement(
   };
 }
 
+/**
+ * Fork: where AM's blocks go when the preset has no marker for them. Recall is chosen by the newest message, so ahead
+ * of the history it would break the cached prefix every turn; it goes after the history instead. It is tagged like a
+ * depth-0 section, because a `prompt` block after the history gets folded into the last user message, which on an
+ * impersonate is the persona's earlier post inside the history.
+ */
+export function insertAdvancedMemoryFallbacks(
+  messages: Array<{ role: string; content: string; contextKind?: "prompt" | "history" | "injection" }>,
+  placements: readonly AdvancedMemoryPlacement[],
+): void {
+  const recall = (placement: AdvancedMemoryPlacement) =>
+    placement.markerType === "recalled_scenes" || placement.markerType === "recalled_messages";
+  const historyIndex = messages.findIndex((message) => message.contextKind === "history");
+  messages.splice(
+    historyIndex >= 0 ? historyIndex : messages.length,
+    0,
+    ...placements
+      .filter((placement) => !recall(placement))
+      .map((placement) => ({ role: placement.role, content: placement.token, contextKind: "prompt" as const })),
+  );
+  messages.push(
+    ...placements
+      .filter(recall)
+      .map((placement) => ({ role: placement.role, content: placement.token, contextKind: "injection" as const })),
+  );
+}
+
 /** Prefer the scene marker, while accepting the old messages marker as a placement alias. */
 function recalledScenePlacement(placements: readonly AdvancedMemoryPlacement[]) {
   return (

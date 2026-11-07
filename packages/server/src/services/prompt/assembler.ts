@@ -33,6 +33,7 @@ import { hasSamePromptAudience, mergeAdjacentMessages, squashLeadingSystemMessag
 import { injectAtDepth } from "../lorebook/prompt-injector.js";
 import {
   ADVANCED_MEMORY_MARKER_TYPES,
+  insertAdvancedMemoryFallbacks,
   createAdvancedMemoryPlacement,
   guardAdvancedMemoryGroup,
   isAdvancedMemoryMarker,
@@ -729,16 +730,12 @@ export async function assemblePrompt(input: AssemblerInput): Promise<AssemblerOu
   }
 
   if (input.advancedMemory) {
-    const fallbackMessages = ADVANCED_MEMORY_MARKER_TYPES.filter(
+    const fallbacks = ADVANCED_MEMORY_MARKER_TYPES.filter(
       (type) => !advancedMemoryPlacements.some((placement) => placement.markerType === type),
-    ).map((type) => {
-      const placement = createAdvancedMemoryPlacement(type, wrapFormat);
-      advancedMemoryPlacements.push(placement);
-      return { role: placement.role, content: placement.token, contextKind: "prompt" as const };
-    });
+    ).map((type) => createAdvancedMemoryPlacement(type, wrapFormat));
+    advancedMemoryPlacements.push(...fallbacks);
     // Place fallbacks while history is still distinct: strict roles can merge it with an authored user section.
-    const historyIndex = messages.findIndex((message) => message.contextKind === "history");
-    messages.splice(historyIndex >= 0 ? historyIndex : messages.length, 0, ...fallbackMessages);
+    insertAdvancedMemoryFallbacks(messages as Parameters<typeof insertAdvancedMemoryFallbacks>[0], fallbacks);
   }
 
   // ── Phase 3: Adjacent same-role merging ──
