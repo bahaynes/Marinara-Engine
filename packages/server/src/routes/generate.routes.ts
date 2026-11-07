@@ -112,6 +112,7 @@ import {
   resolveAdvancedMemoryPrompt,
   createAdvancedMemoryPlacement,
   ADVANCED_MEMORY_MARKER_TYPES,
+  insertAdvancedMemoryFallbacks,
   type AdvancedMemoryPlacement,
 } from "../services/prompt/advanced-memory-prompt.js";
 import { registerParameterPreviewRoute } from "./generate/parameter-preview-route.js";
@@ -5336,15 +5337,9 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
         // Game places its memory after the history, just before the turn reminder (below), so the
         // summary and recalled scenes that change each turn never sit in front of the cached history.
         if (advancedMemoryEnabled && !presetPlacedAdvancedMemory && chatMode !== "game") {
-          const historyIndex = finalMessages.findIndex((message) => message.contextKind === "history");
-          finalMessages.splice(
-            historyIndex < 0 ? finalMessages.length : historyIndex,
-            0,
-            ...advancedMemoryPlacements.map((placement) => ({
-              role: placement.role,
-              content: placement.token,
-              contextKind: "prompt" as const,
-            })),
+          insertAdvancedMemoryFallbacks(
+            finalMessages as Parameters<typeof insertAdvancedMemoryFallbacks>[0],
+            advancedMemoryPlacements,
           );
         }
         if (chatMode === "roleplay" && !resolvedPreset && !advancedMemoryEnabled) {
@@ -6073,10 +6068,11 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
           );
           if (advancedMemoryEnabled)
             finalMessages.push(
+              // Fork: tagged like a depth-0 section so an impersonate keeps it out of the persona's earlier post.
               ...advancedMemoryPlacements.map((placement) => ({
                 role: placement.role,
                 content: placement.token,
-                contextKind: "prompt" as const,
+                contextKind: "injection" as const,
               })),
             );
           finalMessages.push({ role: "user" as const, content: formatReminder });

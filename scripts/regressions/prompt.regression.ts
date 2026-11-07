@@ -10255,14 +10255,20 @@ Use HTML sparingly and diegetically. Do not replace normal prose/dialogue unless
           },
         });
         assert.equal(automaticMemory.messages[0]?.role, "system");
-        for (const fact of Object.values(parts))
+        // Fork: recall is chosen by the newest message, so it follows the history; the rest joins the system prompt.
+        const { recalledScenes, recalledMessages, ...stableParts } = parts;
+        for (const fact of Object.values(stableParts))
           assert(
             automaticMemory.messages[0]!.content.includes(fact!),
             "default formatting merges automatic memory into the system prompt",
           );
+        for (const fact of [recalledScenes, recalledMessages].filter(Boolean)) {
+          assert(!automaticMemory.messages[0]!.content.includes(fact!), "recall stays out of the system prompt");
+          assert(automaticMemory.messages.at(-1)!.content.includes(fact!), "recall follows the history");
+        }
         assert(
           automaticMemory.messages[0]!.content.indexOf("STABLE_RULE") <
-            automaticMemory.messages[0]!.content.indexOf("OLD_SCENE_FACT"),
+            automaticMemory.messages[0]!.content.indexOf("OPEN_SCENE_FACT"),
         );
         assert.equal(automaticMemory.messages[1]?.role, "user");
         assert(automaticMemory.messages[1]?.content.includes("LIVE_WORDS"));
