@@ -218,6 +218,39 @@ const MINIMAX_INVOKE_RE = /<invoke name="([^"]*)">/gi;
 const MINIMAX_PARAM_RE = /<parameter name="([^"]*)">/gi;
 const MISTRAL_MARK_RE = /^[ \t]*\[TOOL_CALLS\]/gm;
 
+const JSON_CALL_RE = /<tool_call>\s*(\{[\s\S]*?\})\s*<\/tool_call>/gi;
+
+function bracketCommand(name: string, args: Record<string, unknown>): string {
+  const parts = Object.entries(args).map(([key, value]) => `${key}="${String(value).trim().replace(/"/g, "'")}"`);
+  return parts.length > 0 ? `[${name}: ${parts.join(", ")}]` : `[${name}]`;
+}
+
+/**
+ * custom-mods: a local model can write a dialogue command as a tool call ("<tool_call><function=spotify>..."). Turn
+ * the ones named in `commands` back into their bracket form; any other call stays as written.
+ * ponytail: Qwen's and the JSON shape only, the two seen from local models. Upgrade: reuse every parser format.
+ */
+export function bracketTextualCommandCalls(content: string, commands: ReadonlySet<string>): string {
+  if (!content.includes("<tool_call") && !content.includes("<function=")) return content;
+  let result = "";
+  let at = 0;
+  for (const m of spans(content, QWEN_OPEN_RE, "</function>")) {
+    if (!commands.has(m.head[1] ?? "") || m.start < at) continue;
+    QWEN_TAIL_RE.lastIndex = m.end;
+    const end = QWEN_TAIL_RE.test(content) ? QWEN_TAIL_RE.lastIndex : m.end;
+    const args = Object.fromEntries(
+      spans(m.body, QWEN_PARAM_RE, "</parameter>").map((p) => [(p.head[1] ?? "").trim(), p.body.trim()] as const),
+    );
+    result += content.slice(at, m.start) + bracketCommand(m.head[1]!, args);
+    at = end;
+  }
+  return (result + content.slice(at)).replace(JSON_CALL_RE, (whole, json: string) => {
+    const payload = parseJsonishObject(json);
+    const name = typeof payload?.name === "string" ? payload.name : "";
+    return commands.has(name) ? bracketCommand(name, normalizeArguments(payload?.arguments)) : whole;
+  });
+}
+
 /** Opening markers of every supported textual call format; the live draft hides text from the first one. */
 const CALL_MARKERS = [
   "[TOOL_CALLS]",
