@@ -40,6 +40,7 @@
 // - [navigate: panel="...", tab="..."]
 // - [fetch: type="character|persona|lorebook|chat|preset", name="..."]
 
+import { bracketTextualCommandCalls } from "../llm/textual-tool-call-parser.js";
 import {
   normalizeHapticAction,
   normalizeHapticPattern,
@@ -1186,6 +1187,38 @@ function applyCommonCharacterFields(
     cmd.depthPromptRole = depthPromptRole;
   }
 }
+// custom-mods: dialogue commands a local model may write as a tool call. See bracketTextualCommandCalls.
+const TEXTUAL_CALL_COMMANDS: ReadonlySet<string> = new Set([
+  "call",
+  "chess",
+  "create_character",
+  "create_chat",
+  "create_lorebook",
+  "create_persona",
+  "cross_post",
+  "dm",
+  "eightball",
+  "fetch",
+  "haptic",
+  "influence",
+  "memory",
+  "navigate",
+  "note",
+  "poker",
+  "react",
+  "rock_paper_scissors",
+  "scene",
+  "schedule_update",
+  "selfie",
+  "spotify",
+  "tic_tac_toe",
+  "uno",
+  "update_character",
+  "update_persona",
+  "video",
+  "youtube",
+]);
+
 /**
  * Parse all character commands from a message and return the cleaned message
  * with commands stripped out.
@@ -1195,6 +1228,7 @@ export function parseCharacterCommands(content: string): {
   commands: CharacterCommand[];
 } {
   const commands: CharacterCommand[] = [];
+  content = bracketTextualCommandCalls(content, TEXTUAL_CALL_COMMANDS);
 
   // Parse schedule_update commands
   for (const match of content.matchAll(SCHEDULE_UPDATE_RE)) {
