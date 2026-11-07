@@ -9,6 +9,7 @@ import { sanitizePromptLeaf } from "../prompt/prompt-escaping.js";
 import { packRecalledMemories } from "./memory-recall-pack.js";
 
 type PromptMessage = {
+  contextKind?: "prompt" | "history" | "injection";
   role: "system" | "user" | "assistant";
   content: string;
 };
@@ -84,9 +85,9 @@ export async function injectMemoryRecallContext({
       packedRecall.trimmed ? " after trimming" : "",
     );
 
-    const firstUserIdx = messages.findIndex((message) => message.role === "user" || message.role === "assistant");
-    const insertAt = firstUserIdx >= 0 ? firstUserIdx : messages.length;
-    messages.splice(insertAt, 0, { role: "system", content: memoriesBlock });
+    // Fork: the newest message picks these, so they follow the history instead of breaking its cached prefix each
+    // turn. Tagged like a depth-0 section, which post-processing keeps with the newest message.
+    messages.push({ role: "system", content: memoriesBlock, contextKind: "injection" });
     return resolvedLines;
   } catch (err) {
     logger.error(err, "[memory-recall] Recall failed, skipping");
