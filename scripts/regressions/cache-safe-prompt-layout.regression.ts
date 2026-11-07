@@ -5,6 +5,7 @@ import {
   applyContextWindow,
   postProcessMessages,
 } from "../../packages/server/src/routes/generate/generate-route-utils.js";
+import { newChatCacheDefaults } from "../../packages/server/src/services/generation/new-chat-cache-defaults.js";
 import { pullHistoryInjectionsIntoInstruction } from "../../packages/server/src/services/prompt/impersonate-tail.js";
 import {
   ADVANCED_MEMORY_MARKER_TYPES,
@@ -124,5 +125,18 @@ assert.ok(unpinned(held).length <= 30, "a held window stays within the limit");
 assert.notEqual(roleplay(40, firstCut.headId).headId, firstCut.headId, "past the limit it re-cuts");
 assert.notEqual(roleplay(32, firstCut.headId, 6).headId, firstCut.headId, "a lapsed cache re-cuts");
 assert.equal(roleplay(31, null, 1, "conversation").headId, null, "other chats keep the plain limit");
+
+// New chats start on the cache-safe settings; there is no Advanced Memory to turn on in Conversation.
+const newRoleplay = newChatCacheDefaults("roleplay") as {
+  advancedMemory: { enabled: boolean };
+  [key: string]: unknown;
+};
+assert.equal(newRoleplay.advancedMemory.enabled, true);
+assert.equal(newRoleplay.enableMemoryRecall, false);
+assert.equal(newRoleplay.impersonateUseChatPrompt, true);
+const newGame = newChatCacheDefaults("game") as typeof newRoleplay;
+assert.equal(newGame.advancedMemory.enabled, true);
+assert.equal(newGame.impersonateUseChatPrompt, undefined);
+assert.deepEqual(newChatCacheDefaults("conversation"), {});
 
 console.log("Volatile prompt blocks stay out of the cached prefix.");
