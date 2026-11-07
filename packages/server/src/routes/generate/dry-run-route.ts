@@ -91,7 +91,10 @@ import {
   resolveOwnerSpatialProjection,
 } from "../../services/spatial-context/projection.js";
 import { buildImpersonateInstruction } from "../../services/conversation/impersonate-prompt.js";
-import { pullHistoryInjectionsIntoInstruction } from "../../services/prompt/impersonate-tail.js";
+import {
+  closeHistoryOnLastMessage,
+  pullHistoryInjectionsIntoInstruction,
+} from "../../services/prompt/impersonate-tail.js";
 import { processLorebooks } from "../../services/lorebook/index.js";
 import { resolveLorebookScopeExclusions } from "../../services/lorebook/game-lorebook-scope.js";
 import { injectAtDepth } from "../../services/lorebook/prompt-injector.js";
@@ -2488,7 +2491,7 @@ export async function registerDryRunRoute(app: FastifyInstance) {
 
     const prepareProviderMessages = (messages: ChatMessage[]): ChatMessage[] => {
       return postProcessMessages(
-        messages,
+        impersonate ? closeHistoryOnLastMessage(messages) : messages,
         {
           ...(effectivePreset && !isStockMarinaraUniversalPreset(effectivePreset)
             ? parseStoredGenerationParameters(effectivePreset.parameters)

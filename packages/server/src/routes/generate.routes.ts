@@ -593,7 +593,10 @@ import {
 } from "../services/conversation/autonomous.service.js";
 import { buildIntentCooldownPatch, isMessageIntent } from "../services/conversation/intent.service.js";
 import { buildImpersonateInstruction } from "../services/conversation/impersonate-prompt.js";
-import { pullHistoryInjectionsIntoInstruction } from "../services/prompt/impersonate-tail.js";
+import {
+  closeHistoryOnLastMessage,
+  pullHistoryInjectionsIntoInstruction,
+} from "../services/prompt/impersonate-tail.js";
 import {
   isRepeatedConversationResponse,
   stripConversationPromptTimestamps,
@@ -9444,7 +9447,11 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
             ...providerRuntime.chatParams,
           };
           const prepareProviderMessages = (messages: ChatMessage[]): ChatMessage[] =>
-            postProcessMessages(messages, providerMessageParameters, prefillTurn.endsOnPrefill);
+            postProcessMessages(
+              input.impersonate ? closeHistoryOnLastMessage(messages) : messages,
+              providerMessageParameters,
+              prefillTurn.endsOnPrefill,
+            );
 
           let advancedMemoryReceipt: AdvancedMemoryReceipt | undefined;
           let advancedMemorySnapshot: AdvancedMemorySnapshot | undefined;
