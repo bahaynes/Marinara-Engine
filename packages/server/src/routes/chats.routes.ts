@@ -1,6 +1,7 @@
 // ──────────────────────────────────────────────
 // Routes: Chats
 // ──────────────────────────────────────────────
+import { newChatCacheDefaults } from "../services/generation/new-chat-cache-defaults.js";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { z } from "zod";
 import { partialInput } from "@marinara-engine/shared";
@@ -1494,6 +1495,14 @@ export async function chatsRoutes(app: FastifyInstance) {
     if (!input.connectionId) {
       await storage.patchMetadata(chat.id, { [CHAT_FOLLOWS_MAIN_KEY]: true });
       chat = (await storage.getById(chat.id)) ?? chat;
+    }
+    // An import sends its own timestamps and brings its own settings and history.
+    if (body.createdAt === undefined) {
+      const cacheDefaults = newChatCacheDefaults(input.mode);
+      if (Object.keys(cacheDefaults).length) {
+        await storage.patchMetadata(chat.id, cacheDefaults);
+        chat = (await storage.getById(chat.id)) ?? chat;
+      }
     }
 
     try {

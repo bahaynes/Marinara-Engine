@@ -949,6 +949,26 @@ function needsSceneVisibilityReview(ctx: Context, record: StoredRecord): boolean
   );
 }
 
+/**
+ * Fork: a chat that started on Advanced Memory has no earlier story to withhold, so its cast knows it from the
+ * beginning without asking. Someone who joins after the story began still needs a confirmed range.
+ */
+function withFreshStartKnowledge(
+  settings: AdvancedMemorySettings,
+  metadata: Record<string, unknown>,
+  characterIds: string[],
+): AdvancedMemorySettings {
+  if (metadata.advancedMemoryFreshStart !== true) return settings;
+  const joined = new Set(
+    (Array.isArray(metadata.advancedMemoryRosterChanges) ? metadata.advancedMemoryRosterChanges : [])
+      .filter((change) => object(change).action === "joined")
+      .map((change) => object(change).characterId),
+  );
+  const knowledgeStarts = { ...settings.knowledgeStarts };
+  for (const id of characterIds) if (!joined.has(id) && !(id in knowledgeStarts)) knowledgeStarts[id] = null;
+  return { ...settings, knowledgeStarts };
+}
+
 function missingKnowledge(ctx: Context): string[] {
   if (!ctx.individual || !ctx.messages.some((message) => message.role === "user" || message.role === "assistant"))
     return [];
@@ -1316,12 +1336,16 @@ export function createAdvancedMemoryService(db: DB, { includeExcerptsInStatus = 
           : {};
       names.set(GAME_MASTER_MEMORY_READER_ID, typeof card.name === "string" ? card.name : "Game Master");
     }
+    const savedSettings = effectiveAdvancedMemorySettings(
+      chat.mode,
+      normalizeAdvancedMemorySettings(metadata.advancedMemory),
+    );
     return {
       chatId,
       mode: chat.mode,
       connectionId: chat.connectionId ?? null,
       metadata,
-      settings: effectiveAdvancedMemorySettings(chat.mode, normalizeAdvancedMemorySettings(metadata.advancedMemory)),
+      settings: withFreshStartKnowledge(savedSettings, metadata, characterIds),
       messages,
       characterIds,
       names,
