@@ -6109,11 +6109,10 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
           });
         }
 
-        // ── Inject cross-chat awareness (after persona info so it appears right before chat history) ──
+        // ── Inject cross-chat awareness ──
+        // Fork: other chats and the clock change it, so it follows the history instead of breaking its cached prefix.
         if (convoAwarenessBlock) {
-          const firstUserIdx = finalMessages.findIndex((m) => m.role === "user" || m.role === "assistant");
-          const insertAt = firstUserIdx >= 0 ? firstUserIdx : finalMessages.length;
-          finalMessages.splice(insertAt, 0, { role: "system", content: convoAwarenessBlock });
+          finalMessages.push({ role: "system", content: convoAwarenessBlock, contextKind: "injection" });
         }
 
         // ── Memory recall: semantic retrieval of relevant past conversation fragments ──

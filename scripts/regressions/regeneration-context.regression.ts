@@ -292,7 +292,7 @@ try {
     "regeneration recall must exclude chunks ending on or after the response being replaced",
   );
 
-  const promptMessages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [];
+  const promptMessages: Array<{ role: "system" | "user" | "assistant"; content: string; contextKind?: string }> = [];
   const recalledLines = await injectMemoryRecallContext({
     db,
     messages: promptMessages,
@@ -305,8 +305,11 @@ try {
     wrapFormat: "none",
   });
   assert.deepEqual(recalledLines, ["Settled memory."]);
+  // Fork: the block follows the history, so it can't break the cached prefix.
+  assert.match(promptMessages.at(-1)?.content ?? "", /Settled memory\./u, "recall comes after the history");
+  assert.equal(promptMessages.at(-1)?.contextKind, "injection");
   assert.doesNotMatch(
-    promptMessages[0]?.content ?? "",
+    promptMessages.at(-1)?.content ?? "",
     /discarded assistant response/u,
     "the injected Memories block must not contain the regenerated response",
   );

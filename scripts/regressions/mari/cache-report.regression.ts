@@ -134,9 +134,9 @@ try {
       ["first reply", "counted", "counted"],
     );
     assert.equal(stuckOutput.overall["Hit of should-have"], "10%");
-    assert.equal(stuckOutput.findings.length, 3);
-    assert.match(stuckOutput.findings[1]!, /Memory Recall is on/);
-    assert.match(stuckOutput.findings[2]!, /Author's Note is at depth 4/);
+    // Fork: Memory Recall follows the history now, so it no longer breaks the cache and isn't named.
+    assert.equal(stuckOutput.findings.length, 2);
+    assert.match(stuckOutput.findings[1]!, /Author's Note is at depth 4/);
 
     const missing = await mari.executeAction({ action: "chat.cacheReport", chatId: "no-such-chat" });
     assert.equal(missing.ok, false);
