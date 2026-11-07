@@ -8811,15 +8811,6 @@ export class MariDbService {
       const meta = (parseJsonMaybe(chat.metadata) as Row | null) ?? {};
       const advancedMemoryOn = (meta.advancedMemory as Row | undefined)?.enabled === true;
       const causes: string[] = [];
-      // Same default as generation: on in Conversation and scene chats unless the chat says otherwise.
-      const memoryRecallOn =
-        meta.enableMemoryRecall !== undefined
-          ? meta.enableMemoryRecall === true
-          : chat.mode === "conversation" || meta.sceneStatus === "active";
-      if (memoryRecallOn && !advancedMemoryOn)
-        causes.push(
-          "Memory Recall is on: it inserts recalled fragments chosen by the latest message near the top of the prompt, so the cache breaks at that point every reply. Turning it off, or using Advanced Memory with Recalled Scenes after Chat History, fixes it.",
-        );
       if (typeof meta.authorNotes === "string" && meta.authorNotes.trim() && Number(meta.authorNotesDepth ?? 0) > 0)
         causes.push(
           `The Author's Note is at depth ${meta.authorNotesDepth}, so it moves a few messages from the end every reply. Depth 0 keeps it at the end.`,
