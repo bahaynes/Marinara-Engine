@@ -6,7 +6,10 @@ import {
   postProcessMessages,
 } from "../../packages/server/src/routes/generate/generate-route-utils.js";
 import { newChatCacheDefaults } from "../../packages/server/src/services/generation/new-chat-cache-defaults.js";
-import { pullHistoryInjectionsIntoInstruction } from "../../packages/server/src/services/prompt/impersonate-tail.js";
+import {
+  closeHistoryOnLastMessage,
+  pullHistoryInjectionsIntoInstruction,
+} from "../../packages/server/src/services/prompt/impersonate-tail.js";
 import {
   ADVANCED_MEMORY_MARKER_TYPES,
   createAdvancedMemoryPlacement,
@@ -138,5 +141,45 @@ const newGame = newChatCacheDefaults("game") as typeof newRoleplay;
 assert.equal(newGame.advancedMemory.enabled, true);
 assert.equal(newGame.impersonateUseChatPrompt, undefined);
 assert.deepEqual(newChatCacheDefaults("conversation"), {});
+
+// An impersonate marked the last reply as last_message, so its cache entry and a narrator turn's never matched. Wrapped
+// as the assembler wraps them, the turn after an impersonate must start with everything up to that reply.
+function wrapped(contents: string[], format: "xml" | "markdown"): Msg[] {
+  const messages: Msg[] = contents.map((content, i) => ({
+    role: i % 2 ? "assistant" : "user",
+    content,
+    contextKind: "history",
+  }));
+  const last = messages.length - 1;
+  if (format === "xml") {
+    if (last > 0) {
+      messages[0]!.content = `<chat_history>\n${messages[0]!.content}`;
+      messages[last - 1]!.content = `${messages[last - 1]!.content}\n</chat_history>`;
+    }
+    messages[last]!.content = `<last_message>\n${messages[last]!.content}\n</last_message>`;
+  } else {
+    if (last > 0) messages[0]!.content = `## Chat History\n${messages[0]!.content}`;
+    messages[last]!.content = `## Last Message\n${messages[last]!.content}`;
+  }
+  return messages;
+}
+for (const format of ["xml", "markdown"] as const) {
+  for (const posts of [
+    ["one", "two", "three", "four"],
+    ["one", "two"],
+  ]) {
+    const impersonate = [
+      ...closeHistoryOnLastMessage(wrapped(posts, format)),
+      { role: "user", content: "Write as the persona." } as Msg,
+    ];
+    const narrator = wrapped([...posts, "the impersonated post"], format);
+    assertAppendOnly(impersonate, narrator, `impersonate then narrator (${format}, ${posts.length} posts)`);
+    assert.ok(!impersonate.some((m) => /last_message|Last Message/u.test(m.content)), "nothing is marked last");
+  }
+}
+// A greeting alone still opens the history, and a chat with no wrapper is left as it is.
+assert.equal(closeHistoryOnLastMessage(wrapped(["one"], "xml"))[0]!.content, "<chat_history>\none\n</chat_history>");
+const plain: Msg[] = [{ role: "assistant", content: "plain", contextKind: "history" }];
+assert.equal(closeHistoryOnLastMessage(plain), plain);
 
 console.log("Volatile prompt blocks stay out of the cached prefix.");
