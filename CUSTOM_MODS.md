@@ -158,7 +158,7 @@ Reproduce: branch the chat at a message, point the branch's `lorebookKeeperTarge
 ## 8. Related Resources
 
 - **Agent Skill**: [`.claude/skills/custom-mods/SKILL.md`](.claude/skills/custom-mods/SKILL.md)
-- **Repo Agent Rules**: [`AGENTS.md`](AGENTS.md)
+- **Repo Agent Rules**: [`CLAUDE.md`](CLAUDE.md) (fork rules), [`AGENTS.md`](AGENTS.md) (upstream guide, read on demand)
 - **Upstream Contribution Guide**: [`CONTRIBUTING.md`](CONTRIBUTING.md) (for upstream PR conventions when contributing back to `Pasta-Devs/Marinara-Engine`)
 
 ## RP skill checks from rulesets
