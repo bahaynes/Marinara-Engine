@@ -697,6 +697,7 @@ import {
   type PromptAttachment,
   type SimpleMessage,
 } from "./generate/generate-route-utils.js";
+import { commitStateBeforeImpersonatedMessage } from "./generate/commit-impersonated-turn.js";
 import {
   PICTURE_DUE_INSTRUCTION,
   replyAskedForPicture,
@@ -11250,6 +11251,14 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
           );
           let savedMsg = savedReply.savedMsg;
           const savedSwipeIndex = savedReply.savedSwipeIndex;
+          if (input.impersonate && savedMsg?.role === "user") {
+            await commitStateBeforeImpersonatedMessage({
+              chatId: input.chatId,
+              messageId: savedMsg.id,
+              listMessages: (chatId) => chats.listMessages(chatId) as never,
+              store: gameStateStore,
+            });
+          }
           const replyParts = savedReply.replyParts;
           fullResponse = savedReply.fullResponse;
           if (savedReply.continuedSource !== null) continuedMessageRewriteSource = savedReply.continuedSource;
