@@ -2171,7 +2171,7 @@ export async function registerDryRunRoute(app: FastifyInstance) {
       const authorNotesDepth =
         typeof chatMeta.authorNotesDepth === "number" && Number.isFinite(chatMeta.authorNotesDepth)
           ? Math.max(0, Math.floor(chatMeta.authorNotesDepth))
-          : 4;
+          : 0;
       finalMessages = injectAtDepth(finalMessages as any, [
         { content: authorNotes, role: "system", depth: authorNotesDepth },
       ]) as any;

@@ -4883,7 +4883,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
             ).trim()
           : "";
         if (authorNotes) {
-          const authorNotesDepth = (chatMeta.authorNotesDepth as number) ?? 4;
+          const authorNotesDepth = (chatMeta.authorNotesDepth as number) ?? 0;
           finalMessages = injectAtDepth(finalMessages, [
             { content: authorNotes, role: "system", depth: authorNotesDepth },
           ]);

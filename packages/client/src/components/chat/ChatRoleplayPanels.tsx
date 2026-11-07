@@ -390,12 +390,12 @@ export function ActiveLorebookEntriesContent({ chatId }: { chatId: string }) {
 export function AuthorNotesPanel({ chatId, chatMeta }: { chatId: string; chatMeta: Record<string, any> }) {
   const { t: localizeUi } = useUiTranslation();
   const [notes, setNotes] = useState((chatMeta.authorNotes as string) ?? "");
-  const [depthStr, setDepthStr] = useState(String((chatMeta.authorNotesDepth as number) ?? 4));
+  const [depthStr, setDepthStr] = useState(String((chatMeta.authorNotesDepth as number) ?? 0));
   const updateMeta = useUpdateChatMetadata({ serialize: true });
 
   const initialBaseline = {
     notes: (chatMeta.authorNotes as string) ?? "",
-    depth: (chatMeta.authorNotesDepth as number) ?? 4,
+    depth: (chatMeta.authorNotesDepth as number) ?? 0,
   };
   const latestByChatRef = useRef(new Map<string, { notes: string; depthStr: string }>([[chatId, { notes, depthStr }]]));
   latestByChatRef.current.set(chatId, { notes, depthStr });
@@ -406,7 +406,7 @@ export function AuthorNotesPanel({ chatId, chatMeta }: { chatId: string; chatMet
   useEffect(() => {
     const nextBaseline = {
       notes: (chatMeta.authorNotes as string) ?? "",
-      depth: (chatMeta.authorNotesDepth as number) ?? 4,
+      depth: (chatMeta.authorNotesDepth as number) ?? 0,
     };
     setNotes(nextBaseline.notes);
     setDepthStr(String(nextBaseline.depth));
@@ -421,8 +421,8 @@ export function AuthorNotesPanel({ chatId, chatMeta }: { chatId: string; chatMet
     const capturedChatId = chatId;
     const latestByChat = latestByChatRef.current;
     const baselineByChat = baselineByChatRef.current;
-    const snapshot = latestByChat.get(capturedChatId) ?? { notes: "", depthStr: "4" };
-    const baselineSnapshot = baselineByChat.get(capturedChatId) ?? { notes: "", depth: 4 };
+    const snapshot = latestByChat.get(capturedChatId) ?? { notes: "", depthStr: "0" };
+    const baselineSnapshot = baselineByChat.get(capturedChatId) ?? { notes: "", depth: 0 };
     return () => {
       const { notes: n, depthStr: d } = latestByChat.get(capturedChatId) ?? snapshot;
       const nextDepth = Math.max(0, parseInt(d, 10) || 0);
