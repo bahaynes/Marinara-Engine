@@ -83,8 +83,13 @@ Every card and persona gets an appearance field, written for a diffusion model
 description bullets never reach the image prompt.
 - One subject per image. A portrait is the person and their outfit; at most
   one prop, and a plain background unless the scene needs one.
-- Give every colour a hex code (hair, eyes, skin, each garment): "a coat
-  (#2b2f3a) over a shirt (#c9b79c)". Flux follows them.
+- Give every colour a hex code in Flux's form, attached to one object: "a coat
+  in color #2b2f3a over a shirt in color #c9b79c".
+- Flux weights early words most: the face and the defining traits first,
+  small details last, and a prop only with its size and an idle pose ("rolls
+  a coin no bigger than a fingernail across her lowered knuckles"). Keep the
+  whole block under about 80 words; generic small items fall back to the
+  model's defaults. Guide: docs.bfl.ai/guides/prompting_guide_flux2.
 - Natural sentences, subject first: age, build, height with a scale cue (a
   doorway, a person beside them), skin, hair colour, length and style, face
   shape, one distinguishing mark. Body only: the outfit (each garment with
