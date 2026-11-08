@@ -20,3 +20,11 @@ export function guardInstanceCall(toolName, args, env = process.env) {
   if (args.apply === true) refuse("saving changes");
   return { ...args, apply: false };
 }
+
+/**
+ * Structured app_data actions save creates when `apply` is missing, so the MCP's "dry-run by default"
+ * needs an explicit `apply: false` on the wire.
+ */
+export function dryUnlessApplied(payload) {
+  return { ...payload, apply: payload?.apply === true };
+}

@@ -12,7 +12,7 @@ import { closeSync, existsSync, openSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { guardInstanceCall } from "./mari-mcp-guard.mjs";
+import { dryUnlessApplied, guardInstanceCall } from "./mari-mcp-guard.mjs";
 
 const SCRIPTS_DIR = dirname(fileURLToPath(import.meta.url));
 const DEPLOY_SCRIPT = join(SCRIPTS_DIR, "marinara-deploy.py");
@@ -88,7 +88,7 @@ async function requestInContainer(instanceName, method, path, body) {
 
 async function callAction(instanceName, payload) {
   return postInContainer(instanceName, "/api/professor-mari/workspace/db/action", {
-    ...payload,
+    ...dryUnlessApplied(payload),
     sessionId: `mcp:${instanceName || "marinara"}`,
   });
 }
