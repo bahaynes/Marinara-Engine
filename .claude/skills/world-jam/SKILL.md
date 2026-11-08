@@ -22,6 +22,16 @@ Decide from his last message, and say so in one line if it is ambiguous:
 Never end a jam turn with a sign-off. End on the open threads (two to four
 concrete questions or next steps). He decides when the session ends.
 
+## Story notes stay with the story
+
+Notes about one story or world (who's who, what went wrong in a run, what Ben
+liked) live in `~/.claude/projects/-home-bah-git-marinara-engine/memory/stories/<story>.md`,
+one file per story, not listed in `MEMORY.md`. Read only the file for the story
+in play, and save new story specifics there. General memories, presets, agent
+prompts and global lorebooks stay free of story names, characters and traits.
+These notes are not canon: agreed facts still go to the instance only as
+described below.
+
 ## Read the world once: `jam.py`
 
 ```bash
