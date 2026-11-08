@@ -201,6 +201,7 @@ import {
   mergeChatVariableChanges,
   removeCopiedPromptGuidance,
   undoChatVariableChanges,
+  isClaudeStrictRequestModel,
   type APIProvider,
   type MacroContext,
   type RulesetCatalogEntriesById,
@@ -5039,6 +5040,14 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
         // A defined intro is the whole reply as set: no prefill goes before it.
         if (definedIntro?.mode === "defined") assistantPrefill = "";
 
+        const isClaude =
+          isClaudeNoSampling ||
+          conn.provider === "claude_subscription" ||
+          conn.provider === "anthropic" ||
+          isClaudeStrictRequestModel(conn.model) ||
+          /\bclaude\b/i.test(conn.model);
+        const omitThinkingTags = Boolean(enableThinking || isClaude);
+
         const chatConnectionMaxParallelJobs = Number(conn.maxParallelJobs) || 1;
         const chatConnectionKnownModel = findKnownModel(conn.provider as APIProvider, conn.model.trim());
         const chatConnectionMaxOutputTokens =
@@ -5908,6 +5917,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
             sceneState: buildGmSceneState(gmCtx),
             ttsEmotionIndicatorsEnabled: gameTtsEmotionIndicatorsEnabled(await appSettings.get(TTS_SETTINGS_KEY)),
             hasSceneModel,
+            omitThinkingTags,
             hudWidgets: gmCtx.hudWidgets,
             turnNumber: gameTurnNumber,
             gameActiveState: gameActiveState as import("@marinara-engine/shared").GameActiveState,
@@ -10495,7 +10505,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                   draftTurn,
                   {
                     role: "user",
-                    content: `${resolvedSummary ? `The engine has now rolled the requested dice:\n${resolvedSummary}` : "The engine has now read the requested checks:\nNo dice were rolled."}${paidCheckCosts.length ? `\nReported check-purchase payments (other check-entry costs may also have been paid): ${JSON.stringify(paidCheckCosts)}` : ""}${generalRolls.unresolved.length ? `\nUnresolved requests:\n${generalRolls.unresolved.join("\n")}` : ""}${rolled.sparse - (rolled.untrained ?? 0) - (rolled.unknownRoller?.count ?? 0) > 0 ? "\nSome checks could not be rolled and remain unresolved." : ""}${rolled.untrained ? "\nSome checks were not rolled because the character has no training in them: narrate that they could not attempt them." : ""}${rolled.unknownRoller ? "\nSome checks were not rolled because they did not name one party member: leave their outcome open; ask again next turn with who= set to the party member's name." : ""}\n${addressMode === "gm" ? "Rewrite your entire last out-of-character answer using these real results, correcting any contradictory outcome before or after a check. Answer the player's question now." : "Rewrite your entire last narration using these real results, correcting any contradictory outcome before or after a check. Narrate the consequences now."} Do not repeat this player's action, invent numbers, request more rolls, or include dice/check tags: the engine keeps their records. For unresolved requests, leave the outcome open and explain what the player needs to clarify in supported notation. Re-emit every original movement or package command still justified by these outcomes; omit commands invalidated by them.${rewriteKeptCommandsNote(chatMeta.gameRuleset != null)} ${addressMode === "gm" ? "Return only the complete revised out-of-character answer in the game's language, starting directly with the answer" : "Return only the complete revised GM narration in the game's language, starting directly with the scene"}: any planning goes inside one <think>...</think> block at the very start, never in the narration.`,
+                    content: `${resolvedSummary ? `The engine has now rolled the requested dice:\n${resolvedSummary}` : "The engine has now read the requested checks:\nNo dice were rolled."}${paidCheckCosts.length ? `\nReported check-purchase payments (other check-entry costs may also have been paid): ${JSON.stringify(paidCheckCosts)}` : ""}${generalRolls.unresolved.length ? `\nUnresolved requests:\n${generalRolls.unresolved.join("\n")}` : ""}${rolled.sparse - (rolled.untrained ?? 0) - (rolled.unknownRoller?.count ?? 0) > 0 ? "\nSome checks could not be rolled and remain unresolved." : ""}${rolled.untrained ? "\nSome checks were not rolled because the character has no training in them: narrate that they could not attempt them." : ""}${rolled.unknownRoller ? "\nSome checks were not rolled because they did not name one party member: leave their outcome open; ask again next turn with who= set to the party member's name." : ""}\n${addressMode === "gm" ? "Rewrite your entire last out-of-character answer using these real results, correcting any contradictory outcome before or after a check. Answer the player's question now." : "Rewrite your entire last narration using these real results, correcting any contradictory outcome before or after a check. Narrate the consequences now."} Do not repeat this player's action, invent numbers, request more rolls, or include dice/check tags: the engine keeps their records. For unresolved requests, leave the outcome open and explain what the player needs to clarify in supported notation. Re-emit every original movement or package command still justified by these outcomes; omit commands invalidated by them.${rewriteKeptCommandsNote(chatMeta.gameRuleset != null)} ${addressMode === "gm" ? "Return only the complete revised out-of-character answer in the game's language, starting directly with the answer" : "Return only the complete revised GM narration in the game's language, starting directly with the scene"}: ${omitThinkingTags ? "never include notes, analysis or planning in the narration." : "any planning goes inside one <think>...</think> block at the very start, never in the narration."}`,
                   },
                 ],
                 { tools: undefined },

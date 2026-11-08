@@ -1952,6 +1952,9 @@ export function buildGmFormatReminder(
     part?: GmReminderPart;
     /** With part "turn": this turn's own facts (`gmTurnNotices`), said just before the closing reminder. */
     turnNotices?: string[];
+    /** When true (e.g. for Claude or models with native thinking), written planning is not instructed
+     *  to use `<think>...</think>` tags, preventing reasoning_extraction safeguard refusals. */
+    omitThinkingTags?: boolean;
   },
 ): string {
   const part = ctx.part ?? "whole";
@@ -2140,8 +2143,14 @@ export function buildGmFormatReminder(
       `<output_format>`,
       // The player sees every word of the reply, so planning written out in the open would be shown as narration.
       // A model that plans on the page has to do it inside a leading thinking block, which the Engine lifts out.
+      // Models with native thinking (or Claude models where <think> instructions trip safeguard extraction filters)
+      // omit the <think> instruction so the output goes directly to scene text.
       `Before you write, decide the next turn privately: current location and time, the story up to this point, character behavior, dynamics, known vs. hidden information, stakes, cause and effect, sensory tone, and the next point at which player agency returns.`,
-      `The player sees everything you write. If you plan in writing, put all of it inside one <think>...</think> block at the very start of the reply and never outside it. After that, output only ${ctx.addressMode === "gm" ? "your out-of-character answer to the player" : "the VN scene text"}: no notes, analysis, headings or plan. Never open with a planning paragraph such as "Opening scene: ...", "Location: ..." or "Plan: ...": the first words the player reads belong to the scene.`,
+      `The player sees everything you write. ${
+        ctx.omitThinkingTags
+          ? `Output only ${ctx.addressMode === "gm" ? "your out-of-character answer to the player" : "the VN scene text"}`
+          : `If you plan in writing, put all of it inside one <think>...</think> block at the very start of the reply and never outside it. After that, output only ${ctx.addressMode === "gm" ? "your out-of-character answer to the player" : "the VN scene text"}`
+      }: no notes, analysis, headings or plan. Never open with a planning paragraph such as "Opening scene: ...", "Location: ..." or "Plan: ...": the first words the player reads belong to the scene.`,
       ...(normalizedLanguage && normalizedLanguage.toLowerCase() !== "english"
         ? [
             `LANGUAGE:`,

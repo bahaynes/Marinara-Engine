@@ -62,6 +62,33 @@ const germanTalkToGm = buildGmFormatReminder({
   addressMode: "gm",
 } as ReminderContext);
 assert.match(germanTalkToGm, /Write your answer directly in German as a native speaker would\./);
+
+// When omitThinkingTags is true (e.g. for Claude or native thinking), <think> tag instructions
+// are omitted to avoid triggering safeguard classifiers like Anthropic's reasoning_extraction.
+const claudeReminder = buildGmFormatReminder({
+  hasSceneModel: false,
+  turnNumber: 1,
+  omitThinkingTags: true,
+} as ReminderContext);
+assert.doesNotMatch(claudeReminder, /<think>/, "Claude reminder must not mention <think> tags");
+assert.match(
+  claudeReminder,
+  /Output only the VN scene text: no notes, analysis, headings or plan\./,
+  "Claude reminder should output only scene text",
+);
+
+const claudeTalkToGm = buildGmFormatReminder({
+  hasSceneModel: false,
+  turnNumber: 1,
+  addressMode: "gm",
+  omitThinkingTags: true,
+} as ReminderContext);
+assert.doesNotMatch(claudeTalkToGm, /<think>/, "Claude talk-to-GM reminder must not mention <think> tags");
+assert.match(
+  claudeTalkToGm,
+  /Output only your out-of-character answer to the player: no notes, analysis, headings or plan\./,
+  "Claude talk-to-GM reminder should output only answer",
+);
 assert.doesNotMatch(
   germanTalkToGm,
   /Write the scene text directly in German/,
