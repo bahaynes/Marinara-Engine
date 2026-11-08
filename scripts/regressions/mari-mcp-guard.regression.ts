@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 // @ts-expect-error plain .mjs script without types
-import { guardInstanceCall } from "../mari-mcp-guard.mjs";
+import { dryUnlessApplied, guardInstanceCall } from "../mari-mcp-guard.mjs";
 
 // The marinara MCP keeps agents read-only on Erin's instance unless Ben enables writes; a tool description
 // asking nicely did not stop an agent from recreating it.
@@ -34,4 +34,9 @@ assert.equal(
   true,
   "MARINARA_WIFE_WRITES=1 lifts the block",
 );
+
+// "Mutations dry-run by default" held only for mari commands; a structured create without apply saved.
+assert.equal(dryUnlessApplied({ action: "character.create" }).apply, false, "omitted apply previews");
+assert.equal(dryUnlessApplied({ action: "character.create", apply: "true" }).apply, false, "only true applies");
+assert.equal(dryUnlessApplied({ action: "character.create", apply: true }).apply, true, "apply:true saves");
 process.stdout.write("Marinara MCP guard regression passed.\n");
