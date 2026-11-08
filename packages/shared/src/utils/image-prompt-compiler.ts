@@ -216,15 +216,26 @@ function compileImagePromptPass(
           hardPrefix: protectUserPositive,
         },
       ]
-    : [
-        { value: promptPrefix, sourcePrompt: false, hardPrefix: true },
-        { value: profile.positiveTags, sourcePrompt: false },
-        { value: profileSubjectTags, sourcePrompt: false },
-        { value: profileStyleText, sourcePrompt: false },
-        { value: generatedStylePart, sourcePrompt: false },
-        { value: input.prompt, sourcePrompt: true },
-        { value: userPositivePart, sourcePrompt: !protectUserPositive },
-      ];
+    : promptMode === "natural"
+      ? // Prose models (Flux.2) weight early words most: subject first, style after.
+        [
+          { value: promptPrefix, sourcePrompt: false, hardPrefix: true },
+          { value: input.prompt, sourcePrompt: true },
+          { value: userPositivePart, sourcePrompt: !protectUserPositive },
+          { value: profileSubjectTags, sourcePrompt: false },
+          { value: profile.positiveTags, sourcePrompt: false },
+          { value: profileStyleText, sourcePrompt: false },
+          { value: generatedStylePart, sourcePrompt: false },
+        ]
+      : [
+          { value: promptPrefix, sourcePrompt: false, hardPrefix: true },
+          { value: profile.positiveTags, sourcePrompt: false },
+          { value: profileSubjectTags, sourcePrompt: false },
+          { value: profileStyleText, sourcePrompt: false },
+          { value: generatedStylePart, sourcePrompt: false },
+          { value: input.prompt, sourcePrompt: true },
+          { value: userPositivePart, sourcePrompt: !protectUserPositive },
+        ];
   const negativeParts = [
     negativePromptPrefix,
     profile.negativeTags,

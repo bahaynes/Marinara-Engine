@@ -68,4 +68,23 @@ for (const promptMode of ["natural", "hybrid", "tagged", "danbooru"] as const) {
   assert.ok(compiled.negativePrompt.includes("<lora:negative-style:1.2>"));
 }
 
+// Prose profiles put the subject before the style (Flux.2 weights early words most);
+// tag profiles keep the style tags first.
+for (const promptMode of ["natural", "tagged"] as const) {
+  const profile = {
+    ...DEFAULT_IMAGE_STYLE_PROFILES[0]!,
+    promptMode,
+    styleText: "hand-inked illustration",
+    positiveTags: "detailed face",
+  };
+  const { prompt } = compileImagePrompt({
+    kind: "avatar",
+    prompt: "",
+    userPositive: appearance,
+    styleProfiles: { defaultProfileId: profile.id, profiles: [profile] },
+  });
+  const subjectFirst = prompt.indexOf(appearance) < prompt.indexOf("detailed face");
+  assert.equal(subjectFirst, promptMode === "natural", `${promptMode}: ${prompt}`);
+}
+
 console.log("Avatar lead prompt regression passed.");
