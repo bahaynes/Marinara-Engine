@@ -76,6 +76,30 @@ Rules for content:
   gone. No concrete noun lists the model will fixate on.
 - Logic (counting, gating, state) belongs in Engine code, not in prompt text.
 
+## Appearance blocks (cards and personas)
+
+Every card and persona gets an appearance field, written for a diffusion model
+(Flux, the only image model in use), not for the narrator. Looks buried in
+description bullets never reach the image prompt.
+- One subject per image. A portrait is the person and their outfit; at most
+  one prop, and a plain background unless the scene needs one.
+- Give every colour a hex code (hair, eyes, skin, each garment): "a coat
+  (#2b2f3a) over a shirt (#c9b79c)". Flux follows them.
+- Natural sentences, subject first: age, build, height with a scale cue (a
+  doorway, a person beside them), skin, hair colour, length and style, face
+  shape, one distinguishing mark. Body only: the outfit (each garment with
+  period, material and hex colour) is a separate block, so a disguise or
+  costume swaps without touching the body.
+- Only what is visible. No personality, backstory or mood words.
+- State what is there, never what is absent: "a plain coat" draws a plain coat,
+  "badges cut off" draws badges.
+- Texture words (cracked, scarred, battered, stone, weathered) spread across
+  the whole image. Use one, on purpose.
+- Members of a cast differ in hair colour, face and build at least; an
+  unspecified face becomes the model's one default face.
+- No style words. Style belongs to the image style profile or the chat's art
+  style, so one card works in any style.
+
 ## Decision routes (`decision_choice`)
 
 A chat-model Decision connection asks each option as its own one-token question,
