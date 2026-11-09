@@ -194,7 +194,7 @@ overrides:
 
 patchedDependencies:
   deepmerge@4.3.1: 6241e75cd0ebdeefbe93564d0f9a0da153bc6608add12970bd3c390910e7e4f4
-  mesh-avatar@0.2.1: 40f970c96453f82ecc6bd0c4c6164336b1648edae159b318e6e9baebb55ccf42
+  mesh-avatar@0.7.2: 5a3ff4cf2a77de8982d82f6c54a69f9a53d39c49463df87c4a04ed9ee262c5b9
   onnxruntime-node@1.30.0: 14ed7e6afb8fd6dd382042cd3bda0597d7de7a21c2a92dc5715b535ee218cd68
   thread-stream@4.2.0: cea0735510beca9b1e062087ceb84508e2412d4ec9a4f91626659504edd02475
   zod@3.25.76: c756cf4c9bc01a64b408a12fe3e9b534b9d61bf6c67fef946f163e05dfc27e56
@@ -267,8 +267,8 @@ importers:
         specifier: ^1.66.0
         version: 1.66.0(@types/react@19.3.0)(react@19.3.1)
       mesh-avatar:
-        specifier: 0.2.1
-        version: 0.2.1(patch_hash=40f970c96453f82ecc6bd0c4c6164336b1648edae159b318e6e9baebb55ccf42)
+        specifier: 0.7.2
+        version: 0.7.2(patch_hash=5a3ff4cf2a77de8982d82f6c54a69f9a53d39c49463df87c4a04ed9ee262c5b9)
       mmd-parser:
         specifier: 1.1.4
         version: 1.1.4
@@ -3650,8 +3650,8 @@ packages:
     resolution: {integrity: sha512-Snk314V5ayFLhp3fkUREub6WtjBfPdCPY1Ln8/8munuLuiYhsABgBVWsozAG+MWMbVEvcdcpbi9R7ww22l9Q3g==}
     engines: {node: '>=18'}
 
-  mesh-avatar@0.2.1:
-    resolution: {integrity: sha512-ivddBt81dayDE+kh4gYUmLzZt6CRBGBvZdjgGu0wwffeM0l1U70OfwCTfpiYYRRQOzWj/6pPxiaDW5iylFKpjw==}
+  mesh-avatar@0.7.2:
+    resolution: {integrity: sha512-B4gClNg+g6WVaCVCti03z/8Zql6xUA5C78OvHsjywHqgQg9MXdIPaNGtr84Car6calQ+uPG6ZvKKY4F3qsRrKw==}
 
   meshoptimizer@1.1.1:
     resolution: {integrity: sha512-oRFNWJRDA/WTrVj7NWvqa5HqE1t9MYDj2VaWirQCzCCrAd2GHrqR/sQezCxiWATPNlKTcRaPRHPJwIRoPBAp5g==}
@@ -7949,7 +7949,7 @@ snapshots:
 
   merge-descriptors@2.0.0: {}
 
-  mesh-avatar@0.2.1(patch_hash=40f970c96453f82ecc6bd0c4c6164336b1648edae159b318e6e9baebb55ccf42):
+  mesh-avatar@0.7.2(patch_hash=5a3ff4cf2a77de8982d82f6c54a69f9a53d39c49463df87c4a04ed9ee262c5b9):
     dependencies:
       fflate: 0.8.3
 

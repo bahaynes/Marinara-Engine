@@ -440,9 +440,10 @@ const meshRuntime = readFileSync(
   new URL("../../packages/client/node_modules/mesh-avatar/dist/index.js", import.meta.url),
   "utf8",
 );
-const composeBody = meshRuntime.match(/  function A\(M\) \{\n([\s\S]*?)\n  \}\n  function E\(M\)/u)?.[1];
+const composeBody = meshRuntime.match(/  function U\(S\) \{\n([\s\S]*?)\n  \}\n  function V\(S\)/u)?.[1];
 assert.ok(composeBody, "the pinned runtime's parameter composition exists");
-const compose = new Function("L", "P", "G", "q", "e", `let J; return function(M) {${composeBody}}`);
+// 0.7.2 names: W lip state, se explicit overrides, Z blend, O expression overlay, t options, M per-key blend.
+const compose = new Function("W", "se", "Z", "O", "t", "M", `let E; return function(S) {${composeBody}}`);
 function runtimeParameters(
   overrides: Record<string, number>,
   open: number,
@@ -455,6 +456,7 @@ function runtimeParameters(
     1,
     { apply: (value: Record<string, number>) => value },
     { preserveMouthForm: preserve },
+    {},
   )(1 / 60) as Record<string, number>;
 }
 for (const [viseme, mouthOpen, runtimeOpen] of [

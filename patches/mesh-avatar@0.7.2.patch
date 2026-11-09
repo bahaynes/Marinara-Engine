@@ -1,0 +1,22 @@
+diff --git a/dist/index.js b/dist/index.js
+index cbf944c..8b43705 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -1007,7 +1007,7 @@ function dr(e, t) {
+     vec2 r = p - uMouth.xy;
+     float s = dot(r, d) / uMouth.w, t = dot(r, n);
+     float form = uMouthState.y;                       // -1 wide "i" .. +1 round "o"
+-    float wf = mix(0.78, 0.46, clamp(form * 0.5 + 0.5, 0.0, 1.0));
++    float wf = 1.0;
+     float k = 1.0 - (s / wf) * (s / wf);
+     if (k <= 0.0) return base;
+     float line = uMouthState.z * (1.0 - s * s);
+@@ -2727,7 +2727,7 @@ async function Gr(e, t) {
+       const de = Z * (M[ae] ?? 1);
+       k[ae] = de === 1 ? ie : (k[ae] ?? 0) + (ie - (k[ae] ?? 0)) * de;
+     }
+-    W.lipOpen !== null && (k.mouthOpen = W.P.mouthOpen, (!t.preserveMouthForm || se.mouthForm === void 0) && (k.mouthForm = W.P.mouthForm));
++    W.lipOpen !== null && (se.mouthOpen === void 0 && (k.mouthOpen = W.P.mouthOpen), (!t.preserveMouthForm || se.mouthForm === void 0) && (k.mouthForm = W.P.mouthForm));
+     const P = O.apply(k, S);
+     return E = P, P;
+   }
