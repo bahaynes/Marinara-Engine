@@ -194,7 +194,7 @@ overrides:
 
 patchedDependencies:
   deepmerge@4.3.1: 6241e75cd0ebdeefbe93564d0f9a0da153bc6608add12970bd3c390910e7e4f4
-  mesh-avatar@0.7.2: 5a3ff4cf2a77de8982d82f6c54a69f9a53d39c49463df87c4a04ed9ee262c5b9
+  mesh-avatar@0.7.2: ddd65cc862b8dffe7efd9beba1cd717f9800051e82efe1ea9031fdbe3821f9f2
   onnxruntime-node@1.30.0: 14ed7e6afb8fd6dd382042cd3bda0597d7de7a21c2a92dc5715b535ee218cd68
   thread-stream@4.2.0: cea0735510beca9b1e062087ceb84508e2412d4ec9a4f91626659504edd02475
   zod@3.25.76: c756cf4c9bc01a64b408a12fe3e9b534b9d61bf6c67fef946f163e05dfc27e56
@@ -268,7 +268,7 @@ importers:
         version: 1.66.0(@types/react@19.3.0)(react@19.3.1)
       mesh-avatar:
         specifier: 0.7.2
-        version: 0.7.2(patch_hash=5a3ff4cf2a77de8982d82f6c54a69f9a53d39c49463df87c4a04ed9ee262c5b9)
+        version: 0.7.2(patch_hash=ddd65cc862b8dffe7efd9beba1cd717f9800051e82efe1ea9031fdbe3821f9f2)
       mmd-parser:
         specifier: 1.1.4
         version: 1.1.4
@@ -7949,7 +7949,7 @@ snapshots:
 
   merge-descriptors@2.0.0: {}
 
-  mesh-avatar@0.7.2(patch_hash=5a3ff4cf2a77de8982d82f6c54a69f9a53d39c49463df87c4a04ed9ee262c5b9):
+  mesh-avatar@0.7.2(patch_hash=ddd65cc862b8dffe7efd9beba1cd717f9800051e82efe1ea9031fdbe3821f9f2):
     dependencies:
       fflate: 0.8.3
 

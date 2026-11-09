@@ -1,7 +1,25 @@
 diff --git a/dist/index.js b/dist/index.js
-index cbf944c..8b43705 100644
+index cbf944c5ad3f1734ed3fa8ec97708766c2b0e459..4fd6c5ab4f988fdeeaccd8d04c694af125caf515 100644
 --- a/dist/index.js
 +++ b/dist/index.js
+@@ -614,7 +614,7 @@ function tr(e) {
+   function $(M, E, O, L) {
+     const U = (M - h.cx) / h.rx, V = (E - h.cy) / h.ry, F = 1 - U * U - V * V;
+     if (F <= 0) return [0, 0];
+-    const C = s(0, 0.84, F);
++    const C = s(0, h.turnCore ?? 0.84, F);
+     return [O * h.shiftX * C, -L * h.shiftY * C];
+   }
+   function Y(M, E, O, L) {
+@@ -651,7 +651,7 @@ function tr(e) {
+       F[1] += (M - e.face.brow.cx) * Math.sin(oe);
+     }
+     F[1] += L.mouthOpen * 3.5 * O.jaw;
+-    const G = L.angleX / 30, ee = L.angleY / 30;
++    const dep = h.featureDepth ?? 1, G = L.angleX / 30 * dep, ee = L.angleY / 30 * dep;
+     if (F[0] += G * (8 * O.nose + 5 * O.mouth) + (M - e.face.eyeA.cx) * 0.12 * G * O.eyeA - (M - e.face.eyeB.cx) * 0.12 * G * O.eyeB - G * 9 * O.earR + G * 4 * O.earL - G * 10 * (O.bunL + O.bunR), F[1] -= ee * (6 * O.nose + 3 * O.mouth), F[1] += (E - e.face.eyeA.cy) * -0.06 * Math.abs(ee) * O.eyeA + (E - e.face.eyeB.cy) * -0.06 * Math.abs(ee) * O.eyeB, D(F, O.head, L, O.turn), T(F, E, L, O.chest, O.breath, O.shoulder, O.legs), w && O.arms.some((oe) => oe.arm > 0)) {
+       const oe = [
+         L.angleX,
 @@ -1007,7 +1007,7 @@ function dr(e, t) {
      vec2 r = p - uMouth.xy;
      float s = dot(r, d) / uMouth.w, t = dot(r, n);
