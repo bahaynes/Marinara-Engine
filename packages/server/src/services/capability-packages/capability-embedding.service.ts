@@ -4,7 +4,6 @@ import type { DB } from "../../db/connection.js";
 import { localEmbed } from "../local-embedder.js";
 import { logger } from "../../lib/logger.js";
 import type { MemoryRecallEmbeddingSource } from "../memory-recall.js";
-import { embedMemoryRecallTexts } from "../memory-recall.js";
 import {
   resolveConnectionTestEmbeddingSource,
   resolveMemoryRecallEmbeddingSource,
@@ -48,7 +47,7 @@ export async function createConfiguredCapabilityEmbeddingHost(
 ): Promise<CapabilityEmbeddingHost> {
   try {
     const source = await resolveMemoryRecallEmbeddingSource(db, { connectionId });
-return source ? wrapEmbeddingSource(source) : createCapabilityEmbeddingHost();
+    return source ? wrapEmbeddingSource(source) : createCapabilityEmbeddingHost();
   } catch (error) {
     logger.warn(error, "Could not resolve configured capability embeddings; using the built-in local embedder");
     return createCapabilityEmbeddingHost();

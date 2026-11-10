@@ -137,6 +137,18 @@ import { createCharactersStorage } from "../services/storage/characters.storage.
 import { buildFallbackGameCharacterCard } from "../services/game/game-party-cards.js";
 import { withCardTemperament } from "../services/game/party-temperament.service.js";
 import {
+  applyMarinaraLegacyUpgrade,
+  marinaraLegacyGearOffers,
+  marinaraLegacyNeedsTemperament,
+  marinaraLegacyTemperamentPrompt,
+  marinaraLegacyUpgradeBlock,
+  readMarinaraLegacyTemperaments,
+} from "../services/game/marinara-legacy-upgrade.service.js";
+import {
+  marinaraCardClassicByName as legacyUpgradeClassicPicks,
+  partyLibraryDescriptions,
+} from "../services/game/marinara-card-classic.service.js";
+import {
   applyInspirationAward,
   applyRpInspirationChange,
   buildRerolledSwipeExtra,

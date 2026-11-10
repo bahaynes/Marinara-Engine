@@ -270,10 +270,11 @@ async function main() {
   const discovered = discoverRegressions();
   if (discovered.length === 0) throw new Error('No regression files were discovered.');
 
-const matched =
+  const matched =
     filters.length === 0
       ? discovered.filter((file) => !SKIPPED_BY_DEFAULT.has(file))
       : discovered.filter((file) => filters.some((filter) => file.includes(filter)));
+  if (matched.length === 0) throw new Error(`No regression files matched filter: ${filters.join(', ')}`);
   const selected = shard ? shardOf(matched, shard) : matched;
   if (selected.length === 0) throw new Error(`Shard ${shard.index}/${shard.total} has no regression files.`);
 

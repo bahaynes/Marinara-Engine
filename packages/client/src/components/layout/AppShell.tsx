@@ -407,7 +407,7 @@ export function AppShell({
         const layoutViewportHeight = isIosWebKit ? largestViewportHeight : window.innerHeight;
         const maxOffsetTop = Math.max(0, layoutViewportHeight - height);
         const visualViewportTop = Math.max(0, viewport?.offsetTop ?? 0, viewport?.pageTop ?? 0);
-const offsetTop = settledHomeScreen ? 0 : Math.min(maxOffsetTop, visualViewportTop);
+        const offsetTop = settledHomeScreen ? 0 : Math.min(maxOffsetTop, visualViewportTop);
         // Only at normal zoom: a pinch-zoomed page pans on purpose.
         if (settledHomeScreen && Math.abs(scale - 1) < 0.01 && window.scrollY !== 0) window.scrollTo(0, 0);
         if (keyboardOpen === lastDispatchedKeyboardOpen && textGestureInProgress()) {

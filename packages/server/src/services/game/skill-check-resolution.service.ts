@@ -1993,7 +1993,6 @@ export function resolveSkillCheckWithContext(
     // The named card's own MRPG stats, never the host's.
     context = { ...context, mrpgStats: undefined, ...named };
   }
-
   const skills = context.skills;
   const rawSkillMod = skills ? (skills[request.skill] ?? skills[request.skill.toLowerCase()]) : undefined;
   const skillMod = Number.isFinite(Number(rawSkillMod)) ? Number(rawSkillMod) : 0;
@@ -2003,15 +2002,17 @@ export function resolveSkillCheckWithContext(
   if (request.dc === undefined) throw new SkillCheckDifficultyError(request.skill);
   const attr = getGoverningAttribute(request.skill);
   const attrScore = readContextAttributeScore(context, attr);
-  const skills = context.skills;
-  const rawSkillMod = skills ? (skills[request.skill] ?? skills[rawKey] ?? skills[normalizedKey]) : undefined;
-  const skillMod = Number.isFinite(Number(rawSkillMod)) ? Number(rawSkillMod) : 0;
+  const attrMod = context.mrpgStats
+    ? mrpgCheckModifier(context.mrpgStats[mrpgStatForSkill(request.skill)])
+    : attrScore != null
+      ? attributeModifier(attrScore)
+      : 0;
 
   const result = resolveSkillCheck({
     skill: request.skill,
     dc: request.dc,
     skillModifier: skillMod,
-    attributeModifier: attrScore != null ? attributeModifier(attrScore) : 0,
+    attributeModifier: attrMod,
     advantage: request.advantage,
     disadvantage: request.disadvantage,
     preRolledD20: request.preRolledD20,

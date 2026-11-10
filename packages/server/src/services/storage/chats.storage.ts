@@ -1052,32 +1052,55 @@ export function createChatsStorage(db: DB) {
   // custom-mods: rows written before prompt-sidecar.ts hold their Peek Prompt copy inline. When a chat's messages
   // are first listed in this process, move those copies to files in the background (one message at a time, under
   // its patch queue, like the lorebook scan sweep above). A move cut short is redone the next time the chat loads.
-  function schedulePromptSidecarMigration(chatId: string) {
+  // The scan runs inside the caller's own read, so it does not touch the chat again later and reorder the
+  // resident-chat cap; only a chat that still has inline copies gets background work, once.
+  async function schedulePromptSidecarMigration(chatId: string) {
     if (promptSidecarMigratedChats!.has(chatId)) return;
     promptSidecarMigratedChats!.add(chatId);
-    const running = runPromptSidecarMigration(chatId).finally(() => runningPromptSidecarMigrations.delete(running));
+    let pending: Set<string>;
+    try {
+      pending = await findInlinePromptMessages(chatId);
+    } catch (error) {
+      promptSidecarMigratedChats!.delete(chatId);
+      logRateLimited(
+        "warn",
+        "chats.prompt-sidecar-migration",
+        error,
+        "[prompt-sidecar] Could not move the stored prompts of chat %s to files",
+        chatId,
+      );
+      return;
+    }
+    if (pending.size === 0) return;
+    const running = runPromptSidecarMigration(chatId, pending).finally(() =>
+      runningPromptSidecarMigrations.delete(running),
+    );
     runningPromptSidecarMigrations.add(running);
   }
 
-  async function runPromptSidecarMigration(chatId: string) {
+  async function findInlinePromptMessages(chatId: string): Promise<Set<string>> {
+    const rows = await db
+      .select({ id: messages.id, extra: messages.extra })
+      .from(messages)
+      .where(eq(messages.chatId, chatId));
+    const ids = rows.map((row) => row.id);
+    const swipeRows =
+      ids.length > 0
+        ? await db
+            .select({ messageId: messageSwipes.messageId, extra: messageSwipes.extra })
+            .from(messageSwipes)
+            .where(inArray(messageSwipes.messageId, ids))
+        : [];
+    const pending = new Set<string>();
+    for (const row of rows) if (serializedExtraMayHoldInlinePrompt(row.extra)) pending.add(row.id);
+    for (const row of swipeRows) if (serializedExtraMayHoldInlinePrompt(row.extra)) pending.add(row.messageId);
+    return pending;
+  }
+
+  async function runPromptSidecarMigration(chatId: string, pending: Set<string>) {
     let moved = 0;
     try {
       await new Promise<void>((resolve) => setImmediate(resolve));
-      const rows = await db
-        .select({ id: messages.id, extra: messages.extra })
-        .from(messages)
-        .where(eq(messages.chatId, chatId));
-      const ids = rows.map((row) => row.id);
-      const swipeRows =
-        ids.length > 0
-          ? await db
-              .select({ messageId: messageSwipes.messageId, extra: messageSwipes.extra })
-              .from(messageSwipes)
-              .where(inArray(messageSwipes.messageId, ids))
-          : [];
-      const pending = new Set<string>();
-      for (const row of rows) if (serializedExtraMayHoldInlinePrompt(row.extra)) pending.add(row.id);
-      for (const row of swipeRows) if (serializedExtraMayHoldInlinePrompt(row.extra)) pending.add(row.messageId);
       for (const messageId of pending) {
         moved += await withPatchQueue(messageExtraPatchQueues, messageId, () =>
           movePromptCopiesToSidecars(chatId, messageId),
@@ -2433,13 +2456,13 @@ export function createChatsStorage(db: DB) {
         db,
         decorated.map((m) => m.id),
       );
-      schedulePromptSidecarMigration(chatId);
+      await schedulePromptSidecarMigration(chatId);
       return decorated.map((m) => ({ ...m, swipeCount: countMap.get(m.id) ?? 0 }));
     },
 
     /** Paginated: returns the latest `limit` messages (optionally before a cursor). */
     async listMessagesPaginated(chatId: string, limit: number, before?: string) {
-      schedulePromptSidecarMigration(chatId);
+      await schedulePromptSidecarMigration(chatId);
       const cursor = parseMessageCursor(before);
       if (before && !cursor) throw new InvalidMessageCursorError();
       return db.transaction(async (tx) => {
