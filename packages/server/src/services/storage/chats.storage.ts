@@ -84,7 +84,13 @@ import {
   lorebookScanHasContent,
   serializedExtraMayHoldFullLorebookScan,
 } from "../lorebook/lorebook-scan-compaction.js";
-import { removeChatPromptSidecars } from "./prompt-sidecar.js";
+import {
+  removeChatPromptSidecars,
+  serializedExtraMayHoldInlinePrompt,
+  writePromptSidecar,
+  type PromptSidecarRef,
+  type StoredPromptEntry,
+} from "./prompt-sidecar.js";
 import { galleryFileHasReferences, unlinkGalleryFileIfUnreferenced } from "../image/gallery-file-lifecycle.js";
 
 import { createAppSettingsStorage } from "./app-settings.storage.js";
@@ -140,6 +146,14 @@ type LorebookScanCompactionState = {
 };
 const lorebookScanCompactionStates = new WeakMap<object, Map<string, LorebookScanCompactionState>>();
 const runningLorebookScanCompactions = new Set<Promise<void>>();
+/** custom-mods: chats whose inline Peek Prompt copies this process has already moved to files (prompt-sidecar.ts). */
+const promptSidecarMigrationStates = new WeakMap<object, Set<string>>();
+const runningPromptSidecarMigrations = new Set<Promise<void>>();
+
+/** Resolves once every scheduled prompt-file migration has finished. Used by tests. */
+export async function settlePromptSidecarMigrations(): Promise<void> {
+  while (runningPromptSidecarMigrations.size > 0) await Promise.allSettled([...runningPromptSidecarMigrations]);
+}
 
 /** True when `a` sorts at or after `b` in the store's message order (createdAt, ties by id). */
 function isAtOrAfterInMessageOrder(a: { createdAt: string; id: string }, b: { createdAt: string; id: string }) {
@@ -906,6 +920,11 @@ export function createChatsStorage(db: DB) {
     lorebookScanCompactionStates.set(db, scanCompactionByChat);
   }
   const scanCompactionStates = scanCompactionByChat;
+  let promptSidecarMigratedChats = promptSidecarMigrationStates.get(db);
+  if (!promptSidecarMigratedChats) {
+    promptSidecarMigratedChats = new Set<string>();
+    promptSidecarMigrationStates.set(db, promptSidecarMigratedChats);
+  }
 
   /**
    * Opt-in (LOREBOOK_COMPACT_STORED_SCANS): `messageId` just saved a scan with entry text. Call it inside that
@@ -1030,6 +1049,93 @@ export function createChatsStorage(db: DB) {
           .where(eq(messageSwipes.id, swipe.id));
     }
   }
+  // custom-mods: rows written before prompt-sidecar.ts hold their Peek Prompt copy inline. When a chat's messages
+  // are first listed in this process, move those copies to files in the background (one message at a time, under
+  // its patch queue, like the lorebook scan sweep above). A move cut short is redone the next time the chat loads.
+  function schedulePromptSidecarMigration(chatId: string) {
+    if (promptSidecarMigratedChats!.has(chatId)) return;
+    promptSidecarMigratedChats!.add(chatId);
+    const running = runPromptSidecarMigration(chatId).finally(() => runningPromptSidecarMigrations.delete(running));
+    runningPromptSidecarMigrations.add(running);
+  }
+
+  async function runPromptSidecarMigration(chatId: string) {
+    let moved = 0;
+    try {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      const rows = await db
+        .select({ id: messages.id, extra: messages.extra })
+        .from(messages)
+        .where(eq(messages.chatId, chatId));
+      const ids = rows.map((row) => row.id);
+      const swipeRows =
+        ids.length > 0
+          ? await db
+              .select({ messageId: messageSwipes.messageId, extra: messageSwipes.extra })
+              .from(messageSwipes)
+              .where(inArray(messageSwipes.messageId, ids))
+          : [];
+      const pending = new Set<string>();
+      for (const row of rows) if (serializedExtraMayHoldInlinePrompt(row.extra)) pending.add(row.id);
+      for (const row of swipeRows) if (serializedExtraMayHoldInlinePrompt(row.extra)) pending.add(row.messageId);
+      for (const messageId of pending) {
+        moved += await withPatchQueue(messageExtraPatchQueues, messageId, () =>
+          movePromptCopiesToSidecars(chatId, messageId),
+        );
+        await new Promise<void>((resolve) => setImmediate(resolve));
+      }
+      if (moved > 0) logger.info("[prompt-sidecar] Moved %d stored prompt(s) of chat %s to files", moved, chatId);
+    } catch (error) {
+      promptSidecarMigratedChats!.delete(chatId);
+      logRateLimited(
+        "warn",
+        "chats.prompt-sidecar-migration",
+        error,
+        "[prompt-sidecar] Could not move the stored prompts of chat %s to files",
+        chatId,
+      );
+    }
+  }
+
+  /** Moves one message's inline prompt copies (its swipes', then its own row's) to files; returns how many. */
+  async function movePromptCopiesToSidecars(chatId: string, messageId: string): Promise<number> {
+    const message = await readMessage(messageId);
+    if (!message) return 0;
+    let moved = 0;
+    const activeIndex = message.activeSwipeIndex ?? 0;
+    let activeRef: PromptSidecarRef | null = null;
+    for (const swipe of await readSwipes(messageId)) {
+      const extra = parseExtraRecord(swipe.extra);
+      if (!Array.isArray(extra.cachedPrompt)) continue;
+      const ref = await writePromptSidecar(
+        { chatId, messageId, swipeIndex: swipe.index },
+        extra.cachedPrompt as StoredPromptEntry[],
+      );
+      await db
+        .update(messageSwipes)
+        .set({ extra: JSON.stringify({ ...extra, cachedPrompt: null, cachedPromptStored: ref }) })
+        .where(eq(messageSwipes.id, swipe.id));
+      if (swipe.index === activeIndex) activeRef = ref;
+      moved += 1;
+    }
+    const extra = parseExtraRecord(message.extra);
+    if (Array.isArray(extra.cachedPrompt)) {
+      // The row mirrors its active swipe; give it that swipe's file, or its own copy's when the swipe had none.
+      const ref =
+        activeRef ??
+        (await writePromptSidecar(
+          { chatId, messageId, swipeIndex: activeIndex },
+          extra.cachedPrompt as StoredPromptEntry[],
+        ));
+      await db
+        .update(messages)
+        .set({ extra: JSON.stringify({ ...extra, cachedPrompt: null, cachedPromptStored: ref }) })
+        .where(eq(messages.id, messageId));
+      moved += 1;
+    }
+    return moved;
+  }
+
   const receipts = (extra: unknown) =>
     getRoleplayCommandActivity(parseExtraRecord(extra)).flatMap((activity) => {
       const receipt = readRoleplayInterruption(activity.interruption);
@@ -2327,11 +2433,13 @@ export function createChatsStorage(db: DB) {
         db,
         decorated.map((m) => m.id),
       );
+      schedulePromptSidecarMigration(chatId);
       return decorated.map((m) => ({ ...m, swipeCount: countMap.get(m.id) ?? 0 }));
     },
 
     /** Paginated: returns the latest `limit` messages (optionally before a cursor). */
     async listMessagesPaginated(chatId: string, limit: number, before?: string) {
+      schedulePromptSidecarMigration(chatId);
       const cursor = parseMessageCursor(before);
       if (before && !cursor) throw new InvalidMessageCursorError();
       return db.transaction(async (tx) => {

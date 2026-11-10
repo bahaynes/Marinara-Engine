@@ -53,6 +53,11 @@ export function extraHasCachedPrompt(extra: Record<string, unknown>): boolean {
   return parsePromptSidecarRef(extra.cachedPromptStored) !== null;
 }
 
+/** Cheap pre-check on a serialized extra: true when it may still hold an inline prompt copy to move. */
+export function serializedExtraMayHoldInlinePrompt(extra: unknown): boolean {
+  return typeof extra === "string" && extra.includes('"cachedPrompt":[');
+}
+
 /** Writes the prompt atomically (temp file, then rename) and returns the reference for the row. */
 export async function writePromptSidecar(
   ref: PromptSidecarRef,
