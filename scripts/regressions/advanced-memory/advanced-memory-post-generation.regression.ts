@@ -2976,7 +2976,9 @@ try {
   );
   assert.equal(extraOf(splitFirst).generationInfo, null);
   assert.equal(extraOf(splitLast).generationInfo.model, "fixture", "generation info is on the last part");
-  assert(extraOf(splitLast).cachedPrompt?.length && !extraOf(splitFirst).cachedPrompt);
+  // custom-mods: the Peek Prompt copy is in a file the message points at, not on the message.
+  assert(extraOf(splitLast).cachedPromptStored && !extraOf(splitLast).cachedPrompt);
+  assert(!extraOf(splitFirst).cachedPrompt && !extraOf(splitFirst).cachedPromptStored);
   assert.deepEqual(extraOf(splitFirst).generationReplay, extraOf(splitLast).generationReplay);
   const savedEvents = splitEvents.filter((event) => event.type === "message_saved");
   assert.deepEqual(

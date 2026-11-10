@@ -2186,7 +2186,12 @@ export function createAdvancedMemoryService(db: DB, { includeExcerptsInStatus = 
       resolved.provider.maxContextValue ?? 32768,
       modelLimit ?? Infinity,
     );
-    return { outputBudget, window, reasoningRoom: Math.max(COMPACTION_REASONING_ROOM, outputBudget - visible), provider: storedConnection?.provider };
+    return {
+      outputBudget,
+      window,
+      reasoningRoom: Math.max(COMPACTION_REASONING_ROOM, outputBudget - visible),
+      provider: storedConnection?.provider,
+    };
   }
 
   async function summarize(
@@ -2332,9 +2337,12 @@ export function createAdvancedMemoryService(db: DB, { includeExcerptsInStatus = 
         const completionOptions = {
           model: resolved.model,
           ...resolveChatSummaryTemperatureOptions(resolved),
-          ...(resolved.enabledParameters?.reasoningEffort === false
-            ? {}
-            : summaryReasoningOptions(audienceOnly ? "none" : ctx.settings.summaryReasoningEffort, provider)),
+          // A level chosen on the connection wins (#8983); otherwise custom-mods' summary thinking setting.
+          ...(resolved.reasoning
+            ? memoryReasoning(resolved)
+            : resolved.enabledParameters?.reasoningEffort === false
+              ? {}
+              : summaryReasoningOptions(audienceOnly ? "none" : ctx.settings.summaryReasoningEffort, provider)),
           maxTokens: outputBudget,
           maxContext: window,
           signal: options.signal,
