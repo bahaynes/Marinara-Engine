@@ -7,6 +7,7 @@ import { z } from "zod";
 import { partialInput } from "@marinara-engine/shared";
 import { chatResourceRequestOptions } from "./chat-request-validation.js";
 import { logger } from "../lib/logger.js";
+import { readPromptSidecar } from "../services/storage/prompt-sidecar.js";
 import { prepareJsonResponse } from "../middleware/compress-json.js";
 import { requirePrivilegedAccess } from "../middleware/privileged-gate.js";
 import { getMariDbService } from "../services/mari-db/mari-db.service.js";
@@ -3771,8 +3772,12 @@ export async function chatsRoutes(app: FastifyInstance) {
       generationInfo?: Record<string, unknown>;
       gameToolPlanning?: GameToolPlanningInfo;
     } | null> => {
-      const cachedPrompt = Array.isArray(extra.cachedPrompt)
+      // custom-mods: the prompt is in its own file (prompt-sidecar.ts); rows not yet migrated still hold it inline.
+      const storedPrompt = Array.isArray(extra.cachedPrompt)
         ? extra.cachedPrompt
+        : await readPromptSidecar(extra.cachedPromptStored);
+      const cachedPrompt = Array.isArray(storedPrompt)
+        ? storedPrompt
             .map((entry) => {
               if (!isRecord(entry) || typeof entry.role !== "string" || typeof entry.content !== "string") {
                 return null;
@@ -4957,6 +4962,7 @@ export async function chatsRoutes(app: FastifyInstance) {
   const INTERNAL_EXPORT_EXTRA_KEYS = new Set([
     "advancedMemoryReceipt",
     "cachedPrompt",
+    "cachedPromptStored",
     "chatCompletionsReasoning",
     "chatSummaryFingerprint",
     "contextInjections",

@@ -18,6 +18,7 @@ const { generateRoutes } = await import("../../packages/server/src/routes/genera
 const { chatsRoutes } = await import("../../packages/server/src/routes/chats.routes.js");
 const { promptsRoutes } = await import("../../packages/server/src/routes/prompts.routes.js");
 const { createChatsStorage } = await import("../../packages/server/src/services/storage/chats.storage.js");
+const { readPromptSidecar } = await import("../../packages/server/src/services/storage/prompt-sidecar.js");
 const { createConnectionsStorage } = await import("../../packages/server/src/services/storage/connections.storage.js");
 const { createCharactersStorage } = await import("../../packages/server/src/services/storage/characters.storage.js");
 const { createPromptsStorage } = await import("../../packages/server/src/services/storage/prompts.storage.js");
@@ -341,19 +342,25 @@ try {
   const activeMessage = (await chats.getMessage(target.id))!;
   const activeExtra = JSON.parse(activeMessage.extra);
   const activeIndex = activeMessage.activeSwipeIndex;
-  await chats.updateMessageExtra(target.id, { cachedPrompt: null });
-  await chats.updateSwipeExtra(target.id, activeIndex, { cachedPrompt: null });
+  await chats.updateMessageExtra(target.id, { cachedPrompt: null, cachedPromptStored: null });
+  await chats.updateSwipeExtra(target.id, activeIndex, { cachedPrompt: null, cachedPromptStored: null });
   const missingActivePrompt = await app.inject({
     method: "POST",
     url: `/api/chats/${chat.id}/peek-prompt`,
     payload: { messageId: target.id },
   });
   assert.equal(missingActivePrompt.statusCode, 404, "a missing active prompt must not borrow another swipe's request");
-  await chats.updateMessageExtra(target.id, { cachedPrompt: activeExtra.cachedPrompt });
-  await chats.updateSwipeExtra(target.id, activeIndex, { cachedPrompt: activeExtra.cachedPrompt });
+  const restoredPrompt = {
+    cachedPrompt: activeExtra.cachedPrompt ?? null,
+    cachedPromptStored: activeExtra.cachedPromptStored ?? null,
+  };
+  await chats.updateMessageExtra(target.id, restoredPrompt);
+  await chats.updateSwipeExtra(target.id, activeIndex, restoredPrompt);
   const otherSwipe = (await chats.getSwipes(target.id)).find((swipe) => swipe.index !== activeIndex)!;
   assert(otherSwipe, "the fixture includes multiple generated swipes");
-  const otherPrompt = JSON.parse(otherSwipe.extra).cachedPrompt;
+  const otherExtra = JSON.parse(otherSwipe.extra);
+  const otherPrompt = otherExtra.cachedPrompt ?? (await readPromptSidecar(otherExtra.cachedPromptStored));
+  assert(Array.isArray(otherPrompt), "the other swipe kept its own prompt");
   await chats.setActiveSwipe(target.id, otherSwipe.index);
   const otherPeek = await app.inject({
     method: "POST",

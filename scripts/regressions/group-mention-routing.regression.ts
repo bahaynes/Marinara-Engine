@@ -16,6 +16,7 @@ const Fastify = requireServer("fastify") as typeof import("fastify").default;
 const { getDB, closeDB } = await import("../../packages/server/src/db/connection.js");
 const { generateRoutes } = await import("../../packages/server/src/routes/generate.routes.js");
 const { createChatsStorage } = await import("../../packages/server/src/services/storage/chats.storage.js");
+const { readPromptSidecar } = await import("../../packages/server/src/services/storage/prompt-sidecar.js");
 const { createConnectionsStorage } = await import("../../packages/server/src/services/storage/connections.storage.js");
 const { createCharactersStorage } = await import("../../packages/server/src/services/storage/characters.storage.js");
 const { createPromptsStorage } = await import("../../packages/server/src/services/storage/prompts.storage.js");
@@ -155,7 +156,9 @@ try {
       );
       // Prompt peek shows the prompt saved with the latest reply.
       const peeked = (await chats.listMessages(chat.id)).at(-1)!;
-      const cachedPrompt = JSON.stringify(JSON.parse(peeked.extra as string).cachedPrompt);
+      const peekedExtra = JSON.parse(peeked.extra as string);
+      assert.equal(peekedExtra.cachedPrompt ?? null, null, "the prompt is not kept on the message row");
+      const cachedPrompt = JSON.stringify(await readPromptSidecar(peekedExtra.cachedPromptStored));
       assert.match(cachedPrompt, /Respond ONLY as Charlie Brown\./, "prompt peek keeps the reminder");
       assert.doesNotMatch(cachedPrompt, handoffInvite, "prompt peek has no @-ping instruction (#7319)");
     } else {

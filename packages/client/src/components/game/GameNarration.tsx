@@ -262,7 +262,10 @@ function isSyntheticGameStartMessage(message: Pick<NarrationMessage, "role" | "c
 }
 
 function hasExactCachedPrompt(message: Pick<Message, "extra"> | null): boolean {
-  const cachedPrompt = parseMessageExtraRecord(message?.extra).cachedPrompt;
+  const extra = parseMessageExtraRecord(message?.extra);
+  // custom-mods: the server keeps the prompt in its own file and leaves `cachedPromptStored` on the message.
+  if (extra.cachedPromptStored && typeof extra.cachedPromptStored === "object") return true;
+  const cachedPrompt = extra.cachedPrompt;
   return Array.isArray(cachedPrompt) && cachedPrompt.length > 0;
 }
 

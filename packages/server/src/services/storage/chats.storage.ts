@@ -84,6 +84,7 @@ import {
   lorebookScanHasContent,
   serializedExtraMayHoldFullLorebookScan,
 } from "../lorebook/lorebook-scan-compaction.js";
+import { removeChatPromptSidecars } from "./prompt-sidecar.js";
 import { galleryFileHasReferences, unlinkGalleryFileIfUnreferenced } from "../image/gallery-file-lifecycle.js";
 
 import { createAppSettingsStorage } from "./app-settings.storage.js";
@@ -1578,6 +1579,7 @@ export function createChatsStorage(db: DB) {
         logger.warn(error, "Failed to remove files after deleting chat %s", chatId);
       }
     }
+    await removeChatPromptSidecars(chatId);
   }
 
   return {
