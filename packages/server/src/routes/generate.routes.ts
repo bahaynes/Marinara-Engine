@@ -811,6 +811,7 @@ import {
 } from "./generate/expression-agent-utils.js";
 import { generateMissingCharacterSprites } from "../services/image/ephemeral-sprite.service.js";
 import { logger, logDebugOverride } from "../lib/logger.js";
+import { writePromptSidecar } from "../services/storage/prompt-sidecar.js";
 import {
   buildHistoricalLorebookKeeperContext,
   customAgentUsesLorebookReadBehind,
@@ -12398,14 +12399,32 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
             }
             // Cache the final prompt (what was actually sent to the model) for Peek Prompt
             // `parts` names injected blocks merged into a message (Peek prompt only; never sent).
-            extraUpdate.cachedPrompt = labelInjectedParts(finalPromptSent, responderPeekPromptBlocks).map(
-              ({ message: m, parts }) => ({
-                role: m.role,
-                content: m.content,
-                ...(parts.length > 0 ? { parts } : {}),
-                ...(m.providerMetadata ? { providerMetadata: m.providerMetadata } : {}),
-              }),
-            );
+            // custom-mods: stored in its own file (prompt-sidecar.ts) so it does not load with the chat.
+            {
+              const promptCopy = labelInjectedParts(finalPromptSent, responderPeekPromptBlocks).map(
+                ({ message: m, parts }) => ({
+                  role: m.role,
+                  content: m.content,
+                  ...(parts.length > 0 ? { parts } : {}),
+                  ...(m.providerMetadata ? { providerMetadata: m.providerMetadata } : {}),
+                }),
+              );
+              try {
+                extraUpdate.cachedPromptStored = await writePromptSidecar(
+                  {
+                    chatId: input.chatId,
+                    messageId: savedMsg.id,
+                    swipeIndex: savedSwipeIndex ?? savedMsg.activeSwipeIndex ?? 0,
+                  },
+                  promptCopy,
+                );
+                extraUpdate.cachedPrompt = null;
+              } catch (err) {
+                logger.warn(err, "[prompt-sidecar] Could not store the prompt in a file; keeping it on the message");
+                extraUpdate.cachedPrompt = promptCopy;
+                extraUpdate.cachedPromptStored = null;
+              }
+            }
             // Cache the lorebook scan that produced the prompt so Active Context
             // reflects the last generation instead of a best-effort rescan.
             extraUpdate.lorebookScan = lorebookScanSnapshot;
