@@ -160,8 +160,14 @@ instances and the local model backend (`llama-backend` or `strata-backend`) to b
 rolls back if `/api/health` doesn't report the commit. Never `docker build` from the main working tree:
 other sessions' uncommitted edits ship under the wrong commit.
 
-### Step 3: Erin's instance (`marinara-wife`), only when she wants the change
-Build `:local` by hand from a clean worktree of the commit, check `marinara-deploy.py idle` in the same
+### Step 3: Erin's instance (`marinara-wife`)
+`marinara-deploy.py` automatically deploys `marinara-wife` whenever the rebased tree's `package.json` version is higher (patch, minor, or major) than `marinara-wife`'s running version, reusing the validated candidate image as `:local` while both instances are idle.
+
+To deploy or rebuild `marinara-wife` manually outside of version bumps:
+```bash
+python3 scripts/marinara-deploy.py deploy --wife
+```
+Or build `:local` by hand from a clean worktree of the commit, check `marinara-deploy.py idle` in the same
 command, then recreate only `marinara-wife`:
 ```bash
 cd /home/bah/git/marinara-engine && git worktree add --detach /tmp/mw-build <commit>
@@ -170,8 +176,8 @@ python3 scripts/marinara-deploy.py idle | grep -q '"idle": true' && (cd /home/ba
 git worktree remove /tmp/mw-build
 ```
 
-### Nightly deploys (primary only)
-bah-nixos's `marinara-rebase` systemd timer (01:00) rebases `custom-mods` onto `upstream/staging` in `~/.cache/marinara-rebase/repo`, runs `pnpm check` and `pnpm regression`, and when they pass builds `marinara-engine:nightly` and recreates `marinara` once both instances are idle (until 03:30), rolling back to `marinara-engine:nightly-prev` if `/api/health` doesn't report the new commit. It skips the deploy when `storage-format.json` changed. The report is `~/.claude/handoffs/marinara-nightly-rebase.md`; `/api/health`'s `commit` is a `nightly/rebased` commit, not a `custom-mods` one. A manual deploy to `marinara` replaces the nightly until the next night.
+### Nightly deploys (primary + conditional wife upgrades)
+bah-nixos's `marinara-rebase` systemd timer (01:00) rebases `custom-mods` onto `upstream/staging` in `~/.cache/marinara-rebase/repo`, runs `pnpm check` and `pnpm regression`, and when they pass builds `marinara-engine:nightly` and recreates `marinara` once both instances are idle (until 03:30), rolling back to `marinara-engine:nightly-prev` if `/api/health` doesn't report the new commit. When the rebase includes an upstream version bump (patch/minor/major), `marinara-deploy.py` also tags the candidate as `:local` and updates `marinara-wife`. It skips deploys when `storage-format.json` changed. The report is `~/.claude/handoffs/marinara-nightly-rebase.md`; `/api/health`'s `commit` is a `nightly/rebased` commit, not a `custom-mods` one. A manual deploy to `marinara` replaces the nightly until the next night.
 
 ---
 
