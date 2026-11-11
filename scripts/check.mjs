@@ -1,7 +1,7 @@
 // The parallel half of `pnpm check`. Its serial prelude (stale-client cleanup, the Impeccable and localization
 // guards, the shared build) runs first, so these lanes, ESLint's type-aware rules among them, read built shared types.
 // Every lane runs to its end, so one failure does not hide another; each output line names its lane; the exit is
-// non-zero when any lane fails. MARINARA_CHECK_JOBS caps how many lanes run at once (1 on an 8 GB laptop).
+// non-zero when any lane fails. MARINARA_CHECK_JOBS caps how many lanes run at once (custom-mods: 1 unless set).
 import { spawn } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import readline from "node:readline";
@@ -49,9 +49,13 @@ export function checkLanes(pnpm = resolvePnpmRunner(), lowMemory = isLowMemoryBu
   return lowMemory ? lanes.filter((lane) => lane.name !== "character-activity-types") : lanes;
 }
 
-/** MARINARA_CHECK_JOBS as a lane count; unset runs every lane at once. */
+// custom-mods: every lane at once peaked at 15-18 GiB and, on top of the homeserver's pinned LLM, thrashed the host.
+// One lane at a time peaked at 3.2 GiB. A bare `pnpm check` is the safe one; MARINARA_CHECK_JOBS=7 restores the old speed.
+const DEFAULT_CHECK_JOBS = 1;
+
+/** MARINARA_CHECK_JOBS as a lane count; unset runs DEFAULT_CHECK_JOBS. */
 export function checkJobs(value, laneCount) {
-  if (value === undefined || value === "") return laneCount;
+  if (value === undefined || value === "") return Math.min(DEFAULT_CHECK_JOBS, laneCount);
   if (!/^[1-9][0-9]*$/u.test(value)) throw new Error("MARINARA_CHECK_JOBS must be a positive whole number.");
   return Math.min(Number(value), laneCount);
 }
