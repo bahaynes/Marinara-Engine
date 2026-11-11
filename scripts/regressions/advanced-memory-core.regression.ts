@@ -951,6 +951,12 @@ try {
     "repeat import preserves local identities and edits",
   );
 
+  // Checked before this file's own id-only queries below, which lease the table themselves.
+  assert.equal(
+    db._fileStore.getFullyResidentLazyTables().has("advanced_memory_records"),
+    false,
+    "record lookups name their chat, so Advanced Memory never leases every chat's records",
+  );
   const { eq } = await import("../../packages/server/src/db/file-query.ts");
   await db.delete(advancedMemoryRecords).where(eq(advancedMemoryRecords.id, importedContinuity.id));
   const reorderedExport = {

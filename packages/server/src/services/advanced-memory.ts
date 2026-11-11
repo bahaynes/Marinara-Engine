@@ -1712,7 +1712,10 @@ export function createAdvancedMemoryService(db: DB, { includeExcerptsInStatus = 
       throw new Error("Memory sources or summary corrections changed during preparation; retry");
     const row = { ...recordRow(record), ...(structuredMemory !== undefined ? { structuredMemory } : {}) };
     const existingRow = (
-      await db.select().from(advancedMemoryRecords).where(eq(advancedMemoryRecords.id, record.id))
+      await db
+        .select()
+        .from(advancedMemoryRecords)
+        .where(and(eq(advancedMemoryRecords.chatId, record.chatId), eq(advancedMemoryRecords.id, record.id)))
     )[0];
     const existing = existingRow ? readStored(existingRow) : null;
     if (existing?.manualOverride && !record.manualOverride) throw correctionReviewError(ctx, existing);
@@ -1720,7 +1723,7 @@ export function createAdvancedMemoryService(db: DB, { includeExcerptsInStatus = 
       await db
         .update(advancedMemoryRecords)
         .set({ ...row, enabled: existing.enabled ? 1 : 0 })
-        .where(eq(advancedMemoryRecords.id, record.id));
+        .where(and(eq(advancedMemoryRecords.chatId, record.chatId), eq(advancedMemoryRecords.id, record.id)));
     else await db.insert(advancedMemoryRecords).values(row);
     const cached = await operationRecords(ctx);
     const index = cached.findIndex((item) => item.id === record.id);
@@ -2137,7 +2140,12 @@ export function createAdvancedMemoryService(db: DB, { includeExcerptsInStatus = 
 
   /** The paid replies saved with `cacheOwner`, by request, while its sources and summaries are unchanged. */
   async function savedWork(ctx: Context, cacheOwner: StoredRecord): Promise<Record<string, string>> {
-    const row = (await db.select().from(advancedMemoryRecords).where(eq(advancedMemoryRecords.id, cacheOwner.id)))[0];
+    const row = (
+      await db
+        .select()
+        .from(advancedMemoryRecords)
+        .where(and(eq(advancedMemoryRecords.chatId, cacheOwner.chatId), eq(advancedMemoryRecords.id, cacheOwner.id)))
+    )[0];
     const record = row ? readStored(row) : null;
     const work =
       record && recordValid(ctx, record) && dependenciesValid(record, await operationRecords(ctx), ctx)
@@ -2412,7 +2420,9 @@ export function createAdvancedMemoryService(db: DB, { includeExcerptsInStatus = 
           await db
             .update(advancedMemoryRecords)
             .set({ summaryWork: JSON.stringify(completed) })
-            .where(eq(advancedMemoryRecords.id, cacheOwner.id));
+            .where(
+              and(eq(advancedMemoryRecords.chatId, cacheOwner.chatId), eq(advancedMemoryRecords.id, cacheOwner.id)),
+            );
           // A recollection run counts scenes (writeRecollections), not the parts of one scene's request.
           // A scene's summary, access check or recollections count scenes, so its parts go to `part`; a constant
           // summary is a job of its own and counts its parts.
@@ -2493,7 +2503,7 @@ export function createAdvancedMemoryService(db: DB, { includeExcerptsInStatus = 
         await db
           .update(advancedMemoryRecords)
           .set({ summaryWork: JSON.stringify(completed) })
-          .where(eq(advancedMemoryRecords.id, cacheOwner.id));
+          .where(and(eq(advancedMemoryRecords.chatId, cacheOwner.chatId), eq(advancedMemoryRecords.id, cacheOwner.id)));
         break;
       }
       // The block is the package's; the combine request gets the recaps without it.
@@ -2613,7 +2623,9 @@ export function createAdvancedMemoryService(db: DB, { includeExcerptsInStatus = 
           await db
             .update(advancedMemoryRecords)
             .set({ summaryWork: JSON.stringify(completed) })
-            .where(eq(advancedMemoryRecords.id, cacheOwner.id));
+            .where(
+              and(eq(advancedMemoryRecords.chatId, cacheOwner.chatId), eq(advancedMemoryRecords.id, cacheOwner.id)),
+            );
           await progress(ctx, { completed: done + 1, total }, options);
           fresh = true;
         }
@@ -3003,7 +3015,9 @@ export function createAdvancedMemoryService(db: DB, { includeExcerptsInStatus = 
           );
           await putRecollection(ctx, summary, id, "", keep);
         }
-        await db.delete(advancedMemoryRecords).where(eq(advancedMemoryRecords.id, cache.id));
+        await db
+          .delete(advancedMemoryRecords)
+          .where(and(eq(advancedMemoryRecords.chatId, cache.chatId), eq(advancedMemoryRecords.id, cache.id)));
         ctx.recordCache = ctx.recordCache!.filter((item) => item.id !== cache.id);
       } catch (error) {
         abortIfNeeded(options.signal);
@@ -3544,7 +3558,9 @@ export function createAdvancedMemoryService(db: DB, { includeExcerptsInStatus = 
           if (record.kind !== "scene" || record.id !== record.sceneId) continue;
           const start = ctx.messages.findIndex((message) => message.id === record.startMessageId);
           if (start <= fromIndex || start > through || knownStarts.has(start)) continue;
-          await db.delete(advancedMemoryRecords).where(eq(advancedMemoryRecords.id, record.id));
+          await db
+            .delete(advancedMemoryRecords)
+            .where(and(eq(advancedMemoryRecords.chatId, record.chatId), eq(advancedMemoryRecords.id, record.id)));
           ctx.recordCache = ctx.recordCache!.filter((item) => item.id !== record.id);
         }
         await chats.patchMetadata(
@@ -3719,7 +3735,9 @@ export function createAdvancedMemoryService(db: DB, { includeExcerptsInStatus = 
         );
       for (const record of structural) {
         if (sceneIds.has(record.id)) continue;
-        await db.delete(advancedMemoryRecords).where(eq(advancedMemoryRecords.id, record.id));
+        await db
+          .delete(advancedMemoryRecords)
+          .where(and(eq(advancedMemoryRecords.chatId, record.chatId), eq(advancedMemoryRecords.id, record.id)));
         ctx.recordCache = ctx.recordCache!.filter((item) => item.id !== record.id);
       }
     }
@@ -3894,7 +3912,9 @@ export function createAdvancedMemoryService(db: DB, { includeExcerptsInStatus = 
             // The block is stored untouched in the recap's own write; a reply without it clears an older one.
             await put(ctx, candidate, options, result.memory ?? null);
             if (work !== candidate) {
-              await db.delete(advancedMemoryRecords).where(eq(advancedMemoryRecords.id, work.id));
+              await db
+                .delete(advancedMemoryRecords)
+                .where(and(eq(advancedMemoryRecords.chatId, work.chatId), eq(advancedMemoryRecords.id, work.id)));
               ctx.recordCache = ctx.recordCache!.filter((item) => item.id !== work.id);
             }
             // Participants still unclear get recollections once the user settles who was there.
@@ -3967,7 +3987,11 @@ export function createAdvancedMemoryService(db: DB, { includeExcerptsInStatus = 
               };
               await put(ctx, checked, options);
               record = checked;
-              await db.delete(advancedMemoryRecords).where(eq(advancedMemoryRecords.id, accessWork.id));
+              await db
+                .delete(advancedMemoryRecords)
+                .where(
+                  and(eq(advancedMemoryRecords.chatId, accessWork.chatId), eq(advancedMemoryRecords.id, accessWork.id)),
+                );
               ctx.recordCache = ctx.recordCache!.filter((item) => item.id !== accessWork.id);
             } catch (error) {
               // A failed check of an older scene must not stop archiving the scene that just ended,
@@ -4032,7 +4056,9 @@ export function createAdvancedMemoryService(db: DB, { includeExcerptsInStatus = 
             retained.has(item.id) && item.dependencies.some((dependency) => dependency.id === `record:${record.id}`),
         )
       )
-        await db.delete(advancedMemoryRecords).where(eq(advancedMemoryRecords.id, record.id));
+        await db
+          .delete(advancedMemoryRecords)
+          .where(and(eq(advancedMemoryRecords.chatId, record.chatId), eq(advancedMemoryRecords.id, record.id)));
     }
     // A generated recollection of a scene that no longer has a summary is never shown; a hand-edited one stays.
     const kept = await records(chatId);
@@ -4042,7 +4068,9 @@ export function createAdvancedMemoryService(db: DB, { includeExcerptsInStatus = 
         !record.manualOverride &&
         !kept.some((item) => item.kind === "scene" && item.id !== item.sceneId && item.sceneId === record.sceneId)
       )
-        await db.delete(advancedMemoryRecords).where(eq(advancedMemoryRecords.id, record.id));
+        await db
+          .delete(advancedMemoryRecords)
+          .where(and(eq(advancedMemoryRecords.chatId, record.chatId), eq(advancedMemoryRecords.id, record.id)));
     if (repair) {
       if (unpreparedScenes(ctx, await records(chatId)).some((scene) => scene.id === repair.id))
         throw new Error(
@@ -4479,7 +4507,9 @@ export function createAdvancedMemoryService(db: DB, { includeExcerptsInStatus = 
             record.endMessageId !== ctx.messages[scene.end]!.id ||
             record.status !== (scene.closed ? "closed" : "open")));
       if (!obsolete) continue;
-      await db.delete(advancedMemoryRecords).where(eq(advancedMemoryRecords.id, record.id));
+      await db
+        .delete(advancedMemoryRecords)
+        .where(and(eq(advancedMemoryRecords.chatId, record.chatId), eq(advancedMemoryRecords.id, record.id)));
       ctx.recordCache = ctx.recordCache!.filter((item) => item.id !== record.id);
     }
     for (const scene of scenes) {
@@ -4855,7 +4885,13 @@ export function createAdvancedMemoryService(db: DB, { includeExcerptsInStatus = 
       db
         .update(advancedMemoryRecords)
         .set({ embedding: JSON.stringify(vector), embeddingSpaceId: space })
-        .where(and(eq(advancedMemoryRecords.id, record.id), eq(advancedMemoryRecords.content, record.content)));
+        .where(
+          and(
+            eq(advancedMemoryRecords.chatId, record.chatId),
+            eq(advancedMemoryRecords.id, record.id),
+            eq(advancedMemoryRecords.content, record.content),
+          ),
+        );
     try {
       const vectors = await embed(missing);
       if (vectors.length === missing.length) {
@@ -5146,7 +5182,10 @@ export function createAdvancedMemoryService(db: DB, { includeExcerptsInStatus = 
           },
           { touchUpdatedAt: false },
         );
-        if (cache) await db.delete(advancedMemoryRecords).where(eq(advancedMemoryRecords.id, cache.id));
+        if (cache)
+          await db
+            .delete(advancedMemoryRecords)
+            .where(and(eq(advancedMemoryRecords.chatId, cache.chatId), eq(advancedMemoryRecords.id, cache.id)));
         ctx = await context(chatId);
       }
       await chats.patchMetadata(
@@ -5429,7 +5468,9 @@ export function createAdvancedMemoryService(db: DB, { includeExcerptsInStatus = 
         },
         { touchUpdatedAt: false },
       );
-      await db.delete(advancedMemoryRecords).where(eq(advancedMemoryRecords.id, cache.id));
+      await db
+        .delete(advancedMemoryRecords)
+        .where(and(eq(advancedMemoryRecords.chatId, cache.chatId), eq(advancedMemoryRecords.id, cache.id)));
     }
     await progress(await context(chatId), { status: "ready", stage: "ready", error: null }, options);
   }
@@ -6926,12 +6967,15 @@ export function createAdvancedMemoryService(db: DB, { includeExcerptsInStatus = 
               item.id !== item.sceneId &&
               item.id !== record.id,
           ))
-            if (correctedScene) await tx.delete(advancedMemoryRecords).where(eq(advancedMemoryRecords.id, item.id));
+            if (correctedScene)
+              await tx
+                .delete(advancedMemoryRecords)
+                .where(and(eq(advancedMemoryRecords.chatId, item.chatId), eq(advancedMemoryRecords.id, item.id)));
             else if (patch.enabled !== undefined && !isDeletedScene(item))
               await tx
                 .update(advancedMemoryRecords)
                 .set({ enabled: patch.enabled ? 1 : 0 })
-                .where(eq(advancedMemoryRecords.id, item.id));
+                .where(and(eq(advancedMemoryRecords.chatId, item.chatId), eq(advancedMemoryRecords.id, item.id)));
         }
         await tx
           .update(advancedMemoryRecords)
@@ -7126,7 +7170,7 @@ export function createAdvancedMemoryService(db: DB, { includeExcerptsInStatus = 
           embeddingSpaceId: null,
           enabled: source.length === record.messageIds.length ? (record.enabled ? 1 : 0) : 0,
         })
-        .where(eq(advancedMemoryRecords.id, record.id));
+        .where(and(eq(advancedMemoryRecords.chatId, record.chatId), eq(advancedMemoryRecords.id, record.id)));
     }
   }
 
@@ -7360,7 +7404,7 @@ export function createAdvancedMemoryService(db: DB, { includeExcerptsInStatus = 
                 audienceCharacterIds: JSON.stringify(previous.audienceCharacterIds),
                 enabled: previous.enabled ? 1 : 0,
               })
-              .where(eq(advancedMemoryRecords.id, previous.id));
+              .where(and(eq(advancedMemoryRecords.chatId, previous.chatId), eq(advancedMemoryRecords.id, previous.id)));
           }
           recordIdMap.set(String(value.id), previous.id);
           continue; // Import never overwrites local user corrections.
@@ -7391,7 +7435,7 @@ export function createAdvancedMemoryService(db: DB, { includeExcerptsInStatus = 
         await db
           .update(advancedMemoryRecords)
           .set({ dependencies: JSON.stringify(record.dependencies) })
-          .where(eq(advancedMemoryRecords.id, record.id));
+          .where(and(eq(advancedMemoryRecords.chatId, record.chatId), eq(advancedMemoryRecords.id, record.id)));
       }
       await refreshTransferredRecords(chatId, importedRecordIds);
       const refreshedContext = await context(chatId);
@@ -7403,7 +7447,10 @@ export function createAdvancedMemoryService(db: DB, { includeExcerptsInStatus = 
           continue;
         // Keep unsupported imported corrections inspectable, without advertising them as usable memory.
         record.enabled = false;
-        await db.update(advancedMemoryRecords).set({ enabled: 0 }).where(eq(advancedMemoryRecords.id, record.id));
+        await db
+          .update(advancedMemoryRecords)
+          .set({ enabled: 0 })
+          .where(and(eq(advancedMemoryRecords.chatId, record.chatId), eq(advancedMemoryRecords.id, record.id)));
       }
       return { imported, ...(await status(chatId)) };
     });
