@@ -90,4 +90,26 @@ assert.deepEqual(rows, [
 ]);
 assert.notEqual(rows[0], previous[0], "rows are copies, not the previous snapshot's objects");
 
+// Supplementing character-tracker: agent enrichment on current turn is kept, missing looks carry over from fallback, leavers drop.
+const fallbackPrevious = [
+  { name: "Alice", outfit: "grey coat", avatarPath: "/a.png", characterId: "card-a", mood: "", thoughts: null },
+  { name: "Bram", outfit: "apron", mood: "", thoughts: null },
+];
+const agentEnriched = [
+  { name: "Alice", outfit: null, avatarPath: "/a.png", characterId: "card-a", mood: "alert", thoughts: "Stay quiet." },
+  { name: "Cole", emoji: "🪣", mood: "scared", thoughts: "Hide.", appearance: "tall lad", outfit: "smock" },
+];
+const supplementedRows = buildPresentRows(["Alice", "Cole"], agentEnriched, fallbackPrevious);
+assert.deepEqual(supplementedRows, [
+  {
+    name: "Alice",
+    outfit: "grey coat",
+    avatarPath: "/a.png",
+    characterId: "card-a",
+    mood: "alert",
+    thoughts: "Stay quiet.",
+  },
+  { name: "Cole", emoji: "🪣", mood: "scared", thoughts: "Hide.", appearance: "tall lad", outfit: "smock" },
+]);
+
 process.stdout.write("Present command regression passed.\n");
