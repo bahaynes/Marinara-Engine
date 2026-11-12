@@ -16,6 +16,11 @@ import { AddRowButton, EmptySection, SectionHeader, TRACKER_SECTION_SHELL_CLASS 
 import { CharacterTrackerCard } from "../character-card/CharacterTrackerCard";
 import { FeaturedCharacterTrackerCard } from "../character-card/FeaturedCharacterTrackerCard";
 import { useTranslation as useUiTranslation } from "react-i18next";
+import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
+import { api } from "../../../../lib/api-client";
+import { characterKeys } from "../../../../hooks/use-characters";
+import { chatKeys } from "../../../../hooks/use-chats";
 
 const COMPACT_CHARACTER_GHOST_SLOT_CLASS =
   "pointer-events-none relative hidden min-h-0 self-stretch overflow-hidden rounded-md border border-[color-mix(in_srgb,var(--border)_28%,transparent)] bg-[var(--tracker-panel-card-background,linear-gradient(135deg,color-mix(in_srgb,var(--card)_18%,transparent),color-mix(in_srgb,var(--background)_12%,transparent)_48%,transparent))] opacity-55 shadow-[inset_0_1px_0_color-mix(in_srgb,var(--foreground)_3%,transparent),inset_0_-1px_0_color-mix(in_srgb,var(--background)_18%,transparent)] @min-[260px]:block before:pointer-events-none before:absolute before:left-0 before:right-2 before:top-0.5 before:h-5 before:rounded-l-[4px] before:rounded-r-[2px] before:bg-[linear-gradient(180deg,color-mix(in_srgb,var(--background)_78%,var(--card)_22%),color-mix(in_srgb,var(--card)_42%,transparent))] before:opacity-65 after:pointer-events-none after:absolute after:inset-1 after:rounded-[4px] after:bg-[repeating-linear-gradient(135deg,color-mix(in_srgb,var(--border)_12%,transparent)_0_1px,transparent_1px_7px)] after:opacity-35";
@@ -76,6 +81,33 @@ export function CharacterTrackerPanel({
   onToggleCollapsed?: () => void;
 }) {
   const { t: localizeUi } = useUiTranslation();
+  const qc = useQueryClient();
+
+  const handlePromoteCharacter = async (char: PresentCharacter) => {
+    if (!activeChatId || !char.name) return;
+    try {
+      await api.post(`/chats/${activeChatId}/npc-registry/promote`, {
+        name: char.name,
+        description: [char.appearance, char.outfit].filter(Boolean).join("\n\n"),
+        avatarPath: char.avatarPath || null,
+      });
+      toast.success(
+        localizeUi("ui.npcRegistry.promotedSuccess", {
+          defaultValue: `Promoted ${char.name} to a character card!`,
+          name: char.name,
+        }),
+      );
+      void qc.invalidateQueries({ queryKey: characterKeys.all });
+      void qc.invalidateQueries({ queryKey: chatKeys.detail(activeChatId) });
+    } catch (err) {
+      toast.error(
+        err instanceof Error
+          ? err.message
+          : localizeUi("ui.trackerPanel.charactertrackerpanel.failedToPromoteCharacterCard"),
+      );
+    }
+  };
+
   const renderCharacterCards = () => {
     if (characters.length === 0) {
       return (
@@ -123,6 +155,7 @@ export function CharacterTrackerPanel({
           addMode={addMode}
           onToggleFeatured={() => onToggleFeatured(entry.cardKey)}
           onUploadAvatar={() => onUploadAvatar(entry.index)}
+          onPromote={() => handlePromoteCharacter(entry.character)}
         />
       </div>
     );

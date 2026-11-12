@@ -5131,6 +5131,40 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
         }
 
         const charInfo = await loadCharacterPromptInfo({ chars, characterIds, chatMode, chatId: input.chatId });
+        const npcRegistryNpcs: Array<{
+          id: string;
+          name: string;
+          avatarPath: string | null;
+          appearance: string | null;
+          appearanceOverride: null;
+        }> = [];
+        try {
+          const registryService = getCapabilityService<{
+            current: (
+              chatId: string,
+            ) => Promise<{ npcs: Map<string, { id: string; name: string; avatar?: string; aliases?: string[] }> }>;
+          }>("npc-registry");
+          if (registryService && input.chatId) {
+            const resolved = await registryService.current(input.chatId);
+            if (resolved?.npcs) {
+              for (const entry of resolved.npcs.values()) {
+                if (
+                  entry.name &&
+                  entry.avatar &&
+                  !charInfo.some((c) => c.name.toLowerCase() === entry.name.toLowerCase())
+                ) {
+                  npcRegistryNpcs.push({
+                    id: `npc-registry:${entry.id}`,
+                    name: entry.name,
+                    avatarPath: entry.avatar,
+                    appearance: null,
+                    appearanceOverride: null,
+                  });
+                }
+              }
+            }
+          }
+        } catch {}
         // Who Illustrator can show: the chat's characters (and a character used as the user's identity)
         // and the user's persona, with their appearance and avatars. Pictures and clips match names against it.
         const illustratorCast = () => ({
@@ -5156,6 +5190,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                   },
                 ]
               : []),
+            ...npcRegistryNpcs,
           ],
           persona:
             identity?.source === "persona" && persona

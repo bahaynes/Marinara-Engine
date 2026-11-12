@@ -1,5 +1,7 @@
 import { useCallback, type ReactNode } from "react";
-import { RefreshCw, Sparkles } from "lucide-react";
+import { BookUser, RefreshCw, Sparkles } from "lucide-react";
+import { useTranslation as useUiTranslation } from "react-i18next";
+import { useUIStore } from "../../../stores/ui.store";
 import type {
   GameState,
   InventoryTrackerGroup,
@@ -105,6 +107,7 @@ export function TrackerSectionList({
   afterCustomSections?: ReactNode;
 }) {
   const updateAgent = useUpdateAgent();
+  const { t: localizeUi } = useUiTranslation();
   const autoGenerateCharacterAvatars = characterTrackerSettings.autoGenerateAvatars === true;
   const canGeneratePortraits = !!characterTrackerSettings.imageConnectionId;
   const { featuredCharacterCards, removeFeaturedCharacterCard, toggleFeaturedCharacterCard } =
@@ -205,6 +208,15 @@ export function TrackerSectionList({
             tone="feature"
           >
             <Sparkles size="0.6875rem" />
+          </SectionIconButton>
+        )}
+        {activeChatId && (
+          <SectionIconButton
+            onClick={() => useUIStore.getState().openModal("npc-registry", { chatId: activeChatId })}
+            title={localizeUi("ui.npcRegistry.openRoster", { defaultValue: "Story NPC Roster" })}
+            tone="feature"
+          >
+            <BookUser size="0.6875rem" />
           </SectionIconButton>
         )}
         {renderRerunAction("characters")}
