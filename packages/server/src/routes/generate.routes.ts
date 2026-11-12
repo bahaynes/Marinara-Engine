@@ -8366,12 +8366,13 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
           !input.impersonate &&
           lastSavedMsg?.role === "assistant" &&
           typeof lastSavedSwipeIndex === "number";
-        const resolveTurnPresent = () =>
+        const resolveTurnPresent = (currentCharacters?: unknown) =>
           resolvePresentForTurn({
             // Captured when the reply was saved: re-reading the message could see a swipe the user picked since.
             activity: lastReplyRoleplayActivity,
             content: lastReplyFullContent,
-            previous: baseGameStateSnapshot?.presentCharacters,
+            previous: currentCharacters ?? baseGameStateSnapshot?.presentCharacters,
+            fallbackPrevious: baseGameStateSnapshot?.presentCharacters,
             personaName,
             cards: charInfo,
           });
@@ -15967,6 +15968,9 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
             swipeIndex: lastSavedSwipeIndex,
             baseSnapshot: baseGameStateSnapshot,
             resolve: resolveTurnPresent,
+            onPersisted: (rows) => {
+              sendSseEvent(reply, { type: "game_state_patch", data: { presentCharacters: rows } });
+            },
           });
         }
 

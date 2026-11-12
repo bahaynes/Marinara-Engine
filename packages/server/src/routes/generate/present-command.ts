@@ -46,11 +46,34 @@ export function resolvePresentNames(args: {
 }
 
 /** Rows for these names. Someone already present keeps their whole row (outfit, avatar, fields); a newcomer starts empty. */
-export function buildPresentRows(names: readonly string[], previous: readonly Row[]): Row[] {
+export function buildPresentRows(
+  names: readonly string[],
+  previous: readonly Row[],
+  fallbackPrevious?: readonly Row[],
+): Row[] {
   const byName = new Map<string, Row>();
   for (const row of previous) {
     const key = normalizeTextForMatch(row.name);
-    if (key && !byName.has(key)) byName.set(key, row);
+    if (key && !byName.has(key)) byName.set(key, { ...row });
+  }
+  if (fallbackPrevious) {
+    for (const row of fallbackPrevious) {
+      const key = normalizeTextForMatch(row.name);
+      if (!key) continue;
+      const existing = byName.get(key);
+      if (!existing) {
+        byName.set(key, { ...row });
+      } else {
+        for (const field of ["appearance", "outfit", "avatarPath", "avatarCrop", "emoji"] as const) {
+          if (!existing[field] && row[field]) {
+            existing[field] = row[field];
+          }
+        }
+        if ((!existing.customFields || Object.keys(existing.customFields as object).length === 0) && row.customFields) {
+          existing.customFields = { ...(row.customFields as object) };
+        }
+      }
+    }
   }
   // ponytail: newcomers get no avatar/appearance enrichment (the tracker's NPC avatar lookup); card identity
   // still comes from applyTrackerCharacterCardIdentity at the call site. Upgrade: share the tracker's enrichment.
@@ -79,18 +102,23 @@ export function resolvePresentForTurn(args: {
   activity: readonly RoleplayCommandActivity[];
   content: string;
   previous: unknown;
+  fallbackPrevious?: unknown;
   personaName: string;
   cards: Parameters<typeof applyTrackerCharacterCardIdentity>[1];
 }): { names: string[]; fromLine: boolean; rows: Row[] } {
   const previous = parseJsonField<Row[]>(args.previous, []);
+  const fallback = parseJsonField<Row[]>(args.fallbackPrevious, []);
   const { names, fromLine } = resolvePresentNames({
     activity: args.activity,
     content: args.content,
-    previousNames: previous.map((row) => String(row.name ?? "")),
+    previousNames:
+      previous.length > 0
+        ? previous.map((row) => String(row.name ?? ""))
+        : fallback.map((row) => String(row.name ?? "")),
     personaName: args.personaName,
   });
-  const rows = buildPresentRows(names, previous);
-  applyTrackerCharacterCardIdentity(rows, args.cards, { previousCharacters: previous });
+  const rows = buildPresentRows(names, previous, fallback);
+  applyTrackerCharacterCardIdentity(rows, args.cards, { previousCharacters: [...previous, ...fallback] });
   return { names, fromLine, rows };
 }
 
@@ -103,11 +131,12 @@ export async function writePresentForTurn(args: {
   baseSnapshot: NonNullable<
     Parameters<ReturnType<typeof createGameStateStorage>["updateByMessage"]>[5]
   >["baseSnapshot"];
-  resolve: () => { names: string[]; fromLine: boolean; rows: Row[] };
+  resolve: (currentCharacters?: unknown) => { names: string[]; fromLine: boolean; rows: Row[] };
+  onPersisted?: (rows: Row[]) => void;
 }): Promise<void> {
   try {
-    const { names, fromLine, rows } = args.resolve();
     const current = await args.store.getByChatAndMessage(args.chatId, args.messageId, args.swipeIndex);
+    const { names, fromLine, rows } = args.resolve(current?.presentCharacters);
     const locks = current ?? args.baseSnapshot;
     const patch = applyTrackerFieldLocksToGameStatePatch(
       // Rows are tracker-shaped records, typed loosely like the tracker's own merge.
@@ -117,6 +146,9 @@ export async function writePresentForTurn(args: {
     await args.store.updateByMessage(args.messageId, args.swipeIndex, args.chatId, patch, undefined, {
       baseSnapshot: args.baseSnapshot ?? null,
     });
+    if (args.onPersisted) {
+      args.onPersisted(rows);
+    }
     logger.info(
       "[present] chat %s msg %s swipe %d: %s (%s)",
       args.chatId,
