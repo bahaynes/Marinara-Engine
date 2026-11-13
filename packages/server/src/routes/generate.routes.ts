@@ -778,6 +778,7 @@ import {
 import { generateMissingCharacterSprites } from "../services/image/ephemeral-sprite.service.js";
 import { logger, logDebugOverride } from "../lib/logger.js";
 import { writePromptSidecar } from "../services/storage/prompt-sidecar.js";
+import { cacheBreakForReply } from "../services/prompt/cache-break.js";
 import {
   buildHistoricalLorebookKeeperContext,
   customAgentUsesLorebookReadBehind,
@@ -12057,6 +12058,26 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                 logger.warn(err, "[prompt-sidecar] Could not store the prompt in a file; keeping it on the message");
                 extraUpdate.cachedPrompt = promptCopy;
                 extraUpdate.cachedPromptStored = null;
+              }
+            }
+            // custom-mods: name what changed ahead of the tail since the last reply, so a cache miss has a cause.
+            // An impersonated turn builds a different window, and a continuation extends its own prompt.
+            if (!input.impersonate && !input.continueMessageId) {
+              try {
+                const cacheBreak = await cacheBreakForReply({
+                  messages: (await chats.listMessages(input.chatId)) as never,
+                  savedMessageId: savedMsg.id,
+                  savedCreatedAt: String(savedMsg.createdAt),
+                  next: finalPromptSent,
+                  scan: lorebookScanSnapshot,
+                  ttlMs:
+                    conn?.provider === "claude_subscription" || conn?.provider === "anthropic"
+                      ? (conn.anthropicExtendedCacheTtl === "true" ? 60 : 5) * 60_000
+                      : null,
+                });
+                (extraUpdate.generationInfo as Record<string, unknown>).cacheBreak = cacheBreak;
+              } catch (err) {
+                logger.warn(err, "[cache-break] Could not compare this prompt with the last reply's");
               }
             }
             // Cache the lorebook scan that produced the prompt so Active Context

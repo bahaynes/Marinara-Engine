@@ -1234,6 +1234,18 @@ export interface GenerationInfo {
   tokensReasoning?: number | null;
   tokensCachedPrompt?: number | null;
   tokensCacheWritePrompt?: number | null;
+  /** What changed ahead of the tail since the previous reply (custom-mods); absent when nothing did. */
+  cacheBreak?: {
+    messageIndex: number;
+    role: string;
+    fromEnd: number;
+    charOffset: number;
+    before: string;
+    after: string;
+    movedFromEnd: number | null;
+    source: string | null;
+    expired: boolean | null;
+  } | null;
   durationMs: number | null;
   /** Time from generation start until reasoning yielded to visible output. */
   reasoningDurationMs?: number | null;
