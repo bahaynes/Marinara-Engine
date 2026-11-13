@@ -573,6 +573,9 @@ async function rollDiceTool(
   args: Record<string, unknown>,
   chatMeta: Record<string, unknown> | undefined,
 ): Promise<Record<string, unknown>> {
+  // A roleplay roll the pinned ruleset already resolved by its own rules.
+  if (args.rulesetResult && typeof args.rulesetResult === "object")
+    return args.rulesetResult as Record<string, unknown>;
   const notation = String(args.notation ?? "1d6");
   if (parseDicePool(notation)) return rollDice(args);
   const rolled = rollSymbolDiceNotation(await symbolDiceResolution(chatMeta), notation, rollDieSecurely);

@@ -39,6 +39,7 @@ import {
 } from "../../packages/server/src/services/generation/html-artifact.js";
 import { conversationPromptHistoryContent } from "../../packages/server/src/routes/generate/conversation-prompt-formatting.js";
 import { generateRoleplaySoundEffect } from "../../packages/server/src/routes/tts.routes.js";
+import { roleplayRulesetContext } from "../../packages/server/src/services/generation/roleplay-ruleset-rolls.js";
 import { prepareRoleplayRoll } from "../../packages/server/src/services/generation/roleplay-rolls.js";
 import { prepareRoleplayInterruption } from "../../packages/server/src/services/generation/roleplay-interrupt.js";
 import { buildCommittedTrackerContextBlock } from "../../packages/server/src/services/generation/committed-tracker-context.js";
@@ -841,6 +842,32 @@ assert.throws(
 );
 assert.throws(() => dice({ notation: "1d20+9007199254740971", attribute: "STR" }), /numeric range/u);
 
+// A pool ruleset (gravewatch) rolls through its own resolver: the model's notation means nothing there.
+{
+  const parsed = parseRulesetDefinition(
+    JSON.parse(readFileSync(new URL("../../docs/examples/rulesets/gravewatch.json", import.meta.url), "utf8")),
+  );
+  assert.ok(parsed.ok);
+  const pool = parsed.definition;
+  const context = roleplayRulesetContext(pool, [{ id: "pip", name: "Pip" }], "pip");
+  const rolled = (args: Record<string, unknown>) =>
+    prepareRoleplayRoll(
+      { notation: "1d20", character: "Pip", ...args },
+      [{ id: "pip", name: "Pip" }],
+      "pip",
+      pool,
+      context,
+    );
+  const result = rolled({ skill: "Wrestle", dc: 2 }).rulesetResult as Record<string, unknown>;
+  assert.equal(result.resolution, "successes", "a pool check counts successes");
+  assert.notEqual(result.notation, "1d20", "the pool's own dice, not the model's notation");
+  assert.equal(typeof result.success, "boolean");
+  assert.match(String(result.display), /Wrestle/u);
+  assert.throws(() => rolled({ skill: "Dig", dc: 2 }), /untrained/u, "the ruleset's own refusal reaches the model");
+  assert.throws(() => rolled({ skill: "Wrestle" }), /difficulty scale/u, "a pool check needs its dc");
+  assert.equal(rolled({ skill: "Luck", dc: 2 }).rulesetResult, undefined, "an unknown check rolls plain");
+}
+
 // Fork: scene titles parse quoted or bare, and the reminder carries the current title so it can repeat.
 {
   const titled = parseRoleplayCommands('She shuts the door. [scene: title="Interrogation in the east vestry"]');
@@ -1189,8 +1216,11 @@ const artifactChatHtml = readFileSync(new URL("../../packages/client/src/lib/cha
 assert.match(artifactChatHtml, /concat\(\s*allowSvg \? \[\] : \["svg"\],?\s*\)/u, "messages keep the SVG ban");
 const artifactPrompt = buildHtmlArtifactMessages({ reply: "One. Two.", offset: 4, request: "a sign" });
 assert.ok(
-  (buildHtmlArtifactMessages({ reply: "One.", offset: 4, request: "a sign", scene: "<speaker>Raven</speaker>" }).at(-1)!
-    .content as string).startsWith("<speaker>Raven</speaker>\n\n<reply>"),
+  (
+    buildHtmlArtifactMessages({ reply: "One.", offset: 4, request: "a sign", scene: "<speaker>Raven</speaker>" }).at(
+      -1,
+    )!.content as string
+  ).startsWith("<speaker>Raven</speaker>\n\n<reply>"),
   "the scene comes before the reply",
 );
 assert.match(artifactPrompt.at(-1)!.content as string, /One\.\n\[ARTIFACT GOES HERE\]\n Two\./u);

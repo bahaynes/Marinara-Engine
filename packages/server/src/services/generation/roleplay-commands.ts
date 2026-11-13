@@ -870,6 +870,8 @@ export function buildRoleplayCommandsReminder(args: {
   video?: { instructions: string } | null;
   /** Names of the checks the chat's pinned ruleset answers to. */
   skillNames?: readonly string[];
+  /** How the pinned ruleset reads a roll's dc, when it is not a d20 target. */
+  rulesetHint?: string;
   /** The persona's Inspiration maximum when the pinned ruleset declares the pool. */
   inspirationMax?: number;
   /** Fork: the latest [scene] title, so the model can repeat it exactly while the scene continues. */
@@ -932,8 +934,9 @@ export function buildRoleplayCommandsReminder(args: {
       args.skillNames && args.skillNames.length > 0
         ? ` Available skills for checks: ${args.skillNames.join(", ")}.`
         : "";
+    const rulesetHint = args.rulesetHint ? ` ${args.rulesetHint}` : "";
     lines.push(
-      `- [roll: character="participant name" notation="1d20" attribute="Strength" skill="Skill Name" modifier="+2" dc="15" reason="action being attempted"] requests a real roll; use roll_dice with the same fields when available. You may target any chat participant, including the user's persona by name. Attribute and skill are both optional and only one is needed; the engine automatically adds the assigned ability/skill modifier from character stats, so do not add it yourself. Optional modifier adds a situational bonus/penalty once; optional dc sets the total needed to succeed. Keep DCs and modifiers in command/tool fields, not narration. Stop after the command and wait for the result before narrating the outcome. Never invent results or reroll an action.${skillsList}`,
+      `- [roll: character="participant name" notation="1d20" attribute="Strength" skill="Skill Name" modifier="+2" dc="15" reason="action being attempted"] requests a real roll; use roll_dice with the same fields when available. You may target any chat participant, including the user's persona by name. Attribute and skill are both optional and only one is needed; the engine automatically adds the assigned ability/skill modifier from character stats, so do not add it yourself. Optional modifier adds a situational bonus/penalty once; optional dc sets the total needed to succeed. Keep DCs and modifiers in command/tool fields, not narration. Stop after the command and wait for the result before narrating the outcome. Never invent results or reroll an action.${skillsList}${rulesetHint}`,
     );
   }
   if (enabled("inspire"))

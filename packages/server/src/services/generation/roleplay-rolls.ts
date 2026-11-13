@@ -4,12 +4,19 @@ import {
   parseDicePool,
   type LLMToolDefinition,
   type RoleplayCommandActivity,
+  formatSkillCheckResultSummary,
   type RulesetDefinition,
 } from "@marinara-engine/shared";
 import { normalizeCharacterLookupName } from "../game/name-normalization.js";
 import type { LLMToolCall } from "../llm/base-provider.js";
 import { formatToolExecutionResultForModel, type ToolExecutionResult } from "../tools/tool-executor.js";
 import { parseRoleplayCommands } from "./roleplay-commands.js";
+import {
+  isResolvableSkillCheckRequest,
+  resolveRulesetSkillCheck,
+  rulesetCheckTargetFor,
+  type SkillCheckRulesetContext,
+} from "../game/skill-check-resolution.service.js";
 import { rulesetRollModifier } from "./roleplay-ruleset-rolls.js";
 
 /** Resolve a participant's assigned attribute or skill without guessing another character or stat. */
@@ -24,6 +31,8 @@ export function prepareRoleplayRoll(
   fallbackCharacterId: string | null,
   /** The chat's pinned ruleset: skill and ability rolls then take their modifier from the sheet. */
   ruleset?: RulesetDefinition | null,
+  /** The pinned ruleset's sheets, evaluated once for the turn. */
+  rulesetContext?: SkillCheckRulesetContext | null,
 ): Record<string, unknown> {
   if (args.character !== undefined && typeof args.character !== "string")
     throw new Error("The roll character must be a participant name.");
@@ -52,9 +61,40 @@ export function prepareRoleplayRoll(
   const requestedSkill = typeof args.skill === "string" ? args.skill.trim() : "";
   const rawAttribute = typeof args.attribute === "string" ? args.attribute.trim() : "";
   const parsed = typeof args.notation === "string" ? parseDicePool(args.notation) : null;
+  const checkName = requestedSkill || rawAttribute;
+  // A check the pinned ruleset knows rolls by that ruleset's own rules, whatever its resolution kind.
+  // The model's notation and situational modifier mean nothing to a pool or symbol ruleset.
+  if (character && rulesetContext && checkName && rulesetCheckTargetFor(rulesetContext, checkName, character.name)) {
+    const dc = typeof args.dc === "number" ? args.dc : undefined;
+    if (dc !== undefined || rulesetContext.definition.resolution.kind !== "dice-sum") {
+      const request = { skill: checkName, dc, who: character.name };
+      if (!isResolvableSkillCheckRequest(request, rulesetContext.definition))
+        throw new Error(
+          `Set dc from ${rulesetContext.definition.name}'s difficulty scale: ${rulesetContext.definition.resolution.difficultyLadder
+            .map((step) => `${step.label} ${"successes" in step ? step.successes : step.dc}`)
+            .join(", ")}.`,
+        );
+      const rolled = resolveRulesetSkillCheck(rulesetContext, request);
+      const reason = [character.name, rolled.skill, typeof args.reason === "string" ? args.reason : ""]
+        .filter(Boolean)
+        .join(" · ");
+      return {
+        ...args,
+        rulesetResult: {
+          ...rolled,
+          notation: rolled.dice || "1d20",
+          character: character.name,
+          reason,
+          ...(typeof args.modifier === "number" && args.modifier !== 0
+            ? { note: "The ruleset resolves the check itself; the situational modifier was not applied." }
+            : {}),
+          display: `🎲 ${character.name}: ${formatSkillCheckResultSummary(rolled)}`,
+        },
+      };
+    }
+  }
   if (!parsed || !character) return args;
   // Modifiers come only from the pinned ruleset's sheet; no pin, no sheet or an unknown check rolls plain dice.
-  const checkName = requestedSkill || rawAttribute;
   const check = ruleset && checkName ? rulesetRollModifier(ruleset, character.rulesetSheets, checkName) : null;
   const modifier = parsed.modifier + (check?.modifier ?? 0);
   const notation = check?.modifier ? `${parsed.dice}${modifier > 0 ? "+" : ""}${modifier || ""}` : parsed.notation;

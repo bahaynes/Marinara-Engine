@@ -1153,7 +1153,7 @@ function widerReroll<T extends { upTo: number; mode: "once" | "until" }>(first?:
   return second.mode === "until" && first.mode !== "until" ? second : first;
 }
 
-function resolveRulesetSkillCheck(
+export function resolveRulesetSkillCheck(
   ruleset: SkillCheckRulesetContext,
   request: SkillCheckRequest,
   rollD20?: () => number,

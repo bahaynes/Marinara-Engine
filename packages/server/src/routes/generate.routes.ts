@@ -373,7 +373,11 @@ import {
   prepareRoleplayRoll,
   withRoleplayRollSchema,
 } from "../services/generation/roleplay-rolls.js";
-import { rulesetCheckNames } from "../services/generation/roleplay-ruleset-rolls.js";
+import {
+  rulesetCheckNames,
+  rulesetDifficultyHint,
+  roleplayRulesetContext as buildRoleplayRulesetContext,
+} from "../services/generation/roleplay-ruleset-rolls.js";
 import { announceRoleplayInspirationAward } from "../services/game/inspiration.service.js";
 import {
   appendRoleplayMessageNotes,
@@ -5275,6 +5279,9 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
             ? resolveGameRuleset(chatMeta, await loadRulesetRegistry())
             : null;
         const roleplayRuleset = roleplayRulesetResolved?.status === "ok" ? roleplayRulesetResolved.definition : null;
+        const roleplayRulesetContext = roleplayRuleset
+          ? buildRoleplayRulesetContext(roleplayRuleset, roleplayRollParticipants, identity?.id ?? null)
+          : null;
         for (const character of charInfo) {
           const resolveCharacterPromptText = (value: string): string =>
             resolveHistoryMessageMacros([{ content: value, characterId: character.id }])[0]?.content ?? value;
@@ -9460,6 +9467,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                 interruptAvailable: Boolean(roleplayInterruptionTarget),
                 video: roleplayVideoOffer,
                 skillNames: roleplayRuleset ? rulesetCheckNames(roleplayRuleset) : undefined,
+                rulesetHint: roleplayRuleset ? rulesetDifficultyHint(roleplayRuleset) : undefined,
                 inspirationMax: identity ? rpInspirationOf(chatMeta, roleplayRuleset, identity.name)?.max : undefined,
               }),
               wrapFormat,
@@ -9899,7 +9907,13 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                     ...(chatMode === "roleplay"
                       ? {
                           prepareDiceRoll: (args: Record<string, unknown>) =>
-                            prepareRoleplayRoll(args, roleplayRollParticipants, roleplayCallerId, roleplayRuleset),
+                            prepareRoleplayRoll(
+                              args,
+                              roleplayRollParticipants,
+                              roleplayCallerId,
+                              roleplayRuleset,
+                              roleplayRulesetContext,
+                            ),
                         }
                       : {}),
                     applyGameStateUpdate: async ({ type, value }) => {
