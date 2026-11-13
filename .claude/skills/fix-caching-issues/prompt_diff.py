@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Find where a chat's prompt stopped matching the previous request (the prompt-cache break point).
 
-Reads the final prompts Marinara stored on replies and swipes (`extra.cachedPrompt`; the engine keeps
-it on the last 2 assistant messages and their swipes only), orders them by time, and compares the
+Reads the final prompts Marinara stored on replies and swipes (`extra.cachedPrompt`, or the sidecar file
+`extra.cachedPromptStored` points at), orders them by time, and compares the
 newest two (or the pair you name). Read-only; spends no model quota.
 
     python3 prompt_diff.py --chat <chatId> [--container marinara]
@@ -14,11 +14,13 @@ System messages are kept: on OpenAI-compatible providers they are part of the ca
 """
 
 import argparse
+import functools
 import hashlib
 import json
 import re
 import subprocess
 import sys
+import urllib.parse
 
 HEADER = re.compile(r"^(<[A-Za-z_][^>\n]{0,60}>|#+ .{0,60}|--- .{0,40} ---|\[[^\]\n]{1,50}\])\s*$", re.M)
 
@@ -30,9 +32,30 @@ def mari(container, *args):
     return json.loads(out.stdout)
 
 
+CONTAINER = "marinara"
+
+
+def safe_name(i):
+    return urllib.parse.quote(i, safe="").replace(".", "%2E").replace("%", "_")
+
+
 def extra(row):
     e = row.get("extra")
-    return json.loads(e) if isinstance(e, str) else (e or {})
+    e = json.loads(e) if isinstance(e, str) else (e or {})
+    ref = e.get("cachedPromptStored")
+    if ref and not e.get("cachedPrompt"):
+        # The engine keeps prompts in /app/data/prompt-cache/<chat>/<message>.<swipe>.json, not on the row.
+        path = f"/app/data/prompt-cache/{safe_name(ref['chatId'])}/{safe_name(ref['messageId'])}.{ref['swipeIndex']}.json"
+        prompt = load_sidecar(path)
+        if prompt:
+            e = {**e, "cachedPrompt": prompt}
+    return e
+
+
+@functools.lru_cache(maxsize=None)
+def load_sidecar(path):
+    out = subprocess.run(["docker", "exec", CONTAINER, "cat", path], capture_output=True, text=True)
+    return json.loads(out.stdout) if out.returncode == 0 else None
 
 
 def text(message):
@@ -41,6 +64,8 @@ def text(message):
 
 
 def stored_prompts(container, chat):
+    global CONTAINER
+    CONTAINER = container
     msgs = mari(container, "db", "select", "messages", "--where", f"row.chatId==={json.dumps(chat)} && row.role==='assistant'")
     ids = [m["id"] for m in msgs if extra(m).get("cachedPrompt")]
     entries = [(m["createdAt"], m["id"], "-", extra(m)) for m in msgs if extra(m).get("cachedPrompt")]
