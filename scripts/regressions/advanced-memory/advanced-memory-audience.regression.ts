@@ -819,6 +819,20 @@ try {
   // Maukie saw both messages, so the private section no longer withholds the excerpt (#7269).
   assert.match(duoRecall.recalledScenes!, /Maukie discussed the absent Pantalone\. MAUKIE_PRIVATE\n\nExcerpt:\n/u);
   assert(!/DUO_NARRATOR/u.test(duoRecall.chatSummary!), "a narrator-only section stays out");
+  // Impersonation writes for the persona, who was present for every scene: it reads each card's section, not
+  // only the first roster character's.
+  const duoOwner = await memory.prepare({
+    chatId: duo.id,
+    messages: await chats.listMessages(duo.id),
+    audienceCharacterIds: [],
+    audienceMode: "owner",
+    budgetTokens: 12000,
+    readOnly: true,
+  });
+  assert.match(duoOwner.chatSummary!, /DUO_PLAIN/u);
+  assert.match(duoOwner.chatSummary!, /DUO_MAUKIE/u, "the owner reads a section only one card named");
+  assert.match(duoOwner.chatSummary!, /DUO_NARRATOR/u, "and the narrator's section");
+  assert(!duoOwner.chatSummary!.includes("{{"), "with no condition left unrendered");
 
   // Individual group chats recall per responder exactly as before #7237.
   const joinedAt = (await chats.listMessages(group.id)).at(-2)!.id;
