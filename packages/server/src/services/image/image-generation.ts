@@ -50,6 +50,7 @@ import {
 } from "./image-generation-queue.js";
 import { runSharedGpuTurn } from "../generation/shared-gpu-turns.js";
 import { generateRunPodComfyUI } from "./runpod-comfyui.service.js";
+import { fitPromptToLimit } from "./prompt-fit.js";
 import { debugJson, logger, logDebugOverride } from "../../lib/logger.js";
 import {
   assertInsideDir,
@@ -1369,6 +1370,26 @@ async function fetchImageWithSizeFallback(
     .json()
     .catch(() => null)) as { message?: unknown; error?: { message?: unknown } } | null;
   const message = error?.message ?? error?.error?.message;
+  // custom-mods: a provider that states its prompt limit ("shorten it to 3000 characters or less") gets one
+  // retry cut to that limit, so a long appearance block does not lose the whole illustration.
+  const promptLimit =
+    typeof message === "string" ? Number(/shorten it to (\d+) characters or less/i.exec(message)?.[1]) : NaN;
+  if (promptLimit > 0) {
+    try {
+      const sent = JSON.parse(requestBody) as Record<string, unknown>;
+      if (typeof sent.prompt === "string" && sent.prompt.length > promptLimit) {
+        const prompt = fitPromptToLimit(sent.prompt, promptLimit);
+        logger.warn(
+          "[image-gen] Retrying a %d-character prompt cut to %d characters",
+          sent.prompt.length,
+          prompt.length,
+        );
+        return imageFetch(url, { ...init, body: JSON.stringify({ ...sent, prompt }) }, policy);
+      }
+    } catch {
+      // A multipart body is left to the provider's answer.
+    }
+  }
   // ponytail: only explicit FLUX.2 validation bounds are understood here. Extend this
   // when another provider needs it; advertised NanoGPT limits can exceed its backend's.
   if (typeof message !== "string" || !/validation errors? for Flux2/i.test(message)) return response;
