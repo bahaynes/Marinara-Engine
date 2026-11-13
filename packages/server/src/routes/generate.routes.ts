@@ -12070,6 +12070,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                   savedCreatedAt: String(savedMsg.createdAt),
                   next: finalPromptSent,
                   scan: lorebookScanSnapshot,
+                  provider: generationProviderOrigin.provider,
                   ttlMs:
                     conn?.provider === "claude_subscription" || conn?.provider === "anthropic"
                       ? (conn.anthropicExtendedCacheTtl === "true" ? 60 : 5) * 60_000
