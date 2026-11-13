@@ -3110,11 +3110,13 @@ export function createAdvancedMemoryService(db: DB, { includeExcerptsInStatus = 
   }
 
   /** With `everySection` off, the narrator reads only the sections written for it. */
-  function renderEntry(ctx: Context, text: string, audience: string[], everySection = true): string {
+  function renderEntry(ctx: Context, text: string, audience: string[], everySection = true, owner = false): string {
     // A section for someone who is not reading leaves no empty line: its line breaks go with it.
     text = attachConditionalLineBreaks(text);
     // The narrator alone reads every character's section, plain and once, whoever its condition names.
-    if (everySection && audience.length === 1 && audience[0] === ctx.settings.narratorCharacterId)
+    // Fork: so does the owner (an impersonated persona), who was present for every scene. With no audience the
+    // text used to render as the first roster character, which dropped every section only another card named.
+    if (owner || (everySection && audience.length === 1 && audience[0] === ctx.settings.narratorCharacterId))
       text = flattenCharacterConditions(text);
     const names = (audience.length ? audience : ctx.characterIds).map((id) => ctx.names.get(id) ?? "Character");
     const rosterNames = ctx.characterIds.map((id) => ctx.names.get(id) ?? "Character");
@@ -5667,7 +5669,7 @@ export function createAdvancedMemoryService(db: DB, { includeExcerptsInStatus = 
     );
     const constants = sourceEntries(ctx, sources, historical)
       .map((entry) => {
-        const text = renderEntry(ctx, entry.content, audience);
+        const text = renderEntry(ctx, entry.content, audience, true, input.audienceMode === "owner");
         // One summary can combine what different characters read: its range and story dates come only
         // from the messages this prompt's readers can see, so no reader learns of a message hidden from them.
         // A merged prompt shows them above text several characters read, so only messages every one of
