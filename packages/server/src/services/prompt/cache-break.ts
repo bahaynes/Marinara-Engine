@@ -118,12 +118,18 @@ export async function cacheBreakForReply(o: {
   next: PromptMessage[];
   scan: unknown;
   ttlMs: number | null;
+  /** Only a previous reply from this provider is comparable: another provider shapes its prompt differently. */
+  provider: string | null;
   now?: number;
 }): Promise<CacheBreak | null> {
   const previous = o.messages
     .filter((m) => m.role === "assistant" && m.id !== o.savedMessageId && m.createdAt < o.savedCreatedAt)
     .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
-    .find((m) => extraHasCachedPrompt(parseExtra(m.extra)));
+    .find((m) => {
+      const extra = parseExtra(m.extra);
+      const used = (extra.generationInfo as { provider?: unknown } | undefined)?.provider;
+      return extraHasCachedPrompt(extra) && (o.provider == null || used === o.provider);
+    });
   if (!previous) return null;
   const extra = parseExtra(previous.extra);
   const stored = Array.isArray(extra.cachedPrompt)

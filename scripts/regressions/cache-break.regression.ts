@@ -44,7 +44,7 @@ const stored = (id: string, createdAt: string, prompt: unknown[]) => ({
   id,
   role: "assistant",
   createdAt,
-  extra: JSON.stringify({ cachedPrompt: prompt }),
+  extra: JSON.stringify({ cachedPrompt: prompt, generationInfo: { provider: "claude_subscription" } }),
 });
 const messages = [stored("a1", "2026-11-13T10:00:00.000Z", before)];
 const fresh = await cacheBreakForReply({
@@ -54,6 +54,7 @@ const fresh = await cacheBreakForReply({
   next: after,
   scan: { activatedEntries: [{ name: "Master Override", content: rule }] },
   ttlMs: 5 * 60_000,
+  provider: "claude_subscription",
   now: Date.parse("2026-11-13T10:07:00.000Z"),
 });
 assert.equal(fresh?.expired, true);
@@ -65,6 +66,7 @@ const noTtl = await cacheBreakForReply({
   next: after,
   scan: null,
   ttlMs: null,
+  provider: "claude_subscription",
   now: Date.parse("2026-11-13T10:07:00.000Z"),
 });
 assert.equal(noTtl?.expired, null);
