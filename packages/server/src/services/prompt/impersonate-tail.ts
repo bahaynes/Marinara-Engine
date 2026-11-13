@@ -1,4 +1,4 @@
-type TailMessage = { content?: string | null; contextKind?: string };
+type TailMessage = { role?: string; content?: string | null; contextKind?: string };
 
 /**
  * Fork-only: an impersonate has no new user message, so blocks that a normal reply carries in its tail land
@@ -8,6 +8,10 @@ type TailMessage = { content?: string | null; contextKind?: string };
  * impersonate rewrote the whole history to the cache. Pulling those blocks out of the history and prepending
  * them to the impersonate instruction keeps the history append-only.
  *
+ * The same goes for a system-role block a preset marker puts after the history (recalled scenes, lorebook
+ * markers): `appendNonLeadingSystemMessagesToLastUser` folds it into the latest user message before it, which
+ * here is the persona's earlier post, not the end of the prompt.
+ *
  * Only blocks after the first history message move: anything before it does not shift between turns.
  */
 export function pullHistoryInjectionsIntoInstruction<T extends TailMessage>(
@@ -16,9 +20,12 @@ export function pullHistoryInjectionsIntoInstruction<T extends TailMessage>(
 ): { messages: T[]; instruction: string } {
   const firstHistory = messages.findIndex((message) => message.contextKind === "history");
   if (firstHistory < 0) return { messages, instruction };
+  const lastHistory = messages.map((message) => message.contextKind === "history").lastIndexOf(true);
   const moved: string[] = [];
   const kept = messages.filter((message, index) => {
-    if (index <= firstHistory || message.contextKind !== "injection") return true;
+    if (index <= firstHistory) return true;
+    const afterHistory = index > lastHistory && message.role === "system" && message.contextKind === "prompt";
+    if (message.contextKind !== "injection" && !afterHistory) return true;
     if (message.content?.trim()) moved.push(message.content.trim());
     return false;
   });

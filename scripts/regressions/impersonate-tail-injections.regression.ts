@@ -48,4 +48,18 @@ const early: Msg[] = [
 ];
 assert.deepEqual(pullHistoryInjectionsIntoInstruction(early, "x").messages, early);
 
+// A system block a preset marker puts after the history (recalled scenes) would be folded into the persona's
+// earlier post, three from the end, and move every turn. It joins the instruction instead.
+const recall = "Included below are recalled memories.";
+const afterHistory: Msg[] = [
+  { role: "system", content: "system prompt", contextKind: "prompt" },
+  { role: "system", content: "summary before the history", contextKind: "prompt" },
+  { role: "user", content: "post 0", contextKind: "history" },
+  { role: "assistant", content: "post 1", contextKind: "history" },
+  { role: "system", content: recall, contextKind: "prompt" },
+];
+const pulledRecall = pullHistoryInjectionsIntoInstruction(afterHistory, "Write as the persona.");
+assert.deepEqual(pulledRecall.messages, afterHistory.slice(0, 4), "only the block after the history leaves");
+assert.equal(pulledRecall.instruction, `${recall}\n\nWrite as the persona.`);
+
 process.stdout.write("Impersonate tail-injection regression passed.\n");
