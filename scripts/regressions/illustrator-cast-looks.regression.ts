@@ -7,6 +7,7 @@ import {
   isIllustratorNpcCastId,
   loadIllustratorNpcCast,
 } from "../../packages/server/src/services/image/illustrator-npc-cast.js";
+import { buildBlankCharacterLooksRequest } from "../../packages/server/src/services/agents/character-tracker-looks.js";
 import { applyImageAgentContextExtensions } from "../../packages/server/src/services/image/image-agent-comfy-extensions.js";
 import type { AgentContext } from "../../packages/shared/src/index.js";
 
@@ -126,5 +127,22 @@ assert.deepEqual(
   memberCast.find((entry) => entry.name === "Dez"),
   { id: "npc-registry:n2", name: "Dez", avatarPath: null, appearance: null },
 );
+
+// The tracker is told which present rows lack looks; an explicit "None" outfit counts as set.
+assert.equal(
+  buildBlankCharacterLooksRequest({
+    presentCharacters: [
+      { name: "Petra Nash", appearance: "tall", outfit: "" },
+      { name: "Tama", appearance: null, outfit: "None (fox form)" },
+      { name: "Rani", appearance: "hourglass", outfit: "silk wrap dress" },
+    ],
+  }),
+  "No appearance tracked yet for: Tama. No outfit tracked yet for: Petra Nash. Fill these fields for them in your update, from character cards or the story; describe a plausible outfit when none is stated.",
+);
+assert.equal(
+  buildBlankCharacterLooksRequest({ presentCharacters: [{ name: "Rani", appearance: "a", outfit: "b" }] }),
+  null,
+);
+assert.equal(buildBlankCharacterLooksRequest(null), null);
 
 console.log("Illustrator cast looks regression passed");
