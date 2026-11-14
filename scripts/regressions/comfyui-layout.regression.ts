@@ -12,10 +12,15 @@ import {
   buildComfyLayoutReplacements,
   comfyLayoutLookSourcesFromContext,
   composeComfyLayoutCharacterPrompts,
+  filterLayoutCharacterReferences,
+  finishComfyLayoutBoxes,
   foldComfyLayoutSceneFields,
+  isCharacterTransformedInScene,
   isComfyLayoutCharacterPromptInstruction,
+  resolveCharacterBoundingBox1000,
   resolveComfyLayoutLooks,
   rewriteIllustratorTemplateForComfyLayout,
+  ROLE_PRESETS_1000,
 } from "../../packages/server/src/services/image/comfyui-layout-placeholders.js";
 import type { AgentContext } from "../../packages/shared/src/index.js";
 import { alignComfyLayoutReferences } from "../../packages/server/src/services/image/image-agent-comfy-extensions.js";
@@ -27,6 +32,7 @@ import {
 import {
   buildIllustratorCharacterPromptInstruction,
   readComfyLayoutCharacterLimit,
+  sanitizeCharacterPrompts,
 } from "../../packages/server/src/services/image/character-prompts.js";
 import {
   generateImage,
@@ -92,6 +98,34 @@ assert.deepEqual(
   [
     ["p", [50, 50, 950, 500]],
     ["q", [50, 500, 950, 950]],
+  ],
+);
+
+// Tier 1 explicit bbox and minimum 150x150 span clamping.
+const explicitEntry = { name: "A", prompt: "explicit", bbox: [200, 100, 900, 850] as [number, number, number, number] };
+assert.deepEqual(resolveCharacterBoundingBox1000(explicitEntry, 0, [explicitEntry]), [200, 100, 900, 850]);
+const clampedEntry = { name: "A", prompt: "tiny", bbox: [500, 500, 520, 520] as [number, number, number, number] };
+assert.deepEqual(resolveCharacterBoundingBox1000(clampedEntry, 0, [clampedEntry]), [435, 435, 585, 585]);
+
+// Tier 2 role presets: center_left and center_right overlap in the horizontal range 440..560.
+assert.deepEqual(ROLE_PRESETS_1000["center_left"], [120, 180, 960, 560]);
+assert.deepEqual(ROLE_PRESETS_1000["center_right"], [120, 440, 960, 820]);
+const roleLeft = { name: "A", prompt: "p", role: "center_left" };
+const roleRight = { name: "B", prompt: "q", role: "center_right" };
+assert.deepEqual(resolveCharacterBoundingBox1000(roleLeft, 0, [roleLeft, roleRight]), [120, 180, 960, 560]);
+assert.deepEqual(resolveCharacterBoundingBox1000(roleRight, 1, [roleLeft, roleRight]), [120, 440, 960, 820]);
+
+// Tier 3 close contact: two characters within dx < 0.25 overlap horizontally by 60 grid units.
+const contactPair = [
+  { name: "A", prompt: "holding hands", position: { x: 0.42, y: 0.5 } },
+  { name: "B", prompt: "holding hands", position: { x: 0.58, y: 0.5 } },
+];
+const contactReplacements = buildComfyLayoutReplacements(contactPair);
+assert.deepEqual(
+  parse(contactReplacements).map((entry) => entry.bbox),
+  [
+    [50, 50, 950, 560],
+    [50, 440, 950, 950],
   ],
 );
 
@@ -232,6 +266,20 @@ assert.deepEqual(
   ["Oren: kneels by the fire. lore look for Oren.", "Nobody: waves."],
 );
 
+// Repeated leading self-names in box actions are stripped before prepending "<Name>: ",
+// while possessives ("Nyx's hands") are kept intact.
+assert.deepEqual(
+  composeComfyLayoutCharacterPrompts(
+    [
+      { name: "Nyx", prompt: "Nyx: Nyx lies on the floor.", position: { x: 0.3, y: 0.5 } },
+      { name: "Lena Luthor", prompt: "Lena lies on the floor.", position: { x: 0.7, y: 0.5 } },
+      { name: "Nyx", prompt: "Nyx's hands tremble.", position: { x: 0.5, y: 0.5 } },
+    ],
+    { cards: [], lore: [], tracker: [] },
+  ).map((entry) => entry.prompt),
+  ["Nyx: lies on the floor.", "Lena Luthor: lies on the floor.", "Nyx: Nyx's hands tremble."],
+);
+
 // A referenced character's box carries no looks (the reference shows them); outfit stays.
 assert.deepEqual(
   composeComfyLayoutCharacterPrompts(
@@ -357,11 +405,58 @@ assert.match(
   /Leave "prompt" out; setting, lighting and props replace it\./,
   "the base prompt holds no people",
 );
+assert.match(layoutInstruction, /never name or mention another character/i);
+assert.doesNotMatch(layoutInstruction, /never replace a character's body/i);
+assert.match(layoutInstruction, /undulating/);
+assert.match(layoutInstruction, /"transformed": true/);
+assert.match(layoutInstruction, /center_left/);
+assert.match(layoutInstruction, /center_right/);
 assert.ok(isComfyLayoutCharacterPromptInstruction(layoutInstruction));
 assert.ok(
   !isComfyLayoutCharacterPromptInstruction(buildIllustratorCharacterPromptInstruction(6)),
   "NovelAI block is not layout",
 );
+
+// sanitizeCharacterPrompts preserves role, bbox, and transformed: true, and strips invalid fields.
+const sanitizedPrompts = sanitizeCharacterPrompts(
+  [
+    {
+      name: "Nyx",
+      prompt: "shadow form",
+      role: "center_left",
+      bbox: [100, 200, 900, 800],
+      transformed: true,
+      position: { x: 0.3, y: 0.5 },
+    },
+    {
+      name: "Jinx",
+      prompt: "grinning",
+      role: "  ",
+      bbox: [100, 200, "invalid", 800],
+      transformed: false,
+      position: { x: 0.7, y: 0.5 },
+    },
+  ],
+  ["Nyx", "Jinx"],
+  6,
+);
+assert.deepEqual(sanitizedPrompts, [
+  {
+    name: "Nyx",
+    prompt: "shadow form",
+    negativePrompt: undefined,
+    position: { x: 0.3, y: 0.5 },
+    role: "center_left",
+    bbox: [100, 200, 900, 800],
+    transformed: true,
+  },
+  {
+    name: "Jinx",
+    prompt: "grinning",
+    negativePrompt: undefined,
+    position: { x: 0.7, y: 0.5 },
+  },
+]);
 
 // The default Illustrator template trades "prompt" and its describe-everyone rule for people-free scene fields.
 // Illustrator capability package 1.0.4 defaultPromptTemplate (data/ is a runtime install, not in git).
@@ -399,6 +494,29 @@ assert.equal(
   null,
   "custom templates untouched",
 );
+
+// Reference Cast templates are also rewritten for layout mode with scene fields, scene rules appended, and character caps.
+const referenceCastFixture = [
+  "Return JSON:",
+  "{",
+  '  "shouldGenerate": boolean,',
+  '  "prompt": "30-70 word prose prompt following the rules above",',
+  '  "characters": ["exact name, most important first"],',
+  '  "aspectRatio": "landscape"',
+  "}",
+].join("\n");
+const refCastLayout = rewriteIllustratorTemplateForComfyLayout(referenceCastFixture, 0);
+assert.ok(refCastLayout, "reference cast template wording is recognised");
+assert.doesNotMatch(refCastLayout, /"prompt": "30-70 word/);
+assert.match(refCastLayout, /"setting": "the place itself/);
+assert.match(refCastLayout, /"lighting": "light, weather/);
+assert.match(refCastLayout, /"props": "loose objects/);
+assert.match(refCastLayout, /Prompt rules: setting, lighting and props describe the empty set/);
+assert.match(refCastLayout, /"characters": \["exact name, most important first"\],/);
+
+const refCastCapped = rewriteIllustratorTemplateForComfyLayout(referenceCastFixture, 2);
+assert.ok(refCastCapped);
+assert.match(refCastCapped, /"characters": \["up to 2 exact names, most important first"\],/);
 
 // The hook: agent templates are rewritten only while the layout block is on the context.
 const hookContext = (instruction?: string) =>
@@ -469,6 +587,112 @@ const realOutfit = composeComfyLayoutCharacterPrompts(
   { cards: [], lore: [], tracker: [{ name: "Tora", appearance: "", outfit: "Nonesuch-silk robes" }] },
 );
 assert.match(realOutfit[0]!.prompt, /Wearing Nonesuch-silk robes\./, "only a bare none word empties the outfit");
+
+// Transformed character handling: drops human reference portrait, omits card body looks and outfit.
+const transformedScenePrompts = [
+  {
+    name: "Nyx",
+    prompt: "swirling semi-translucent shadow smoke with glowing violet eyes",
+    transformed: true,
+    position: { x: 0.7, y: 0.5 },
+  },
+  {
+    name: "Jinx",
+    prompt: "leaning against a wall, grinning",
+    position: { x: 0.3, y: 0.5 },
+  },
+];
+const transformedLookSources = {
+  cards: [
+    { name: "Nyx", appearance: "pale woman in dark velvet" },
+    { name: "Jinx", appearance: "slender girl with blue braids" },
+  ],
+  lore: [],
+  tracker: [
+    { name: "Nyx", appearance: "", outfit: "corset and lace" },
+    { name: "Jinx", appearance: "", outfit: "striped tank top" },
+  ],
+};
+
+const filteredRefs = filterLayoutCharacterReferences({
+  characterPrompts: transformedScenePrompts,
+  referenceImages: ["nyx.png", "jinx.png"],
+  referenceNames: ["Nyx", "Jinx"],
+  lookSources: transformedLookSources,
+});
+assert.deepEqual(filteredRefs, {
+  referenceImages: ["jinx.png"],
+  referenceNames: ["Jinx"],
+});
+
+const transformedLayout = finishComfyLayoutBoxes({
+  prompt: "[[Jinx]] stands near [[Nyx]]",
+  writerCharacterPrompts: transformedScenePrompts,
+  referenceImages: ["nyx.png", "jinx.png"],
+  referenceNames: ["Nyx", "Jinx"],
+  locationImage: null,
+  source: "comfyui",
+  lookSources: transformedLookSources,
+  logPrefix: "[test]",
+  bindPlainNames: true,
+});
+assert.deepEqual(transformedLayout.referenceImages, ["jinx.png"]);
+assert.equal(transformedLayout.characterPrompts.length, 2);
+assert.equal(transformedLayout.characterPrompts[0]!.name, "Jinx");
+assert.match(transformedLayout.characterPrompts[0]!.prompt, /Wearing striped tank top\./);
+assert.doesNotMatch(transformedLayout.characterPrompts[0]!.prompt, /slender girl with blue braids/);
+assert.equal(transformedLayout.characterPrompts[1]!.name, "Nyx");
+assert.equal(
+  transformedLayout.characterPrompts[1]!.prompt,
+  "Nyx: swirling semi-translucent shadow smoke with glowing violet eyes.",
+);
+assert.doesNotMatch(transformedLayout.characterPrompts[1]!.prompt, /pale woman/);
+assert.doesNotMatch(transformedLayout.characterPrompts[1]!.prompt, /corset and lace/);
+
+// Tracker appearance with (dragon form) triggers transformation, drops portrait, skips card look & outfit.
+const dragonLookSources = {
+  cards: [{ name: "Aria", appearance: "tall dark-haired woman" }],
+  lore: [],
+  tracker: [{ name: "Aria", appearance: "massive crimson-scaled wyvern (dragon form)", outfit: "silk gown" }],
+};
+const ariaPrompt = { name: "Aria", prompt: "perched on the cliff", position: { x: 0.5, y: 0.5 } };
+assert.equal(isCharacterTransformedInScene(ariaPrompt, dragonLookSources), true);
+assert.equal(
+  isCharacterTransformedInScene(
+    { name: "Tora", prompt: "stands." },
+    {
+      cards: [{ name: "Tora", appearance: "a tall woman with amethyst horns" }],
+      lore: [],
+      tracker: [{ name: "Tora", appearance: "", outfit: "None (Dragon form)" }],
+    },
+  ),
+  false,
+);
+
+const dragonRefs = filterLayoutCharacterReferences({
+  characterPrompts: [ariaPrompt],
+  referenceImages: ["aria.png"],
+  referenceNames: ["Aria"],
+  lookSources: dragonLookSources,
+});
+assert.deepEqual(dragonRefs, { referenceImages: [], referenceNames: [] });
+
+const dragonLayout = finishComfyLayoutBoxes({
+  prompt: "[[Aria]] atop the peak",
+  writerCharacterPrompts: [ariaPrompt],
+  referenceImages: ["aria.png"],
+  referenceNames: ["Aria"],
+  locationImage: null,
+  source: "comfyui",
+  lookSources: dragonLookSources,
+  logPrefix: "[test]",
+  bindPlainNames: true,
+});
+assert.equal(dragonLayout.referenceImages, undefined);
+assert.equal(dragonLayout.characterPrompts.length, 1);
+assert.match(dragonLayout.characterPrompts[0]!.prompt, /massive crimson-scaled wyvern \(dragon form\)/);
+assert.doesNotMatch(dragonLayout.characterPrompts[0]!.prompt, /tall dark-haired woman/);
+assert.doesNotMatch(dragonLayout.characterPrompts[0]!.prompt, /silk gown/);
 
 // Readers keep one scene prompt: the fields fold into "prompt" only when the writer left it empty.
 assert.deepEqual(
