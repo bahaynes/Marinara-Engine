@@ -7,6 +7,7 @@ This repository is a local fork of [**Pasta-Devs/Marinara-Engine**](https://gith
 ## 1. Fork Purpose & Philosophy
 
 This fork exists to host custom mods and operational enhancements that tailor Marinara Engine to our specific workflows and hardware. Examples include:
+
 - **Tabletop Combat & Mini-games**: ATLS trauma triage mini-game (a combat style on the upstream combat-style registry).
 - **Provider & Generation Tweaks**: GLM 5.x reasoning effort forwarding, custom quota telemetry & polling HUD, context sliding windows.
 - **Deployment**: homeserver deploy tooling (`scripts/marinara-deploy.py`), Docker caching optimizations.
@@ -24,16 +25,19 @@ Because we want to benefit from the continuous improvements of upstream Marinara
 When implementing changes or fixing issues in this repository:
 
 ### A. Keep Changes Minor and Easily Rebased
+
 - **Minimize the footprint in upstream files**: When adding a feature, place new logic in dedicated files/modules whenever possible (e.g. `packages/client/src/components/game/triage/`, `deploy/rulesets/`). Hook into upstream files with minimal, clean insertion points.
 - **Do NOT edit `CHANGELOG.md`**: Upstream updates the changelog continuously across PRs and releases. Carrying local modifications in `CHANGELOG.md` creates guaranteed merge conflicts on every rebase. Local changes are documented in commit messages and this file.
 - **Avoid sweeping changes**: Never perform cosmetic refactorings, wide-ranging file renames, or bulk formatting passes across upstream files. These create merge conflicts during rebasing.
 - **Honor Ponytail discipline**: Skip unnecessary abstractions, reuse existing patterns, write the minimum viable code, and avoid speculative complexity.
 
 ### B. Commits Are Ephemeral — Drop When Fixed Upstream
+
 - **Decouple bug fixes from custom features**: If you are fixing a bug in upstream code or working around an upstream issue, put it in a separate, isolated commit with a clear message (e.g. `fix(generation): ...`). Never combine a temporary upstream bug fix with a custom feature.
 - **Drop superseded commits**: When rebasing onto new upstream releases, always check whether upstream has fixed the issue or introduced an upstream-native implementation. If so, **drop our local commit** during interactive rebase (`git rebase -i`). We do not keep redundant or competing implementations of things upstream already handles.
 
 ### C. Preserve Uncommitted Working Tree Edits
+
 - The working tree frequently contains diagnostic logging, experimental changes, or WIP tasks from the user (for example, diagnostic logs in `generate.routes.ts` or tweaks in `GameSurface.tsx`).
 - **Never run destructive git operations** (such as `git reset --hard` or `git checkout -- .`) without explicit user instruction.
 - Check `git status` and `git diff` to ensure you only stage and touch files relevant to your task.
@@ -42,10 +46,10 @@ When implementing changes or fixing issues in this repository:
 
 ## 3. Remote Setup & Branching Model
 
-| Remote | URL | Role |
-| :--- | :--- | :--- |
+| Remote         | URL                                                 | Role                                |
+| :------------- | :-------------------------------------------------- | :---------------------------------- |
 | **`upstream`** | `https://github.com/Pasta-Devs/Marinara-Engine.git` | Canonical upstream source of truth. |
-| **`origin`** | `https://github.com/bahaynes/Marinara-Engine.git` | Personal fork repository. |
+| **`origin`**   | `https://github.com/bahaynes/Marinara-Engine.git`   | Personal fork repository.           |
 
 - **Primary Branch**: `custom-mods`
 - **Rebase Target**: `upstream/staging` (or `upstream/main`)
@@ -59,6 +63,7 @@ All custom commits sit directly on top of `upstream/staging`.
 Rebasing `custom-mods` onto upstream should be done regularly using the following workflow:
 
 ### Step 1: Inspect Current State
+
 ```bash
 git fetch upstream
 
@@ -73,25 +78,33 @@ git log --oneline HEAD..upstream/staging
 ```
 
 ### Step 2: Check for Already-Upstreamed Changes
+
 ```bash
 git cherry -v upstream/staging
 ```
+
 Commits marked with `-` have already been applied upstream and should be dropped.
 
 ### Step 3: Interactive Rebase
+
 ```bash
 git rebase -i upstream/staging
 ```
+
 In the interactive todo list:
+
 1. **`drop`** any commits that upstream has solved or superseded.
 2. **`pick`** custom-mod features and remaining local fixes.
 3. If conflicts arise, favor upstream's architectural direction and re-apply our custom delta with the minimal necessary diff.
 
 ### Step 4: Validate
+
 After completing the rebase:
+
 ```bash
 pnpm check
 ```
+
 Verify that TypeScript compilation, linting, and tests pass cleanly.
 
 ---
@@ -101,12 +114,14 @@ Verify that TypeScript compilation, linting, and tests pass cleanly.
 All of this runs on the stock **Illustrator**. The separate Illustrator 2 package (agents fork, `fork/packages/illustrator-2`) is deprecated: its behaviour is these engine settings plus its prompt template, which now lives on the stock agent as the **Reference Cast** template (instance config). Engine hooks: `packages/server/src/services/image/image-agent-comfy-extensions.ts` and `illustrator-npc-cast.ts`.
 
 **Agent settings (on the Illustrator's agent config; inert unless set)**
+
 - `presentCharactersOnly` (or chat metadata `illustratorPresentCharactersOnly`): trims character cards to the tracker's `presentCharacters` (plus anyone named in the reply) and drops absent names from references using this turn's tracker snapshot. A card whose ensemble Appearance names a present member stays. The agent gets its own batch so the trim never reaches other agents.
 - `referenceOrder: "requested"`: references follow the writer's `characters` order, and only the image prompt (not the whole reply) is scanned for extra names.
 
 Keep a chat's image **style profile** short (5-8 tags) and the image connection's `imagePromptInstructions` consistent with the template (e.g. "One frozen moment, 30-70 words, at most two people, placed left/right."); instructions like "fully describing the desired outcome" push the writer back to long, crowded prompts.
 
 **Characters without a card of their own**
+
 - **Members of a multi-character card**: write their looks in upstream's ensemble form, `[Name] traits | [Name] traits`, in the card's Appearance or image-only override, body only (no clothes). Each member then gets only their own segment, in layout boxes and on plain prompts (Attach Card Appearance on). `**Name:**` headers are not split.
 - **NPCs met in play**: NPC Registry 0.3.0+ (agents fork) stores each NPC's `looks`, body only. The extractor fills them from the story; the roster modal (tracker panel) edits them, and an edited value is pinned. Promote to Card copies them to the card's Appearance.
 - **Outfits** come from this turn's Character Tracker row, appended to plain prompts as "Name wears ..." (Attach Card Appearance or avatar references on) and put in layout boxes. The tracker's context lists present rows with a blank appearance or outfit and asks for them (`character-tracker-looks.ts`; still a model request).
@@ -116,16 +131,31 @@ Keep a chat's image **style profile** short (5-8 tags) and the image connection'
 **Prompt tokens.** The writer may write `[[Name]]`; after references are resolved it becomes `image N` in actual slot order (Maps location first, avatar-less characters skipped, duplicates collapsed, 4 slots on ComfyUI, 6 elsewhere). `[[location]]` maps to the location slot. Names without a slot stay plain names. With `referenceOrder: "requested"`, plain mentions of a slotted character (full name or any name word of 3+ letters, possessives included) are rewritten to `image N` too; a name word shared by two slotted characters stays as written.
 
 **Workflow placeholders (local ComfyUI only; not RunPod or SwarmUI)**
+
 - `%reference_count%` (number) and `%reference_enabled_01%`..`%reference_enabled_04%` (JSON booleans, true only for real references). For the DaSiWa reference stack set `"enabled": "%reference_enabled_02%"` etc. on each `DaSiWa_OptionalLoadImage`, keeping `%reference_image_name_0N%` (with the placeholder-upload option on) as the image.
 - Agent-chosen variables: add a top-level `marinara_variables` object to the workflow JSON. Marinara strips it before queueing, shows it to image agents, validates their `comfyVariables` answer and always fills a value (the default when absent or invalid). Read the values as `%var_<name>%`:
 
 ```json
 {
   "marinara_variables": {
-    "shot": { "type": "enum", "values": ["close-up", "medium shot", "wide shot"], "default": "medium shot", "description": "camera framing" },
-    "detail_lora": { "type": "number", "min": 0, "max": 1, "default": 0.6, "description": "strength of the detail LoRA" }
+    "shot": {
+      "type": "enum",
+      "values": ["close-up", "medium shot", "wide shot"],
+      "default": "medium shot",
+      "description": "camera framing"
+    },
+    "detail_lora": {
+      "type": "number",
+      "min": 0,
+      "max": 1,
+      "default": 0.6,
+      "description": "strength of the detail LoRA"
+    }
   },
-  "151": { "class_type": "PrimitiveStringMultiline", "inputs": { "value": "%prompt% %var_shot%. <lora:detail:%var_detail_lora%>" } }
+  "151": {
+    "class_type": "PrimitiveStringMultiline",
+    "inputs": { "value": "%prompt% %var_shot%. <lora:detail:%var_detail_lora%>" }
+  }
 }
 ```
 
@@ -175,11 +205,12 @@ RP chats pin a ruleset in Chat Settings > Skill Checks (the same `gameRuleset` p
 Code: `packages/server/src/services/image/comfyui-layout-placeholders.ts`, plus short hooks in `generate.routes.ts` and `generate/retry-agents-route.ts` (look for `comfyLayoutActive`), the limit in `illustrator-background-generation.ts`, and the writer instruction in `character-prompts.ts`, and the template rewrite + result fold in `agent-executor.ts`. Test: `scripts/regressions/comfyui-layout.regression.ts`.
 
 - **Opt-in by workflow.** A plain ComfyUI image connection whose workflow holds `%layout_bboxes%` (Create Bounding Boxes `bboxes` input) gets layout images: MOSS (`%layout_character_boxes%` on MOSS-Image Layout Prompt) or the Flux regional stack (`Flux2RegionalReferenceStack`, "Gaming: Flux Bounding"). Other connections are untouched. Use a separate connection for it rather than editing a shared one.
-- **Writer vs engine.** The Illustrator's writer returns the empty set as `setting`, `lighting` and `props` (no people or animals; the engine joins them into `prompt`) and each character's pose/action in `characterPrompts`; companions ride in their person's action. The engine adds two things per box. **Body**: card/persona Appearance (image override first; an ensemble card gives a member only its own `[Name]` segment), then a lorebook `Looks:` line (entry named for the character) or `<Name> looks:` line, then NPC Registry looks, then the Character Tracker's appearance. A character with a reference image gets no body text. **Outfit**: this turn's Character Tracker outfit, then a lorebook `Outfit:` / `<Name> outfit:` line. Keep clothing out of Appearance and `Looks:` so the tracker can change it. A companion named in an action brings its `<Name> looks:` line. Each box logs `[illustrator] layout box <name>: looks from <source> (...), outfit from <source>`.
-- **Box text** reads action, outfit, then body (capped at 40 words): the Flux regional stack keeps about 128 tokens of a box, so the pose must come first.
-- **Box order = reference slot.** The Flux regional stack pairs box k with reference image k, and Create Bounding Boxes drops any other key (`ref_slot`, `name`). So boxes with a reference come first in slot order, references for unboxed people are dropped, and the Maps location image goes last, only when every box has a reference (`alignComfyLayoutReferences`).
-- **Boxes.** One row of equal full-height columns placed by the writer's x. In testing, 2-3 people were clean; 4 in even columns duplicated a seated person in 2 of 3 renders.
-- **Scene fields.** In layout mode the default Illustrator template's `"prompt"` schema line and its describe-every-character rule are swapped in `agent-executor.ts` (`applyComfyLayoutTemplate`); a custom template is left as is and logs `layout scene fields not applied`. Bench 2026-11-01, 20 scenes: an extra person in 5/18 images with `prompt`, 5/19 with the rule reworded, 0/20 with scene fields.
+- **Writer vs engine.** The Illustrator's writer returns the empty set as `setting`, `lighting` and `props` (no people or animals; the engine joins them into `prompt`) and each character's pose/action in `characterPrompts`; companions ride in their person's action. Box instructions forbid cross-character mentions and motion/merging verbs. The writer prompt marks non-standard forms with `"transformed": true` and optional `role` or `bbox` staging instead of banning shadow or smoke bodies. The engine adds two things per box. **Body**: card/persona Appearance (image override first; an ensemble card gives a member only its own `[Name]` segment), then a lorebook `Looks:` line (entry named for the character) or `<Name> looks:` line, then NPC Registry looks, then the Character Tracker's appearance. A character with a reference image or transformed state gets no static card body text. **Outfit**: this turn's Character Tracker outfit, then a lorebook `Outfit:` / `<Name> outfit:` line. Transformed characters skip static outfits. Keep clothing out of Appearance and `Looks:` so the tracker can change it. A companion named in an action brings its `<Name> looks:` line. Each box logs `[illustrator] layout box <name>: looks from <source> (...), outfit from <source>`.
+- **Form awareness.** `isCharacterTransformedInScene` detects non-standard forms via `transformed: true` on `characterPrompts` or a parenthetical `(... form)` tag in tracker `appearance`. Transformed characters drop human reference portraits in `filterLayoutCharacterReferences` and omit static card appearance and clothing. When `appearance` is empty, an outfit notation such as `None (Dragon form)` still resolves as an empty outfit rather than a form change.
+- **Box text** reads action, outfit, then body (capped at 40 words): the Flux regional stack keeps about 128 tokens of a box, so the pose must come first. Repeated leading self-names in box actions are stripped before prepending `<Name>: `.
+- **Box order = reference slot.** The Flux regional stack pairs box k with reference image k, and Create Bounding Boxes drops any other key (`ref_slot`, `name`). So boxes with a reference come first in slot order, references for unboxed or transformed people are dropped, and the Maps location image goes last, only when every box has a reference (`alignComfyLayoutReferences`).
+- **Boxes.** `resolveCharacterBoundingBox1000` evaluates bounding boxes through a three-tier solver: explicit `bbox` coordinates clamped to 0..1000 with a minimum 150x150 span; named `role` presets (`ROLE_PRESETS_1000`), including overlapping `center_left` (`[120, 180, 960, 560]`) and `center_right` (`[120, 440, 960, 820]`); or full-height columns placed by horizontal position `x`. For two characters with close contact (`|x0 - x1| < 0.25`), column borders expand by 60 units inward to provide contact overlap.
+- **Scene fields.** In layout mode, `rewriteIllustratorTemplateForComfyLayout` rewrites both the stock `Illustration` template and the `Reference Cast` template in `agent-executor.ts` (`applyComfyLayoutTemplate`) to swap `"prompt"` for `setting`, `lighting`, and `props`; any other template is left as is and logs `layout scene fields not applied`. Bench 2026-11-01, 20 scenes: an extra person in 5/18 images with `prompt`, 5/19 with the rule reworded, 0/20 with scene fields.
 - **Cap.** Chat metadata `illustratorLayoutMaxCharacters` (integer, below the connection cap of 6).
 - **Style.** The profile's Style text is writer guidance only (upstream #7357 strips a verbatim copy). Put image-facing style words in the profile's **Positive tags**, which always reach the image model.
 - **Drop when** upstream sends `characterPrompts` to ComfyUI layout workflows itself.

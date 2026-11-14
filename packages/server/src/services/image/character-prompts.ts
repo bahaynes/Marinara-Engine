@@ -89,6 +89,17 @@ function matchCharacterPromptName(value: unknown, characters: string[]): string 
   return matches.length === 1 ? matches[0]! : null;
 }
 
+function sanitizeCharacterBbox(raw: unknown): [number, number, number, number] | undefined {
+  if (!Array.isArray(raw) || raw.length !== 4) {
+    return undefined;
+  }
+  const nums = raw.map((v) => Number(v));
+  if (nums.some((n) => !Number.isFinite(n))) {
+    return undefined;
+  }
+  return [nums[0]!, nums[1]!, nums[2]!, nums[3]!];
+}
+
 /**
  * Validate prompt-writer output against the scene's visible-character list.
  * Unknown names, duplicates, and empty prompts are dropped; positions clamp to
@@ -117,6 +128,9 @@ export function sanitizeCharacterPrompts(
 
     const rawPosition = asRecord(entry.position);
     const hasPosition = rawPosition.x != null || rawPosition.y != null;
+    const role = typeof entry.role === "string" ? entry.role.trim() : "";
+    const bbox = sanitizeCharacterBbox(entry.bbox);
+    const transformed = entry.transformed === true;
     candidates.push({
       name,
       prompt,
@@ -127,6 +141,9 @@ export function sanitizeCharacterPrompts(
             y: normalizeCharacterPromptCoordinate(rawPosition.y, 0.5),
           }
         : undefined,
+      ...(role ? { role } : {}),
+      ...(bbox ? { bbox } : {}),
+      ...(transformed ? { transformed: true } : {}),
     });
   }
 
@@ -181,15 +198,18 @@ function buildComfyLayoutCharacterPromptInstruction(limit: number): string {
   return [
     "<illustrator_character_prompts>",
     `${COMFY_LAYOUT_INSTRUCTION_MARKER} that draws each named character inside their own box of the picture.`,
-    'Extend the JSON you return with "characterPrompts": [ { "name": string, "prompt": string, "negativePrompt": string, "position": { "x": number, "y": number } } ].',
+    'Extend the JSON you return with "characterPrompts": [ { "name": string, "prompt": string, "negativePrompt": string, "position": { "x": number, "y": number }, "role"?: string, "bbox"?: [ymin, xmin, ymax, xmax], "transformed"?: boolean } ].',
     'Include exactly one characterPrompts entry for every name in "characters", using the exact same spelling, even when only one character is visible.',
     `Never name more than ${limit} characters. If more are present, pick the ones this beat is about and leave the rest out of the picture and out of "characters".`,
     'A pet, companion animal or mount that is held by, perched on or ridden by a character belongs to that character: name it in their pose or action, and leave it out of "characters".',
     'Leave "prompt" out; setting, lighting and props replace it.',
-    "Each character prompt holds only that character's pose, action, expression and where they are looking, in one or two sentences. Do not describe their face, body, hair, skin or clothing: the engine adds each character's fixed looks to their box.",
+    'When a character is in their normal body, each character prompt holds only that character\'s pose, action, expression and where they are looking, in one or two sentences — do not describe their face, body, hair, skin or clothing because the engine adds each character\'s fixed looks and reference portrait automatically. However, when the prose places a character in a transformed, shapeshifted or non-standard form (such as a creature, dragon, or living shadow, smoke or light) that no longer matches their default body, set "transformed": true on that characterPrompts entry and describe their complete current visual form in "prompt" so the engine suppresses their default human portrait and static appearance.',
+    "Each box is drawn in isolation: never name or mention another character, partner or second person in a character prompt (no 'looks at Lena', 'beside Nyx', 'pulls a woman into an embrace'). Write only this character's own body and direction (e.g. 'looks to the right', 'reaches her right hand to the right', 'arms raised forward, hands resting against a chest').",
+    "Write one frozen posture with a held-pose verb and at most one stated position per hand. Never write motion or sequence words (undulating, coalescing, merging, trembling, flickering, begins, while, then); describe physical states visually as a still frame.",
     "Write every prompt and character prompt as natural-language descriptive sentences, not comma-separated tags. This overrides any instruction to copy or produce Danbooru tags.",
     "Use an empty string for negativePrompt; this workflow has no per-character negative prompt.",
     NOVELAI_CHARACTER_PROMPT_RULES[3],
+    'Give each visible character a distinct horizontal position x (e.g. 0.3 and 0.7 for two characters), or use optional staging fields: "role" (foreground_left, foreground_right, center, center_left, center_right, background_left, background_center, background_right) or "bbox" ([ymin, xmin, ymax, xmax] in 0..1000 coordinates, minimum 150x150). Use "center_left" and "center_right" (or overlapping "bbox" / close "position.x" values within 0.25) when two characters are in close physical contact such as hugging, kissing, grappling or holding hands, and use an explicit wide "bbox" when a character is lying down or horizontal.',
     "</illustrator_character_prompts>",
   ].join("\n");
 }

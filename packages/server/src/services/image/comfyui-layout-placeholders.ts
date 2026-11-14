@@ -34,6 +34,112 @@ function toGrid(value: number): number {
   return Math.round(Math.min(1, Math.max(0, value)) * 1000);
 }
 
+export const OUTER_MARGIN_1000 = 50;
+export const MIN_BBOX_SPAN_1000 = 150;
+export const CLOSE_CONTACT_X_GAP = 0.25;
+export const CLOSE_CONTACT_OVERLAP_1000 = 60;
+
+export const ROLE_PRESETS_1000: Record<string, [number, number, number, number]> = {
+  center: [100, 250, 950, 750],
+  foreground_left: [120, 40, 960, 480],
+  foreground_right: [120, 520, 960, 960],
+  center_left: [120, 180, 960, 560],
+  center_right: [120, 440, 960, 820],
+  background_left: [60, 60, 680, 380],
+  background_center: [60, 340, 680, 660],
+  background_right: [60, 620, 680, 940],
+};
+
+function clampSpan1000(minVal: number, maxVal: number): [number, number] {
+  let start = Math.max(0, Math.min(1000, Math.round(minVal)));
+  let end = Math.max(0, Math.min(1000, Math.round(maxVal)));
+  if (end < start) {
+    const tmp = start;
+    start = end;
+    end = tmp;
+  }
+  const span = end - start;
+  if (span < MIN_BBOX_SPAN_1000) {
+    const midpoint = (start + end) / 2;
+    const halfSpan = MIN_BBOX_SPAN_1000 / 2;
+    start = Math.round(midpoint - halfSpan);
+    end = start + MIN_BBOX_SPAN_1000;
+    if (start < 0) {
+      end = Math.min(1000, end - start);
+      start = 0;
+    } else if (end > 1000) {
+      start = Math.max(0, start - (end - 1000));
+      end = 1000;
+    }
+  }
+  return [start, end];
+}
+
+export function resolveCharacterBoundingBox1000(
+  entry: SceneIllustrationCharacterPrompt,
+  index: number,
+  entries: readonly SceneIllustrationCharacterPrompt[],
+  columnIndex?: number,
+): [number, number, number, number] {
+  // Tier 1: explicit valid bbox
+  if (Array.isArray(entry.bbox) && entry.bbox.length === 4) {
+    const [rawYmin, rawXmin, rawYmax, rawXmax] = entry.bbox.map(Number);
+    if (
+      Number.isFinite(rawYmin) &&
+      Number.isFinite(rawXmin) &&
+      Number.isFinite(rawYmax) &&
+      Number.isFinite(rawXmax) &&
+      rawYmax! > rawYmin! &&
+      rawXmax! > rawXmin!
+    ) {
+      const [ymin, ymax] = clampSpan1000(rawYmin!, rawYmax!);
+      const [xmin, xmax] = clampSpan1000(rawXmin!, rawXmax!);
+      return [ymin, xmin, ymax, xmax];
+    }
+  }
+
+  // Tier 2: preset role
+  if (typeof entry.role === "string" && entry.role.trim()) {
+    const key = entry.role
+      .toLowerCase()
+      .trim()
+      .replace(/[\s-]+/g, "_");
+    const preset = ROLE_PRESETS_1000[key];
+    if (preset) {
+      return [...preset];
+    }
+  }
+
+  // Tier 3: column layout with close contact widening
+  const col =
+    columnIndex ??
+    entries
+      .map((e, idx) => ({ x: e.position?.x ?? defaultCharacterPromptPosition(idx, 1).x, index: idx }))
+      .sort((a, b) => a.x - b.x || a.index - b.index)
+      .findIndex((item) => item.index === index);
+  const column = col >= 0 ? col : index;
+
+  const margin = (1 - LAYOUT_FILL) / 2;
+  const width = LAYOUT_FILL / Math.max(1, entries.length);
+  let xmin = toGrid(margin + column * width);
+  let xmax = toGrid(margin + (column + 1) * width);
+
+  if (
+    entries.length === 2 &&
+    entries[0]?.position?.x !== undefined &&
+    entries[1]?.position?.x !== undefined &&
+    Math.abs(entries[0].position.x - entries[1].position.x) < CLOSE_CONTACT_X_GAP
+  ) {
+    if (column === 0) {
+      xmax = Math.min(1000 - OUTER_MARGIN_1000, xmax + CLOSE_CONTACT_OVERLAP_1000);
+    } else if (column === 1) {
+      xmin = Math.max(OUTER_MARGIN_1000, xmin - CLOSE_CONTACT_OVERLAP_1000);
+    }
+  }
+
+  return [OUTER_MARGIN_1000, xmin, 1000 - OUTER_MARGIN_1000, xmax];
+}
+
 /**
  * One full-height box per character, side by side in a single row of equal columns placed left to
  * right by the prompt writer's x position (its y is ignored: writers put everyone on the same
@@ -56,19 +162,12 @@ export function buildComfyLayoutReplacements(
       .sort((a, b) => a.x - b.x || a.index - b.index)
       .map(({ index }, column) => [index, column] as const),
   );
-  const margin = (1 - LAYOUT_FILL) / 2;
-  const width = LAYOUT_FILL / Math.max(1, entries.length);
   const elements = entries.map((entry, index) => {
     const column = columnByIndex.get(index) ?? index;
     return {
       type: "obj",
       desc: entry.prompt,
-      bbox: [
-        toGrid(margin),
-        toGrid(margin + column * width),
-        toGrid(margin + LAYOUT_FILL),
-        toGrid(margin + (column + 1) * width),
-      ],
+      bbox: resolveCharacterBoundingBox1000(entry, index, entries, column),
     };
   });
   return {
@@ -260,6 +359,66 @@ export function logComfyLayoutBox(prefix: string) {
     );
 }
 
+export const TRANSFORMED_FORM_TAG_RE = /\([^)]*\bform\b[^)]*\)/i;
+
+export function isCharacterTransformedInScene(
+  entry: SceneIllustrationCharacterPrompt,
+  lookSources?: ComfyLayoutLookSources,
+): boolean {
+  if (entry.transformed === true) return true;
+  if (entry.transformed === false) return false;
+  if (!lookSources) return false;
+
+  const row = lookSources.tracker.find((t) => sameLookName(t.name, entry.name));
+  const trackerApp = trackerValue(row?.appearance);
+  if (!trackerApp || !TRANSFORMED_FORM_TAG_RE.test(trackerApp)) {
+    return false;
+  }
+
+  const baseLook =
+    cardLooks(entry.name, lookSources.cards) ||
+    loreField(entry.name, "looks", lookSources.lore) ||
+    flattenCardText(lookSources.npcs?.find((n) => sameLookName(n.name, entry.name))?.appearance ?? "");
+  if (baseLook && TRANSFORMED_FORM_TAG_RE.test(baseLook)) {
+    return false;
+  }
+
+  return true;
+}
+
+export function filterLayoutCharacterReferences(args: {
+  characterPrompts: readonly SceneIllustrationCharacterPrompt[];
+  referenceImages: string[];
+  referenceNames: string[];
+  lookSources?: ComfyLayoutLookSources;
+}): { referenceImages: string[]; referenceNames: string[] } {
+  const images: string[] = [];
+  const names: string[] = [];
+  const count = Math.min(args.referenceImages.length, args.referenceNames.length);
+
+  for (let i = 0; i < count; i++) {
+    const img = args.referenceImages[i]!;
+    const name = args.referenceNames[i]!;
+    const matchingEntry = args.characterPrompts.find((e) => sameLookName(e.name, name));
+    if (matchingEntry && isCharacterTransformedInScene(matchingEntry, args.lookSources)) {
+      continue;
+    }
+    images.push(img);
+    names.push(name);
+  }
+
+  return { referenceImages: images, referenceNames: names };
+}
+
+/** Strip a repeated leading character name ("Nyx: Nyx lies..." or "Lena lies..." for "Lena Luthor") before prepending "<Name>: ". */
+function stripLeadingCharacterName(action: string, name: string): string {
+  const full = escapeRegExp(name.trim());
+  const first = escapeRegExp(name.trim().split(/\s+/)[0] ?? "");
+  if (!full) return action;
+  const pattern = new RegExp(`^(?:(?:${full}|${first})(?:\\s*:\\s*|\\s+(?!['’]s\\b)))+`, "iu");
+  return action.replace(pattern, "").trim();
+}
+
 /**
  * Fork scene composer: the prompt writer supplies each boxed character's action and pose; the
  * engine supplies who they look like, so looks stay the same from one picture to the next. A
@@ -281,15 +440,39 @@ export function composeComfyLayoutCharacterPrompts(
 ): SceneIllustrationCharacterPrompt[] {
   const companions = loreCompanionLooks(sources.lore);
   return characterPrompts.map((entry) => {
-    const resolved = resolveComfyLayoutLookWithSource(entry.name, sources);
     const referenced = referencedNames.some((name) => sameLookName(name, entry.name));
-    const looks = referenced ? "" : capLookWords(resolved.looks);
-    const { outfit, outfitSource } = resolved;
-    const source = referenced ? "none" : resolved.source;
-    const action = entry.prompt.trim();
+    const transformed = isCharacterTransformedInScene(entry, sources);
+    let looks: string;
+    let source: ComfyLayoutLookSource;
+    let outfit: string;
+    let outfitSource: ComfyLayoutLookSource;
+
+    if (transformed) {
+      if (entry.transformed === true) {
+        looks = "";
+        source = "none";
+      } else {
+        const row = sources.tracker.find((t) => sameLookName(t.name, entry.name));
+        const trackerLook = capLookWords(trackerValue(row?.appearance));
+        looks = referenced ? "" : trackerLook;
+        source = referenced ? "none" : trackerLook ? "tracker" : "none";
+      }
+      outfit = "";
+      outfitSource = "none";
+    } else {
+      const resolved = resolveComfyLayoutLookWithSource(entry.name, sources);
+      looks = referenced ? "" : capLookWords(resolved.looks);
+      source = referenced ? "none" : resolved.source;
+      outfit = resolved.outfit;
+      outfitSource = resolved.outfitSource;
+    }
+
+    const rawAction = entry.prompt.trim();
+    const action = stripLeadingCharacterName(rawAction, entry.name) || rawAction;
     const carried = companions.filter(
       (companion) =>
-        !characterPrompts.some((other) => sameLookName(other.name, companion.name)) && mentions(action, companion.name),
+        !characterPrompts.some((other) => sameLookName(other.name, companion.name)) &&
+        mentions(rawAction, companion.name),
     );
     onLook?.({ name: entry.name, source, looks, outfitSource, companions: carried.map((companion) => companion.name) });
     // The Flux regional stack keeps about 128 tokens of a box's text, so the pose comes first and
@@ -327,10 +510,16 @@ export function finishComfyLayoutBoxes(args: {
   logPrefix: string;
   bindPlainNames: boolean;
 }): { prompt: string; characterPrompts: SceneIllustrationCharacterPrompt[]; referenceImages: string[] | undefined } {
-  const aligned = alignComfyLayoutReferences({
+  const filteredRefs = filterLayoutCharacterReferences({
     characterPrompts: args.writerCharacterPrompts,
     referenceImages: args.referenceImages,
     referenceNames: args.referenceNames,
+    lookSources: args.lookSources,
+  });
+  const aligned = alignComfyLayoutReferences({
+    characterPrompts: args.writerCharacterPrompts,
+    referenceImages: filteredRefs.referenceImages,
+    referenceNames: filteredRefs.referenceNames,
     locationImage: args.locationImage,
     maxSlots: maxReferenceSlotsForSource(args.source),
   });
@@ -392,13 +581,15 @@ const UPSTREAM_ILLUSTRATOR_PROMPT_FIELD = '"prompt": "detailed prompt if shouldG
 const UPSTREAM_ILLUSTRATOR_PEOPLE_RULES =
   "Prompt rules: describe composition, lighting, mood, environment, and every visible character/persona directly. For each visible character/persona, " +
   "include available body build (chubby, slim, muscular, etc.), clothing/outfit, hair, face, distinguishing features, and other appearance details from context. Do not invent missing traits.";
+const REFERENCE_CAST_PROMPT_FIELD = '"prompt": "30-70 word prose prompt following the rules above",';
+const REFERENCE_CAST_CHARACTERS_FIELD = '"characters": ["exact name, most important first"],';
 const COMFY_LAYOUT_SCENE_FIELDS =
   '"setting": "the place itself: architecture, ground, plants, furniture. No people or animals.",\n' +
   '  "lighting": "light, weather, time of day and mood. No people or animals.",\n' +
   '  "props": "loose objects in the scene that nobody is holding. No people or animals.",';
 const COMFY_LAYOUT_SCENE_RULES =
   "Prompt rules: setting, lighting and props describe the empty set the characters stand in and never mention a person, animal or body. " +
-  "Everything about a character (pose, action, expression, what they hold, who they look at) goes only in their characterPrompts entry.";
+  "Everything about a character (pose, action, expression, what they hold, where they look as a direction rather than another person's name) goes only in their characterPrompts entry.";
 const COMFY_LAYOUT_SCENE_KEYS = ["setting", "lighting", "props"] as const;
 
 export function isComfyLayoutCharacterPromptInstruction(instruction: unknown): boolean {
@@ -407,16 +598,24 @@ export function isComfyLayoutCharacterPromptInstruction(instruction: unknown): b
 
 /** The Illustrator template with the scene-field contract swapped in, or null when its wording isn't the default's. */
 export function rewriteIllustratorTemplateForComfyLayout(template: string, limit = 0): string | null {
-  if (!template.includes(UPSTREAM_ILLUSTRATOR_PROMPT_FIELD) || !template.includes(UPSTREAM_ILLUSTRATOR_PEOPLE_RULES)) {
-    return null;
+  if (template.includes(UPSTREAM_ILLUSTRATOR_PROMPT_FIELD) && template.includes(UPSTREAM_ILLUSTRATOR_PEOPLE_RULES)) {
+    const rewritten = template
+      .replace(UPSTREAM_ILLUSTRATOR_PROMPT_FIELD, () => COMFY_LAYOUT_SCENE_FIELDS)
+      .replace(UPSTREAM_ILLUSTRATOR_PEOPLE_RULES, () => COMFY_LAYOUT_SCENE_RULES);
+    if (limit <= 0) return rewritten;
+    return rewritten
+      .replace(UPSTREAM_ILLUSTRATOR_CHARACTERS_FIELD, () => `"characters": ["up to ${limit} names"]`)
+      .replace(UPSTREAM_ILLUSTRATOR_ALL_NAMES, () => comfyLayoutNamesRule(limit));
   }
-  const rewritten = template
-    .replace(UPSTREAM_ILLUSTRATOR_PROMPT_FIELD, () => COMFY_LAYOUT_SCENE_FIELDS)
-    .replace(UPSTREAM_ILLUSTRATOR_PEOPLE_RULES, () => COMFY_LAYOUT_SCENE_RULES);
-  if (limit <= 0) return rewritten;
-  return rewritten
-    .replace(UPSTREAM_ILLUSTRATOR_CHARACTERS_FIELD, () => `"characters": ["up to ${limit} names"]`)
-    .replace(UPSTREAM_ILLUSTRATOR_ALL_NAMES, () => comfyLayoutNamesRule(limit));
+  if (template.includes(REFERENCE_CAST_PROMPT_FIELD)) {
+    const rewritten = `${template.replace(REFERENCE_CAST_PROMPT_FIELD, () => COMFY_LAYOUT_SCENE_FIELDS)}\n\n${COMFY_LAYOUT_SCENE_RULES}`;
+    if (limit <= 0) return rewritten;
+    return rewritten.replace(
+      REFERENCE_CAST_CHARACTERS_FIELD,
+      () => `"characters": ["up to ${limit} exact names, most important first"],`,
+    );
+  }
+  return null;
 }
 
 /**
