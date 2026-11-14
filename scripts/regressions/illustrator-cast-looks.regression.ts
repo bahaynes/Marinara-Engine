@@ -76,7 +76,7 @@ assert.deepEqual(
 assert.deepEqual(
   await loadIllustratorNpcCast({
     chatId: "c1",
-    knownNames: ["Hunting Party"],
+    cards: [{ name: "Hunting Party", appearance: "" }],
     presentCharacters: [
       { name: "Petra Nash", avatarPath: "/api/avatars/npc/c1/petra-nash.png", appearance: "tall, platinum shag" },
       { name: "Dez", avatarPath: null },
@@ -106,7 +106,7 @@ registerCapabilityService("npc-registry", {
 });
 const cast = await loadIllustratorNpcCast({
   chatId: "c1",
-  knownNames: [],
+  cards: [],
   presentCharacters: [{ name: "Petra Nash", avatarPath: "/p.png", appearance: "" }],
 });
 assert.deepEqual(cast, [
@@ -116,5 +116,15 @@ assert.deepEqual(cast, [
 ]);
 assert.ok(cast.every((entry) => isIllustratorNpcCastId(entry.id)));
 assert.equal(isIllustratorNpcCastId("abc123"), false, "a card id is not an NPC");
+
+// A member of an ensemble card keeps the registry portrait but not registry looks: the card describes them.
+const memberCast = await loadIllustratorNpcCast({
+  chatId: "c1",
+  cards: [{ name: "Hunting Party", appearance: "[Dez] wiry, from the card | [Rani] hourglass" }],
+});
+assert.deepEqual(
+  memberCast.find((entry) => entry.name === "Dez"),
+  { id: "npc-registry:n2", name: "Dez", avatarPath: null, appearance: null },
+);
 
 console.log("Illustrator cast looks regression passed");

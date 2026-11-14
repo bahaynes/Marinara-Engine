@@ -5142,10 +5142,11 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
         const charInfo = await loadCharacterPromptInfo({ chars, characterIds, chatMode, chatId: input.chatId });
         // custom-mods: card-less people (tracker portraits, NPC Registry); refreshed with this turn's tracker rows
         // before a picture is drawn.
-        let illustratorNpcCast = await loadIllustratorNpcCast({
-          chatId: input.chatId,
-          knownNames: charInfo.map((character) => character.name),
-        });
+        const illustratorCastCards = charInfo.map((character) => ({
+          name: character.name,
+          appearance: character.imageAppearanceOverride || character.appearance,
+        }));
+        let illustratorNpcCast = await loadIllustratorNpcCast({ chatId: input.chatId, cards: illustratorCastCards });
         // Who Illustrator can show: the chat's characters (and a character used as the user's identity)
         // and the user's persona, with their appearance and avatars. Pictures and clips match names against it.
         const illustratorCast = () => ({
@@ -15252,7 +15253,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                           .catch(() => null));
                       illustratorNpcCast = await loadIllustratorNpcCast({
                         chatId: input.chatId,
-                        knownNames: charInfo.map((character) => character.name),
+                        cards: illustratorCastCards,
                         presentCharacters: turnTrackerRows,
                       });
                       if (imagePromptAgent?.settings?.presentCharactersOnly === true) {
@@ -15457,10 +15458,13 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                           referenceNames: useAvatarRefs ? referenceResolution.referenceNames : [],
                           locationImage: spatialLocationReferenceImage,
                           source: imgSource,
-                          lookSources: comfyLayoutLookSourcesFromContext(
-                            agentContext,
-                            turnTrackerRows as Parameters<typeof comfyLayoutLookSourcesFromContext>[1],
-                          ),
+                          lookSources: {
+                            ...comfyLayoutLookSourcesFromContext(
+                              agentContext,
+                              turnTrackerRows as Parameters<typeof comfyLayoutLookSourcesFromContext>[1],
+                            ),
+                            npcs: illustratorNpcCast,
+                          },
                           logPrefix: "[illustrator] layout box",
                           bindPlainNames: requestOrderedReferences,
                         });

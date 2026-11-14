@@ -91,7 +91,7 @@ export function applyComfyLayoutCharacterCap(connectionLimit: number, chatMetada
   return Math.min(connectionLimit, cap);
 }
 
-/** Where a layout box's fixed look comes from, in Ben's priority order: card, lore `Looks:` line, tracker. */
+/** Where a layout box's fixed look comes from, in Ben's priority order: card, lore `Looks:` line, NPC Registry, tracker. */
 export type ComfyLayoutLookSources = {
   /** Character cards and the persona; `appearance` should already prefer the image-only override. */
   cards: ReadonlyArray<{ name: string; appearance?: string | null }>;
@@ -99,6 +99,8 @@ export type ComfyLayoutLookSources = {
   lore: ReadonlyArray<{ name?: string | null; content: string }>;
   /** Character tracker rows. */
   tracker: ReadonlyArray<{ name: string; appearance?: string | null; outfit?: string | null }>;
+  /** People with no card: NPC Registry looks (see loadIllustratorNpcCast). */
+  npcs?: ReadonlyArray<{ name: string; appearance?: string | null }>;
 };
 
 function normalizeLookName(value: string): string {
@@ -151,7 +153,7 @@ function trackerValue(value: string | null | undefined): string {
   return /^(?:(?:none|n\/?a|unknown)(?![\p{L}\p{N}]).*|-)?$/isu.test(text) ? "" : text;
 }
 
-export type ComfyLayoutLookSource = "card" | "lore" | "tracker" | "none";
+export type ComfyLayoutLookSource = "card" | "lore" | "npc" | "tracker" | "none";
 
 /** Card text as one plain line: markdown emphasis, headings and line breaks would reach the image model verbatim. */
 function flattenCardText(value: string): string {
@@ -182,7 +184,8 @@ function cardLooks(name: string, cards: ComfyLayoutLookSources["cards"]): string
 }
 
 /**
- * Body: fixed traits, card or persona first, then the lore `Looks:` line, then the tracker.
+ * Body: fixed traits, card or persona first, then the lore `Looks:` line, then NPC Registry looks,
+ * then the tracker.
  * Outfit: current clothes, the tracker first (it follows the story), then the lore `Outfit:` line.
  * Card text may still carry clothing; split it into Appearance and an `Outfit:` lore line to let
  * the tracker take over.
@@ -203,6 +206,8 @@ export function resolveComfyLayoutLookWithSource(
   if (card) return { looks: card, source: "card", ...outfit };
   const lore = loreField(name, "looks", sources.lore);
   if (lore) return { looks: lore, source: "lore", ...outfit };
+  const npc = flattenCardText(sources.npcs?.find((entry) => sameLookName(entry.name, name))?.appearance ?? "");
+  if (npc) return { looks: npc, source: "npc", ...outfit };
   const tracker = trackerValue(row?.appearance);
   return tracker ? { looks: tracker, source: "tracker", ...outfit } : { looks: "", source: "none", ...outfit };
 }

@@ -209,6 +209,15 @@ assert.deepEqual(
   "this turn's tracker update beats the context's older state",
 );
 assert.equal(resolveComfyLayoutLooks("Nobody", lookSources), "");
+// NPC Registry looks rank after a lore Looks: line and before the tracker.
+assert.equal(
+  resolveComfyLayoutLooks("Tess", { ...lookSources, npcs: [{ name: "Tess", appearance: "registry look for Tess" }] }),
+  "registry look for Tess",
+);
+assert.equal(
+  resolveComfyLayoutLooks("Oren", { ...lookSources, npcs: [{ name: "Oren", appearance: "registry look for Oren" }] }),
+  "lore look for Oren",
+);
 
 // The writer's action comes first and the engine's looks last: the Flux regional stack keeps
 // only about 128 tokens of a box.
