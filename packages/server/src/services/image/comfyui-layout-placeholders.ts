@@ -5,7 +5,13 @@ import {
   defaultCharacterPromptPosition,
   personaEntityId,
   readIllustratorImageAppearanceOverride,
+  splitEnsembleAppearance,
 } from "./character-prompts.js";
+import {
+  alignComfyLayoutReferences,
+  bindReferenceTokens,
+  maxReferenceSlotsForSource,
+} from "./image-agent-comfy-extensions.js";
 
 /**
  * Fork: ComfyUI layout workflows (Create Bounding Boxes -> MOSS-Image Layout Prompt) draw each
@@ -29,33 +35,42 @@ function toGrid(value: number): number {
 }
 
 /**
- * One full-height box per character, side by side in a single row of equal columns, ordered left
- * to right by the prompt writer's x position (its y is ignored: writers put everyone on the same
+ * One full-height box per character, side by side in a single row of equal columns placed left to
+ * right by the prompt writer's x position (its y is ignored: writers put everyone on the same
  * line, and short stacked boxes duplicated people in testing). Create Bounding Boxes reads each
  * element's `bbox` as [ymin, xmin, ymax, xmax] on a 0-1000 grid; an empty list leaves the MOSS
  * prompt as the plain scene prompt.
+ *
+ * Elements keep the caller's order: the Flux regional reference stack pairs element k with
+ * reference image k, and Create Bounding Boxes drops any other pairing key, so the caller puts
+ * the referenced characters first in slot order (`alignComfyLayoutReferences`).
  */
 export function buildComfyLayoutReplacements(
   characterPrompts: readonly SceneIllustrationCharacterPrompt[] | undefined,
 ): Record<string, string> {
-  const entries = (characterPrompts ?? [])
-    .slice(0, COMFYUI_LAYOUT_MAX_CHARACTER_PROMPTS)
-    // Gallery regenerations may arrive without a position; they keep their order.
-    .map((entry, index) => ({ entry, x: entry.position?.x ?? defaultCharacterPromptPosition(index, 1).x, index }))
-    .sort((a, b) => a.x - b.x || a.index - b.index)
-    .map(({ entry }) => entry);
+  const entries = (characterPrompts ?? []).slice(0, COMFYUI_LAYOUT_MAX_CHARACTER_PROMPTS);
+  // Gallery regenerations may arrive without a position; they keep their order.
+  const columnByIndex = new Map(
+    entries
+      .map((entry, index) => ({ x: entry.position?.x ?? defaultCharacterPromptPosition(index, 1).x, index }))
+      .sort((a, b) => a.x - b.x || a.index - b.index)
+      .map(({ index }, column) => [index, column] as const),
+  );
   const margin = (1 - LAYOUT_FILL) / 2;
   const width = LAYOUT_FILL / Math.max(1, entries.length);
-  const elements = entries.map((entry, index) => ({
-    type: "obj",
-    desc: entry.prompt,
-    bbox: [
-      toGrid(margin),
-      toGrid(margin + index * width),
-      toGrid(margin + LAYOUT_FILL),
-      toGrid(margin + (index + 1) * width),
-    ],
-  }));
+  const elements = entries.map((entry, index) => {
+    const column = columnByIndex.get(index) ?? index;
+    return {
+      type: "obj",
+      desc: entry.prompt,
+      bbox: [
+        toGrid(margin),
+        toGrid(margin + column * width),
+        toGrid(margin + LAYOUT_FILL),
+        toGrid(margin + (column + 1) * width),
+      ],
+    };
+  });
   return {
     [COMFYUI_LAYOUT_BBOXES_PLACEHOLDER]: JSON.stringify(elements),
     [COMFYUI_LAYOUT_CHARACTER_BOXES_PLACEHOLDER]: elements.map((_, index) => index + 1).join(", "),
@@ -138,6 +153,34 @@ function trackerValue(value: string | null | undefined): string {
 
 export type ComfyLayoutLookSource = "card" | "lore" | "tracker" | "none";
 
+/** Card text as one plain line: markdown emphasis, headings and line breaks would reach the image model verbatim. */
+function flattenCardText(value: string): string {
+  return value
+    .replace(/[*_#`]+/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * A card's Appearance for one name. An ensemble card ("[Ana] tags | [Bea] tags", upstream's
+ * format for several people on one card) gives each member only their own segment, never the
+ * whole block.
+ */
+function cardLooks(name: string, cards: ComfyLayoutLookSources["cards"]): string {
+  for (const card of cards) {
+    const text = flattenCardText(card.appearance ?? "");
+    if (!text) continue;
+    const segments = splitEnsembleAppearance(text);
+    if (segments) {
+      const member = segments.find((segment) => sameLookName(segment.name, name));
+      if (member?.appearance) return member.appearance;
+    } else if (sameLookName(card.name, name)) {
+      return text;
+    }
+  }
+  return "";
+}
+
 /**
  * Body: fixed traits, card or persona first, then the lore `Looks:` line, then the tracker.
  * Outfit: current clothes, the tracker first (it follows the story), then the lore `Outfit:` line.
@@ -156,7 +199,7 @@ export function resolveComfyLayoutLookWithSource(
     : loreOutfit
       ? { outfit: loreOutfit, outfitSource: "lore" as const }
       : { outfit: "", outfitSource: "none" as const };
-  const card = sources.cards.find((entry) => sameLookName(entry.name, name))?.appearance?.trim();
+  const card = cardLooks(name, sources.cards);
   if (card) return { looks: card, source: "card", ...outfit };
   const lore = loreField(name, "looks", sources.lore);
   if (lore) return { looks: lore, source: "lore", ...outfit };
@@ -228,24 +271,74 @@ export function composeComfyLayoutCharacterPrompts(
     outfitSource: ComfyLayoutLookSource;
     companions: string[];
   }) => void,
+  /** Names whose reference image already shows their face and body; their box carries no looks text. */
+  referencedNames: readonly string[] = [],
 ): SceneIllustrationCharacterPrompt[] {
   const companions = loreCompanionLooks(sources.lore);
   return characterPrompts.map((entry) => {
-    const { looks, source, outfit, outfitSource } = resolveComfyLayoutLookWithSource(entry.name, sources);
+    const resolved = resolveComfyLayoutLookWithSource(entry.name, sources);
+    const referenced = referencedNames.some((name) => sameLookName(name, entry.name));
+    const looks = referenced ? "" : capLookWords(resolved.looks);
+    const { outfit, outfitSource } = resolved;
+    const source = referenced ? "none" : resolved.source;
     const action = entry.prompt.trim();
     const carried = companions.filter(
       (companion) =>
         !characterPrompts.some((other) => sameLookName(other.name, companion.name)) && mentions(action, companion.name),
     );
     onLook?.({ name: entry.name, source, looks, outfitSource, companions: carried.map((companion) => companion.name) });
+    // The Flux regional stack keeps about 128 tokens of a box's text, so the pose comes first and
+    // the looks, the longest part, last.
     const parts = [
-      looks ? `${entry.name}: ${trimLook(looks)}.` : `${entry.name}:`,
+      action ? `${entry.name}: ${trimLook(action)}.` : `${entry.name}:`,
       ...(outfit ? [`Wearing ${trimLook(outfit)}.`] : []),
-      action,
+      ...(looks ? [`${trimLook(looks)}.`] : []),
       ...carried.map((companion) => `${companion.name}: ${trimLook(companion.looks)}.`),
     ];
     return { ...entry, prompt: parts.join(" ") };
   });
+}
+
+// ponytail: a word cap, not a token count; upgrade to the text encoder's tokenizer if boxes still lose words.
+const MAX_LOOK_WORDS = 40;
+function capLookWords(value: string): string {
+  const words = value.split(/\s+/).filter(Boolean);
+  return words.length <= MAX_LOOK_WORDS ? value : words.slice(0, MAX_LOOK_WORDS).join(" ");
+}
+
+/**
+ * Layout-workflow half of the generate and retry routes, run once references are resolved: pair
+ * box k with reference slot k, write each box (no looks for a referenced character), and bind
+ * the scene prompt's [[Name]] tokens to those slots.
+ */
+export function finishComfyLayoutBoxes(args: {
+  prompt: string;
+  writerCharacterPrompts: SceneIllustrationCharacterPrompt[];
+  referenceImages: string[];
+  referenceNames: string[];
+  locationImage: string | null;
+  source: string;
+  lookSources: ComfyLayoutLookSources;
+  logPrefix: string;
+  bindPlainNames: boolean;
+}): { prompt: string; characterPrompts: SceneIllustrationCharacterPrompt[]; referenceImages: string[] | undefined } {
+  const aligned = alignComfyLayoutReferences({
+    characterPrompts: args.writerCharacterPrompts,
+    referenceImages: args.referenceImages,
+    referenceNames: args.referenceNames,
+    locationImage: args.locationImage,
+    maxSlots: maxReferenceSlotsForSource(args.source),
+  });
+  return {
+    prompt: bindReferenceTokens(args.prompt, aligned.referenceNames, args.bindPlainNames),
+    characterPrompts: composeComfyLayoutCharacterPrompts(
+      aligned.characterPrompts,
+      args.lookSources,
+      logComfyLayoutBox(args.logPrefix),
+      aligned.referenceNames,
+    ),
+    referenceImages: aligned.referenceImages.length > 0 ? aligned.referenceImages : undefined,
+  };
 }
 
 /** Look sources from an agent context, for the generate and retry routes. */

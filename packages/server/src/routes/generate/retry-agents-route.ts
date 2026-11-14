@@ -173,9 +173,8 @@ import {
   supportsNovelAiCharacterPrompts,
 } from "../../services/image/character-prompts.js";
 import {
-  composeComfyLayoutCharacterPrompts,
-  logComfyLayoutBox,
   comfyLayoutLookSourcesFromContext,
+  finishComfyLayoutBoxes,
 } from "../../services/image/comfyui-layout-placeholders.js";
 import { resolveImagePromptReviewSize } from "../../services/image/image-prompt-review.js";
 import {
@@ -4058,13 +4057,8 @@ async function applyRetryResultEffects(args: {
               illCharacters.filter((name): name is string => typeof name === "string"),
               characterPromptLimit,
             );
-            const illustratorCharacterPrompts = comfyLayoutActive
-              ? composeComfyLayoutCharacterPrompts(
-                  writerCharacterPrompts,
-                  comfyLayoutLookSourcesFromContext(agentContext),
-                  logComfyLayoutBox("[retry-agents] Illustrator layout box"),
-                )
-              : writerCharacterPrompts;
+            // custom-mods: layout boxes are composed once the reference slots are known (below).
+            let illustratorCharacterPrompts = writerCharacterPrompts;
             if (illustratorCharacterPrompts.length > 0) {
               logger.debug(
                 "[retry-agents] Illustrator sending %d native NovelAI character caption(s): %s",
@@ -4227,7 +4221,8 @@ async function applyRetryResultEffects(args: {
               }
             }
             if (useAvatarRefs && referenceResolution.referenceImages.length > 0) {
-              if (referenceResolution.referenceLine && !suppressReferencePromptLine)
+              // custom-mods: on a layout workflow each box is paired with its own slot instead.
+              if (referenceResolution.referenceLine && !suppressReferencePromptLine && !comfyLayoutActive)
                 fullPrompt += `\n\n${referenceResolution.referenceLine}`;
               logger.debug(
                 "[retry-agents] Illustrator sending %d character reference(s) for: %s",
@@ -4243,18 +4238,36 @@ async function applyRetryResultEffects(args: {
             if (mergedReferenceImages.length > 0) {
               referenceImages = mergedReferenceImages;
             }
-            if (spatialLocationReferenceImage) {
+            if (spatialLocationReferenceImage && !comfyLayoutActive) {
               // Illustrator 2 names the location slot itself via [[location]].
               if (!requestOrderedReferences) fullPrompt += `\n\n${SPATIAL_LOCATION_REFERENCE_PROMPT_LINE}`;
               logger.debug("[retry-agents] Illustrator sending the current Maps location reference image first");
             }
-            fullPrompt = bindIllustratorReferenceTokens(fullPrompt, {
-              locationImage: spatialLocationReferenceImage,
-              referenceImages: useAvatarRefs ? referenceResolution.referenceImages : [],
-              referenceNames: useAvatarRefs ? referenceResolution.referenceNames : [],
-              source: imgSource,
-              bindPlainNames: requestOrderedReferences,
-            });
+            if (comfyLayoutActive) {
+              // custom-mods: box k is paired with reference image k on the workflow side.
+              const layout = finishComfyLayoutBoxes({
+                prompt: fullPrompt,
+                writerCharacterPrompts,
+                referenceImages: useAvatarRefs ? referenceResolution.referenceImages : [],
+                referenceNames: useAvatarRefs ? referenceResolution.referenceNames : [],
+                locationImage: spatialLocationReferenceImage,
+                source: imgSource,
+                lookSources: comfyLayoutLookSourcesFromContext(agentContext),
+                logPrefix: "[retry-agents] Illustrator layout box",
+                bindPlainNames: requestOrderedReferences,
+              });
+              fullPrompt = layout.prompt;
+              illustratorCharacterPrompts = layout.characterPrompts;
+              referenceImages = layout.referenceImages;
+            } else {
+              fullPrompt = bindIllustratorReferenceTokens(fullPrompt, {
+                locationImage: spatialLocationReferenceImage,
+                referenceImages: useAvatarRefs ? referenceResolution.referenceImages : [],
+                referenceNames: useAvatarRefs ? referenceResolution.referenceNames : [],
+                source: imgSource,
+                bindPlainNames: requestOrderedReferences,
+              });
+            }
 
             const compiledPrompt = compileImagePrompt({
               kind: "illustration",

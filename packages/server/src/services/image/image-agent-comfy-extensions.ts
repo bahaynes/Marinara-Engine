@@ -187,6 +187,47 @@ export function buildReferenceSlots(args: {
   return { images, names, dropped };
 }
 
+/**
+ * Fork, layout workflows: the Flux regional reference stack pairs box k with reference image k,
+ * and Create Bounding Boxes drops any other pairing key. So references are cut to the boxed
+ * characters, boxes with a reference go first in slot order, and the rest follow. A Maps location
+ * image takes a slot after the characters instead of slot 1, and only when every box has a
+ * reference: otherwise the first box without one would be paired with the location image.
+ */
+export function alignComfyLayoutReferences<T extends { name: string }>(args: {
+  characterPrompts: T[];
+  referenceImages: string[];
+  referenceNames: string[];
+  locationImage: string | null;
+  maxSlots: number;
+}): { characterPrompts: T[]; referenceImages: string[]; referenceNames: string[] } {
+  const images: string[] = [];
+  const names: string[] = [];
+  const boxed: T[] = [];
+  args.referenceImages.forEach((image, index) => {
+    const name = args.referenceNames[index] ?? "";
+    const box = args.characterPrompts.find((entry) => !boxed.includes(entry) && namesMatch(entry.name, name));
+    if (!box || images.includes(image) || images.length >= args.maxSlots) return;
+    images.push(image);
+    names.push(name);
+    boxed.push(box);
+  });
+  if (
+    args.locationImage &&
+    boxed.length === args.characterPrompts.length &&
+    images.length < args.maxSlots &&
+    !images.includes(args.locationImage)
+  ) {
+    images.push(args.locationImage);
+    names.push("location");
+  }
+  return {
+    characterPrompts: [...boxed, ...args.characterPrompts.filter((entry) => !boxed.includes(entry))],
+    referenceImages: images,
+    referenceNames: names,
+  };
+}
+
 export function maxReferenceSlotsForSource(source: string): number {
   return /comfy/i.test(source) ? COMFYUI_MAX_REFERENCE_IMAGES : 6;
 }

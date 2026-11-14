@@ -18,6 +18,7 @@ import {
   rewriteIllustratorTemplateForComfyLayout,
 } from "../../packages/server/src/services/image/comfyui-layout-placeholders.js";
 import type { AgentContext } from "../../packages/shared/src/index.js";
+import { alignComfyLayoutReferences } from "../../packages/server/src/services/image/image-agent-comfy-extensions.js";
 import { renderAgentPromptTemplate } from "../../packages/server/src/services/agents/agent-executor.js";
 import {
   buildManualIllustratorPromptMessages,
@@ -51,8 +52,9 @@ assert.deepEqual(parse(pairReplacements), [
 ]);
 assert.equal(pairReplacements["%layout_character_boxes%"], "1, 2");
 
-// Four characters stay in one row (stacked short boxes duplicated people), ordered by the
-// writer's x; its y is ignored.
+// Four characters stay in one row (stacked short boxes duplicated people), placed in columns by
+// the writer's x (its y is ignored). Elements keep the caller's order: the Flux regional stack
+// pairs element k with reference image k.
 const four = buildComfyLayoutReplacements(
   ["A", "B", "C", "D"].map((name, index) => ({
     name,
@@ -62,12 +64,13 @@ const four = buildComfyLayoutReplacements(
 );
 assert.deepEqual(
   parse(four).map((entry) => entry.desc),
-  ["person B", "person D", "person C", "person A"],
+  ["person A", "person B", "person C", "person D"],
 );
 for (const [index, { bbox }] of parse(four).entries()) {
   const [ymin, xmin, ymax, xmax] = bbox as [number, number, number, number];
+  const column = [3, 0, 2, 1][index]!;
   assert.deepEqual([ymin, ymax], [50, 950], `full height: ${bbox}`);
-  assert.equal(xmin, 50 + index * 225, `column ${index}`);
+  assert.equal(xmin, 50 + column * 225, `element ${index} sits in column ${column}`);
   assert.equal(xmax - xmin, 225, "four columns of 0.225");
 }
 assert.equal(four["%layout_character_boxes%"], "1, 2, 3, 4");
@@ -188,8 +191,8 @@ assert.deepEqual(
     outfitSources,
   ).map((entry) => entry.prompt),
   [
-    "Mira Vale: small, freckled. Wearing a soaked white wedding dress. wrings out her hem.",
-    "Oren Hask: a broad smith. Wearing a scorched apron. laughs.",
+    "Mira Vale: wrings out her hem. Wearing a soaked white wedding dress. small, freckled.",
+    "Oren Hask: laughs. Wearing a scorched apron. a broad smith.",
   ],
   "tracker outfit wins; a tracker 'none' falls back to the lore outfit",
 );
@@ -207,7 +210,8 @@ assert.deepEqual(
 );
 assert.equal(resolveComfyLayoutLooks("Nobody", lookSources), "");
 
-// The composer puts the engine's looks in front of the writer's action.
+// The writer's action comes first and the engine's looks last: the Flux regional stack keeps
+// only about 128 tokens of a box.
 assert.deepEqual(
   composeComfyLayoutCharacterPrompts(
     [
@@ -216,7 +220,81 @@ assert.deepEqual(
     ],
     lookSources,
   ).map((entry) => entry.prompt),
-  ["Oren: lore look for Oren. kneels by the fire.", "Nobody: waves."],
+  ["Oren: kneels by the fire. lore look for Oren.", "Nobody: waves."],
+);
+
+// A referenced character's box carries no looks (the reference shows them); outfit stays.
+assert.deepEqual(
+  composeComfyLayoutCharacterPrompts(
+    [{ name: "Mira Vale", prompt: "wrings out her hem.", position: { x: 0.5, y: 0.5 } }],
+    outfitSources,
+    undefined,
+    ["Mira Vale"],
+  ).map((entry) => entry.prompt),
+  ["Mira Vale: wrings out her hem. Wearing a soaked white wedding dress."],
+);
+
+// Looks are capped so the box text stays inside the region's token budget.
+const longLooks = Array.from({ length: 60 }, (_, index) => `w${index}`).join(" ");
+const cappedBox = composeComfyLayoutCharacterPrompts([{ name: "Ivo", prompt: "sits.", position: { x: 0.5, y: 0.5 } }], {
+  cards: [{ name: "Ivo", appearance: longLooks }],
+  lore: [],
+  tracker: [],
+})[0]!.prompt;
+assert.ok(cappedBox.includes("w39") && !cappedBox.includes("w40"), cappedBox);
+
+// An ensemble card ("[Name] traits | [Name] traits") gives each member only their own segment,
+// with markdown flattened; the card's own name gets no looks from it.
+const ensembleSources = {
+  cards: [
+    { name: "Shadow Pair", appearance: "[Nyx] **Ink-black** hair,\nviolet eyes | [Jinx] fair skin, purple streak" },
+    { name: "Lena", appearance: "## Lena\nemerald eyes" },
+  ],
+  lore: [],
+  tracker: [],
+};
+assert.equal(resolveComfyLayoutLooks("Nyx", ensembleSources), "Ink-black hair, violet eyes");
+assert.equal(resolveComfyLayoutLooks("Jinx", ensembleSources), "fair skin, purple streak");
+assert.equal(resolveComfyLayoutLooks("Shadow Pair", ensembleSources), "");
+assert.equal(resolveComfyLayoutLooks("Lena", ensembleSources), "Lena emerald eyes");
+
+// Box k is paired with reference slot k: boxes with a reference go first in slot order, references
+// for people without a box are dropped, and a location image comes last, only when no box would
+// be paired with it.
+const boxes = [
+  { name: "Petra", prompt: "left", position: { x: 0.2, y: 0.5 } },
+  { name: "Avery", prompt: "middle", position: { x: 0.5, y: 0.5 } },
+  { name: "Rani", prompt: "right", position: { x: 0.8, y: 0.5 } },
+];
+const alignedRefs = alignComfyLayoutReferences({
+  characterPrompts: boxes,
+  referenceImages: ["img-tilly", "img-rani", "img-avery"],
+  referenceNames: ["Tilly", "Rani Stanhope", "Avery"],
+  locationImage: "img-location",
+  maxSlots: 4,
+});
+assert.deepEqual(
+  alignedRefs.characterPrompts.map((entry) => entry.name),
+  ["Rani", "Avery", "Petra"],
+);
+assert.deepEqual(alignedRefs.referenceImages, ["img-rani", "img-avery"], "Petra has no reference, so no location");
+const fullyReferenced = alignComfyLayoutReferences({
+  characterPrompts: boxes.slice(1),
+  referenceImages: ["img-rani", "img-avery"],
+  referenceNames: ["Rani", "Avery"],
+  locationImage: "img-location",
+  maxSlots: 4,
+});
+assert.deepEqual(fullyReferenced.referenceImages, ["img-rani", "img-avery", "img-location"]);
+assert.deepEqual(fullyReferenced.referenceNames, ["Rani", "Avery", "location"]);
+// The columns still follow the writer's x after the reorder.
+assert.deepEqual(
+  parse(buildComfyLayoutReplacements(alignedRefs.characterPrompts)).map((entry) => [entry.desc, entry.bbox[1]]),
+  [
+    ["right", 650],
+    ["middle", 350],
+    ["left", 50],
+  ],
 );
 
 // A companion the action names brings its lore "<Name> looks:" line into its person's box;
@@ -240,8 +318,8 @@ assert.deepEqual(
     (line) => logged.push(`${line.name}:${line.source}:${line.companions.join("+")}`),
   ).map((entry) => entry.prompt),
   [
-    "Oren Hask: a broad smith. holds Pip up to the light and grins at Mira. Pip: a sleek white ferret.",
-    "Mira Vale: a small archer. laughs.",
+    "Oren Hask: holds Pip up to the light and grins at Mira. a broad smith. Pip: a sleek white ferret.",
+    "Mira Vale: laughs. a small archer.",
   ],
 );
 assert.deepEqual(logged, ["Oren Hask:lore:Pip", "Mira Vale:lore:"]);
@@ -376,7 +454,7 @@ const noneOutfit = composeComfyLayoutCharacterPrompts(
     tracker: [{ name: "Tora", appearance: "", outfit: "None (Dragon form)" }],
   },
 );
-assert.equal(noneOutfit[0]!.prompt, "Tora: a tall woman with amethyst horns. stands at the hearth.");
+assert.equal(noneOutfit[0]!.prompt, "Tora: stands at the hearth. a tall woman with amethyst horns.");
 const realOutfit = composeComfyLayoutCharacterPrompts(
   [{ name: "Tora", prompt: "stands.", position: { x: 0.5, y: 0.5 } }],
   { cards: [], lore: [], tracker: [{ name: "Tora", appearance: "", outfit: "Nonesuch-silk robes" }] },
