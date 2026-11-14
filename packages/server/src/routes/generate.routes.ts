@@ -518,6 +518,7 @@ import {
   comfyLayoutLookSourcesFromContext,
   finishComfyLayoutBoxes,
 } from "../services/image/comfyui-layout-placeholders.js";
+import { isIllustratorNpcCastId, loadIllustratorNpcCast } from "../services/image/illustrator-npc-cast.js";
 import { resolveCustomAgentStyleProfileId } from "../services/generation/custom-agent-image-settings.js";
 import { buildSpotifyDjConstraints } from "../services/spotify/spotify-dj-constraints.js";
 import {
@@ -5135,40 +5136,12 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
         }
 
         const charInfo = await loadCharacterPromptInfo({ chars, characterIds, chatMode, chatId: input.chatId });
-        const npcRegistryNpcs: Array<{
-          id: string;
-          name: string;
-          avatarPath: string | null;
-          appearance: string | null;
-          appearanceOverride: null;
-        }> = [];
-        try {
-          const registryService = getCapabilityService<{
-            current: (
-              chatId: string,
-            ) => Promise<{ npcs: Map<string, { id: string; name: string; avatar?: string; aliases?: string[] }> }>;
-          }>("npc-registry");
-          if (registryService && input.chatId) {
-            const resolved = await registryService.current(input.chatId);
-            if (resolved?.npcs) {
-              for (const entry of resolved.npcs.values()) {
-                if (
-                  entry.name &&
-                  entry.avatar &&
-                  !charInfo.some((c) => c.name.toLowerCase() === entry.name.toLowerCase())
-                ) {
-                  npcRegistryNpcs.push({
-                    id: `npc-registry:${entry.id}`,
-                    name: entry.name,
-                    avatarPath: entry.avatar,
-                    appearance: null,
-                    appearanceOverride: null,
-                  });
-                }
-              }
-            }
-          }
-        } catch {}
+        // custom-mods: card-less people (tracker portraits, NPC Registry); refreshed with this turn's tracker rows
+        // before a picture is drawn.
+        let illustratorNpcCast = await loadIllustratorNpcCast({
+          chatId: input.chatId,
+          knownNames: charInfo.map((character) => character.name),
+        });
         // Who Illustrator can show: the chat's characters (and a character used as the user's identity)
         // and the user's persona, with their appearance and avatars. Pictures and clips match names against it.
         const illustratorCast = () => ({
@@ -5194,7 +5167,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                   },
                 ]
               : []),
-            ...npcRegistryNpcs,
+            ...illustratorNpcCast,
           ],
           persona:
             identity?.source === "persona" && persona
@@ -15264,16 +15237,24 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                       let requestedReferenceNames = illCharacters.filter(
                         (name): name is string => typeof name === "string",
                       );
-                      if (imagePromptAgent?.settings?.presentCharactersOnly === true) {
-                        const turnSnapshot = await gameStateStore
+                      // custom-mods: this turn's tracker rows, for presence, card-less people and layout looks.
+                      const turnTrackerRows =
+                        turnPresentRows ??
+                        (await gameStateStore
                           .getByChatAndMessage(input.chatId, messageId, targetSwipeIndex)
-                          .catch(() => null);
+                          .then((row) =>
+                            row ? parseGameStateRow(row as Record<string, unknown>).presentCharacters : null,
+                          )
+                          .catch(() => null));
+                      illustratorNpcCast = await loadIllustratorNpcCast({
+                        chatId: input.chatId,
+                        knownNames: charInfo.map((character) => character.name),
+                        presentCharacters: turnTrackerRows,
+                      });
+                      if (imagePromptAgent?.settings?.presentCharactersOnly === true) {
                         const presence = filterToPresentCharacters(
                           requestedReferenceNames,
-                          turnPresentRows ??
-                            (turnSnapshot
-                              ? parseGameStateRow(turnSnapshot as Record<string, unknown>).presentCharacters
-                              : null),
+                          turnTrackerRows,
                           identity?.source === "persona" ? personaName : null,
                           // The [present] roster is current, so a name the reply merely mentions stays out.
                           presentCommandOn ? null : completedResponse,
@@ -15462,12 +15443,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                           source: imgSource,
                           lookSources: comfyLayoutLookSourcesFromContext(
                             agentContext,
-                            await gameStateStore
-                              .getByChatAndMessage(input.chatId, messageId, targetSwipeIndex)
-                              .then((row) =>
-                                row ? parseGameStateRow(row as Record<string, unknown>).presentCharacters : null,
-                              )
-                              .catch(() => null),
+                            turnTrackerRows as Parameters<typeof comfyLayoutLookSourcesFromContext>[1],
                           ),
                           logPrefix: "[illustrator] layout box",
                           bindPlainNames: requestOrderedReferences,
@@ -16210,7 +16186,9 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                         return (
                           cast.persona ??
                           cast.chatCharacters.find(
-                            (entry) => !charInfo.some((character) => character.id === entry.id),
+                            (entry) =>
+                              !isIllustratorNpcCastId(entry.id) &&
+                              !charInfo.some((character) => character.id === entry.id),
                           ) ??
                           null
                         );

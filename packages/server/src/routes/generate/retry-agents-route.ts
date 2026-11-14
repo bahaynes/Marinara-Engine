@@ -286,7 +286,7 @@ import {
   illustratorPromptTemplateOwnsComposition,
   resolveIllustratorCharacterReferences,
 } from "./illustrator-references.js";
-import { getCapabilityService } from "../../services/capability-packages/capability-service-registry.service.js";
+import { loadIllustratorNpcCast } from "../../services/image/illustrator-npc-cast.js";
 import {
   explicitlyRequestsTextRewrite,
   isBuiltInTextRewriteAgentType,
@@ -777,53 +777,14 @@ async function retryIllustratorClipCast(
     });
   }
 
-  if (Array.isArray(agentContext.gameState?.presentCharacters)) {
-    for (const char of agentContext.gameState.presentCharacters) {
-      if (
-        typeof char?.name === "string" &&
-        char.name.trim() &&
-        typeof char.avatarPath === "string" &&
-        char.avatarPath.trim()
-      ) {
-        const id = `npc:${char.name.trim()}`;
-        if (!chatCharacters.some((c) => c.name.toLowerCase() === char.name.toLowerCase())) {
-          chatCharacters.push({
-            id,
-            name: char.name.trim(),
-            avatarPath: char.avatarPath.trim(),
-            appearance: typeof char.appearance === "string" ? char.appearance : null,
-          });
-        }
-      }
-    }
-  }
-
-  try {
-    const registryService = getCapabilityService<{
-      current: (
-        chatId: string,
-      ) => Promise<{ npcs: Map<string, { id: string; name: string; avatar?: string; aliases?: string[] }> }>;
-    }>("npc-registry");
-    if (registryService && chatId) {
-      const resolved = await registryService.current(chatId);
-      if (resolved?.npcs) {
-        for (const entry of resolved.npcs.values()) {
-          if (
-            entry.name &&
-            entry.avatar &&
-            !chatCharacters.some((c) => c.name.toLowerCase() === entry.name.toLowerCase())
-          ) {
-            chatCharacters.push({
-              id: `npc-registry:${entry.id}`,
-              name: entry.name,
-              avatarPath: entry.avatar,
-              appearance: null,
-            });
-          }
-        }
-      }
-    }
-  } catch {}
+  // custom-mods: card-less people (tracker portraits, NPC Registry).
+  chatCharacters.push(
+    ...(await loadIllustratorNpcCast({
+      chatId,
+      knownNames: chatCharacters.map((character) => character.name),
+      presentCharacters: agentContext.gameState?.presentCharacters,
+    })),
+  );
   const personaRow = identitySource === "persona" && identityId ? await chars.getPersona(identityId, chatId) : null;
   const persona: IllustratorPersonaReference | null =
     identitySource === "persona" && identityId && agentContext.persona
