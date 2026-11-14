@@ -520,6 +520,7 @@ import {
 } from "../services/image/comfyui-layout-placeholders.js";
 import {
   buildIllustratorCastLookLines,
+  ensureIllustratorNpcPortraits,
   isIllustratorNpcCastId,
   loadIllustratorNpcCast,
 } from "../services/image/illustrator-npc-cast.js";
@@ -15355,6 +15356,25 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                           postReplySpatialProjection?.ownerMode === "roleplay" ? postReplySpatialProjection : null,
                       });
                       let illustratorRefImages: string[] | undefined;
+                      if (useAvatarRefs) {
+                        // custom-mods: card-less people with known looks get a portrait before their first picture.
+                        illustratorNpcCast = await ensureIllustratorNpcPortraits({
+                          chatId: input.chatId,
+                          requestedNames: requestedReferenceNames,
+                          cards: personaName ? [...illustratorCastCards, { name: personaName }] : illustratorCastCards,
+                          cast: illustratorNpcCast,
+                          generate: (character) =>
+                            generateTrackerPortrait({
+                              db: app.db,
+                              connectionId: imgConnFull.id,
+                              chatId: input.chatId,
+                              styleProfileId: trackerPortraitStyleProfileId(chatMeta),
+                              character,
+                              includeOutfit: false,
+                              debugMode: input.debugMode,
+                            }),
+                        });
+                      }
                       const referenceResolution = await resolveIllustratorCharacterReferences({
                         charactersStore: chars,
                         characterGallery,

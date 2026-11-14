@@ -1,4 +1,9 @@
 // custom-mods: people the Illustrator can draw who have no card of their own.
+import { existsSync } from "fs";
+import { join } from "path";
+import { logger } from "../../lib/logger.js";
+import { DATA_DIR } from "../../utils/data-dir.js";
+import { npcAvatarSlug } from "../game/npc-avatar-utils.js";
 import { getCapabilityService } from "../capability-packages/capability-service-registry.service.js";
 import { buildUncaptionedCharacterAppearanceBlock, splitEnsembleAppearance } from "./character-prompts.js";
 import { resolveComfyLayoutLookWithSource } from "./comfyui-layout-placeholders.js";
@@ -65,6 +70,66 @@ export function isIllustratorNpcCastId(id: string): boolean {
 }
 
 const text = (value: unknown) => (typeof value === "string" ? value.trim() : "");
+
+const sameName = (a: string, b: string) => {
+  const left = a.trim().toLowerCase();
+  const right = b.trim().toLowerCase();
+  return left === right || left.split(/\s+/)[0] === right || right.split(/\s+/)[0] === left;
+};
+
+/**
+ * Just-in-time portraits: a requested person with no card and no portrait, whose looks are known
+ * (their ensemble-card segment or NPC Registry looks), gets one portrait from those looks before the
+ * picture is drawn, so the image model gets a reference instead of a stranger. The portrait is
+ * stored as their registry avatar and reused after that. Body only: the outfit comes from the
+ * tracker in each picture. Returns the cast with the new portraits filled in.
+ */
+export async function ensureIllustratorNpcPortraits(args: {
+  chatId: string;
+  requestedNames: readonly string[];
+  cards: ReadonlyArray<{ name: string; appearance?: string | null }>;
+  cast: IllustratorChatCharacterReference[];
+  generate: (character: { name: string; appearance: string }) => Promise<string>;
+}): Promise<IllustratorChatCharacterReference[]> {
+  const cast = [...args.cast];
+  for (const name of args.requestedNames) {
+    if (args.cards.some((card) => sameName(card.name, name))) continue;
+    const index = cast.findIndex((entry) => sameName(entry.name, name));
+    const entry = index >= 0 ? cast[index] : null;
+    if (entry?.avatarPath) continue;
+    const looks =
+      text(entry?.appearance) ||
+      resolveComfyLayoutLookWithSource(name, { cards: args.cards, lore: [], tracker: [] }).looks;
+    if (!looks) continue;
+    const displayName = entry?.name ?? name;
+    const slug = npcAvatarSlug(displayName);
+    if (!slug) continue;
+    let avatarPath: string;
+    try {
+      avatarPath = existsSync(join(DATA_DIR, "avatars", "npc", args.chatId, `${slug}.png`))
+        ? `/api/avatars/npc/${args.chatId}/${slug}.png`
+        : await args.generate({ name: displayName, appearance: looks });
+      logger.info("[illustrator] Portrait for %s: %s", displayName, avatarPath);
+    } catch (error) {
+      logger.warn(error, "[illustrator] No portrait for %s", displayName);
+      continue;
+    }
+    await getNpcRegistryService()
+      ?.setAvatar?.(args.chatId, displayName, avatarPath)
+      .catch((error: unknown) =>
+        logger.warn(error, "[illustrator] Portrait for %s not saved to the registry", displayName),
+      );
+    const next = {
+      id: entry?.id ?? `npc:${displayName}`,
+      name: displayName,
+      avatarPath,
+      appearance: entry?.appearance ?? null,
+    };
+    if (index >= 0) cast[index] = next;
+    else cast.push(next);
+  }
+  return cast;
+}
 
 /**
  * Card-less people for the Illustrator cast: this turn's tracker rows that carry a portrait, and

@@ -288,9 +288,11 @@ import {
 } from "./illustrator-references.js";
 import {
   buildIllustratorCastLookLines,
+  ensureIllustratorNpcPortraits,
   isIllustratorNpcCastId,
   loadIllustratorNpcCast,
 } from "../../services/image/illustrator-npc-cast.js";
+import { generateTrackerPortrait, trackerPortraitStyleProfileId } from "../../services/image/tracker-portrait.js";
 import {
   explicitlyRequestsTextRewrite,
   isBuiltInTextRewriteAgentType,
@@ -4128,6 +4130,33 @@ async function applyRetryResultEffects(args: {
                 logger.debug("[retry-agents] Illustrator dropped absent characters: %s", presence.dropped.join(", "));
               }
               requestedReferenceNames = presence.kept;
+            }
+            if (useAvatarRefs) {
+              // custom-mods: card-less people with known looks get a portrait before their first picture.
+              const cards = clipCast.chatCharacters.filter((entry) => !isIllustratorNpcCastId(entry.id));
+              const npcCast = await ensureIllustratorNpcPortraits({
+                chatId,
+                requestedNames: requestedReferenceNames,
+                cards: [
+                  ...cards.map((entry) => ({
+                    name: entry.name,
+                    appearance: entry.appearanceOverride || entry.appearance,
+                  })),
+                  ...(clipCast.persona ? [{ name: clipCast.persona.name }] : []),
+                ],
+                cast: clipCast.chatCharacters.filter((entry) => isIllustratorNpcCastId(entry.id)),
+                generate: (character) =>
+                  generateTrackerPortrait({
+                    db: app.db,
+                    connectionId: imgConnFull.id,
+                    chatId,
+                    styleProfileId: trackerPortraitStyleProfileId(chatMeta),
+                    character,
+                    includeOutfit: false,
+                  }),
+              });
+              clipCast.chatCharacters = [...cards, ...npcCast];
+              assertRetryActive();
             }
             const referenceResolution = await resolveIllustratorCharacterReferences({
               charactersStore: chars,

@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { registerCapabilityService } from "../../packages/server/src/services/capability-packages/capability-service-registry.service.js";
 import {
   buildIllustratorCastLookLines,
+  ensureIllustratorNpcPortraits,
   isIllustratorNpcCastId,
   loadIllustratorNpcCast,
 } from "../../packages/server/src/services/image/illustrator-npc-cast.js";
@@ -144,5 +145,33 @@ assert.equal(
   null,
 );
 assert.equal(buildBlankCharacterLooksRequest(null), null);
+
+// Just-in-time portraits: only card-less people with known looks and no portrait, once each.
+const generated: string[] = [];
+const withPortraits = await ensureIllustratorNpcPortraits({
+  chatId: "portrait-regression-chat",
+  requestedNames: ["Hero", "Petra", "Dez", "Kevin", "Simone"],
+  cards: [
+    { name: "Hero", appearance: "" },
+    { name: "Hunting Party", appearance: "[Petra Nash] tallest, platinum shag | [Rani] hourglass" },
+  ],
+  cast: [
+    { id: "npc-registry:n2", name: "Dez", avatarPath: null, appearance: "wiry, pink and black buns" },
+    { id: "npc-registry:n4", name: "Simone", avatarPath: "/simone.png", appearance: null },
+  ],
+  generate: async (character) => {
+    generated.push(`${character.name}: ${character.appearance}`);
+    return `/api/avatars/npc/c1/${character.name.toLowerCase()}.png`;
+  },
+});
+assert.deepEqual(generated, ["Petra: tallest, platinum shag", "Dez: wiry, pink and black buns"]);
+assert.deepEqual(
+  withPortraits.map((entry) => [entry.name, entry.avatarPath]),
+  [
+    ["Dez", "/api/avatars/npc/c1/dez.png"],
+    ["Simone", "/simone.png"],
+    ["Petra", "/api/avatars/npc/c1/petra.png"],
+  ],
+);
 
 console.log("Illustrator cast looks regression passed");
