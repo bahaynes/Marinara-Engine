@@ -1,6 +1,47 @@
 // custom-mods: people the Illustrator can draw who have no card of their own.
 import { getCapabilityService } from "../capability-packages/capability-service-registry.service.js";
+import { buildUncaptionedCharacterAppearanceBlock } from "./character-prompts.js";
+import { resolveComfyLayoutLookWithSource } from "./comfyui-layout-placeholders.js";
 import type { IllustratorChatCharacterReference } from "./illustrator-references.js";
+
+/**
+ * Lines appended to a plain (non-layout) image prompt after upstream's appearance block:
+ * - looks for visible people that block left out, which are the members of an ensemble card
+ *   ("[Name] traits | [Name] traits"), since the resolver only matches whole cards;
+ * - each visible person's current outfit from this turn's tracker, which upstream leaves to the
+ *   writer and a reference image cannot supply.
+ */
+export function buildIllustratorCastLookLines(args: {
+  sources: ReadonlyArray<{ name: string; appearance?: string | null }>;
+  visibleNames: readonly string[];
+  /** Names upstream's block already described. */
+  coveredNames: readonly string[];
+  trackerRows: unknown;
+  includeLooks: boolean;
+  includeOutfits: boolean;
+}): string {
+  const looks = args.includeLooks
+    ? buildUncaptionedCharacterAppearanceBlock(
+        [...args.sources],
+        [...args.visibleNames],
+        args.coveredNames.map((name) => ({ name, prompt: "" })),
+      )
+    : "";
+  const tracker = Array.isArray(args.trackerRows)
+    ? (args.trackerRows as Array<Record<string, unknown>>)
+        .filter((row) => typeof row?.name === "string")
+        .map((row) => ({ name: row.name as string, outfit: typeof row.outfit === "string" ? row.outfit : null }))
+    : [];
+  const outfits = args.includeOutfits
+    ? args.visibleNames
+        .map((name) => {
+          const { outfit } = resolveComfyLayoutLookWithSource(name, { cards: [], lore: [], tracker });
+          return outfit ? `${name} wears ${outfit.replace(/[.\s]+$/u, "")}.` : "";
+        })
+        .filter(Boolean)
+    : [];
+  return [looks, ...outfits].filter(Boolean).join("\n");
+}
 
 /** The NPC Registry package's service (agents fork, `fork/packages/npc-registry`). */
 export type NpcRegistryService = {

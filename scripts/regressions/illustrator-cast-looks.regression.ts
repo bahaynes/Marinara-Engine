@@ -3,9 +3,74 @@
 import assert from "node:assert/strict";
 import { registerCapabilityService } from "../../packages/server/src/services/capability-packages/capability-service-registry.service.js";
 import {
+  buildIllustratorCastLookLines,
   isIllustratorNpcCastId,
   loadIllustratorNpcCast,
 } from "../../packages/server/src/services/image/illustrator-npc-cast.js";
+import { applyImageAgentContextExtensions } from "../../packages/server/src/services/image/image-agent-comfy-extensions.js";
+import type { AgentContext } from "../../packages/shared/src/index.js";
+
+// Plain prompts: ensemble members upstream's block left out get their own segment; outfits come
+// from this turn's tracker, and a "none" outfit is no outfit.
+const ensembleCard = {
+  name: "Hunting Party",
+  appearance: "[Petra Nash] tallest, platinum shag | [Simone] long-limbed, rich brown skin, locs",
+};
+assert.equal(
+  buildIllustratorCastLookLines({
+    sources: [ensembleCard, { name: "Avery", appearance: "androgynous, sharp gaze" }],
+    visibleNames: ["Avery", "Petra Nash", "Simone"],
+    coveredNames: ["Avery"],
+    trackerRows: [
+      { name: "Petra Nash", outfit: "leather vest, steel chain." },
+      { name: "Simone", outfit: "None" },
+    ],
+    includeLooks: true,
+    includeOutfits: true,
+  }),
+  [
+    "Petra Nash's Appearance: tallest, platinum shag",
+    "Simone's Appearance: long-limbed, rich brown skin, locs",
+    "Petra Nash wears leather vest, steel chain.",
+  ].join("\n"),
+);
+assert.equal(
+  buildIllustratorCastLookLines({
+    sources: [ensembleCard],
+    visibleNames: ["Petra Nash"],
+    coveredNames: [],
+    trackerRows: [{ name: "Petra", outfit: "a camel coat" }],
+    includeLooks: false,
+    includeOutfits: true,
+  }),
+  "Petra Nash wears a camel coat.",
+  "outfit only, matched by first name",
+);
+
+// Present-character gating keeps an ensemble card while one of its members is present.
+const gated = applyImageAgentContextExtensions(
+  {
+    chatId: "c1",
+    chatMode: "roleplay",
+    recentMessages: [],
+    mainResponse: "",
+    characters: [
+      { id: "card1", name: "Hunting Party", appearance: ensembleCard.appearance },
+      { id: "card2", name: "Rival", appearance: "" },
+    ],
+    persona: null,
+    gameState: { presentCharacters: [{ name: "Simone" }] },
+    memory: {},
+    writableLorebookIds: null,
+    chatSummary: null,
+  } as unknown as AgentContext,
+  { presentCharactersOnly: true },
+  null,
+);
+assert.deepEqual(
+  gated.characters.map((character) => character.name),
+  ["Hunting Party"],
+);
 
 // Without the registry package only tracker rows that carry a portrait count; card names are skipped.
 assert.deepEqual(

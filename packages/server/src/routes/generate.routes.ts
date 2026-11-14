@@ -518,7 +518,11 @@ import {
   comfyLayoutLookSourcesFromContext,
   finishComfyLayoutBoxes,
 } from "../services/image/comfyui-layout-placeholders.js";
-import { isIllustratorNpcCastId, loadIllustratorNpcCast } from "../services/image/illustrator-npc-cast.js";
+import {
+  buildIllustratorCastLookLines,
+  isIllustratorNpcCastId,
+  loadIllustratorNpcCast,
+} from "../services/image/illustrator-npc-cast.js";
 import { resolveCustomAgentStyleProfileId } from "../services/generation/custom-agent-image-settings.js";
 import { buildSpotifyDjConstraints } from "../services/spotify/spotify-dj-constraints.js";
 import {
@@ -15408,6 +15412,18 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                           fullPrompt += `\n\n${appearanceBlock}`;
                           logger.debug("[illustrator] Added appearance for characters without native captions");
                         }
+                      }
+                      if (!comfyLayoutActive) {
+                        // custom-mods: ensemble-card members and this turn's outfits.
+                        const castLines = buildIllustratorCastLookLines({
+                          sources: comfyLayoutLookSourcesFromContext(agentContext).cards,
+                          visibleNames: requestedReferenceNames,
+                          coveredNames: referenceResolution.appearanceNames,
+                          trackerRows: turnTrackerRows,
+                          includeLooks: includeCharacterAppearance && illustratorCharacterPrompts.length === 0,
+                          includeOutfits: includeCharacterAppearance || useAvatarRefs,
+                        });
+                        if (castLines) fullPrompt += `\n\n${castLines}`;
                       }
                       if (useAvatarRefs && referenceResolution.referenceImages.length > 0) {
                         // custom-mods: on a layout workflow each box is paired with its own slot instead.
