@@ -24,12 +24,48 @@ interface NpcEntry {
   gender: string | null;
   aliases: string[];
   avatar: string | null;
+  looks: string | null;
 }
 
 interface NpcRegistryResponse {
   active: boolean;
   npcs: NpcEntry[];
   error?: string;
+}
+
+/** The NPC's body looks for the Illustrator; saved on blur, an empty field clears them. */
+function NpcLooksField({ chatId, npc, onSaved }: { chatId: string; npc: NpcEntry; onSaved: () => void }) {
+  const { t: localizeUi } = useUiTranslation();
+  const [value, setValue] = useState(npc.looks ?? "");
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    const looks = value.trim();
+    if (looks === (npc.looks ?? "")) return;
+    setSaving(true);
+    try {
+      await api.post(`/chats/${chatId}/npc-registry/looks`, { npcId: npc.id, looks });
+      onSaved();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : localizeUi("ui.modals.npcregistrymodal.failedToSaveLooks"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <textarea
+      value={value}
+      onChange={(e) => setValue(e.target.value)}
+      onBlur={() => void save()}
+      disabled={saving}
+      rows={2}
+      maxLength={300}
+      aria-label={localizeUi("ui.npcRegistry.looksLabel")}
+      placeholder={localizeUi("ui.npcRegistry.looksPlaceholder")}
+      className="w-full resize-y rounded-md border border-[var(--border)] bg-[var(--background)] px-2 py-1 text-xs text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:border-[var(--primary)] focus:outline-none disabled:opacity-60"
+    />
+  );
 }
 
 export function NpcRegistryModal({ open, onClose, chatId }: NpcRegistryModalProps) {
@@ -196,66 +232,78 @@ export function NpcRegistryModal({ open, onClose, chatId }: NpcRegistryModalProp
               const isUploading = uploadingNpcId === npc.id;
 
               return (
-                <div key={npc.id} className="flex items-center justify-between gap-3 pt-2">
-                  <div className="flex items-center gap-3 min-w-0">
-                    {/* Avatar circle */}
-                    <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-full border border-[var(--border)] bg-[var(--muted)]">
-                      {npc.avatar ? (
-                        <img src={npc.avatar} alt={npc.name} className="h-full w-full object-cover" />
-                      ) : (
-                        <div className="flex h-full w-full items-center justify-center text-xs font-semibold text-[var(--muted-foreground)]">
-                          {npc.name.slice(0, 2).toUpperCase()}
-                        </div>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => triggerUpload(npc.id)}
-                        disabled={isUploading}
-                        title={localizeUi("ui.npcRegistry.changeAvatar", { defaultValue: "Upload Avatar" })}
-                        className="absolute inset-0 flex items-center justify-center bg-black/40 text-white opacity-0 transition-opacity hover:opacity-100 disabled:opacity-50"
-                      >
-                        {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
-                      </button>
-                    </div>
+                <div key={npc.id} className="flex flex-col gap-1.5 pt-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      {/* Avatar circle */}
+                      <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-full border border-[var(--border)] bg-[var(--muted)]">
+                        {npc.avatar ? (
+                          <img src={npc.avatar} alt={npc.name} className="h-full w-full object-cover" />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center text-xs font-semibold text-[var(--muted-foreground)]">
+                            {npc.name.slice(0, 2).toUpperCase()}
+                          </div>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => triggerUpload(npc.id)}
+                          disabled={isUploading}
+                          title={localizeUi("ui.npcRegistry.changeAvatar", { defaultValue: "Upload Avatar" })}
+                          className="absolute inset-0 flex items-center justify-center bg-black/40 text-white opacity-0 transition-opacity hover:opacity-100 disabled:opacity-50"
+                        >
+                          {isUploading ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <ImagePlus className="h-4 w-4" />
+                          )}
+                        </button>
+                      </div>
 
-                    {/* NPC Details */}
-                    <div className="flex flex-col min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="truncate text-sm font-semibold text-[var(--foreground)]">{npc.name}</span>
-                        {npc.gender && (
-                          <span className="rounded bg-[var(--muted)] px-1.5 py-0.5 text-[0.625rem] font-medium text-[var(--muted-foreground)]">
-                            {npc.gender}
+                      {/* NPC Details */}
+                      <div className="flex flex-col min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="truncate text-sm font-semibold text-[var(--foreground)]">{npc.name}</span>
+                          {npc.gender && (
+                            <span className="rounded bg-[var(--muted)] px-1.5 py-0.5 text-[0.625rem] font-medium text-[var(--muted-foreground)]">
+                              {npc.gender}
+                            </span>
+                          )}
+                        </div>
+                        {npc.aliases.length > 0 && (
+                          <span className="truncate text-xs text-[var(--muted-foreground)]">
+                            {localizeUi("ui.npcRegistry.aliasesLabel", { defaultValue: "Also: " })}
+                            {npc.aliases.join(", ")}
                           </span>
                         )}
                       </div>
-                      {npc.aliases.length > 0 && (
-                        <span className="truncate text-xs text-[var(--muted-foreground)]">
-                          {localizeUi("ui.npcRegistry.aliasesLabel", { defaultValue: "Also: " })}
-                          {npc.aliases.join(", ")}
-                        </span>
-                      )}
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => promoteMutation.mutate(npc)}
+                        disabled={isPromoting}
+                        title={localizeUi("ui.npcRegistry.promoteTitle", {
+                          defaultValue: "Promote to full Character Card",
+                        })}
+                        className="inline-flex items-center gap-1.5 rounded-md border border-[var(--border)] bg-[var(--card)] px-2.5 py-1 text-xs font-medium text-[var(--foreground)] transition-colors hover:bg-[var(--accent)] hover:text-[var(--accent-foreground)] disabled:opacity-50"
+                      >
+                        {isPromoting ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <UserPlus className="h-3.5 w-3.5" />
+                        )}
+                        <span>{localizeUi("ui.npcRegistry.promoteBtn", { defaultValue: "Promote to Card" })}</span>
+                      </button>
                     </div>
                   </div>
-
-                  {/* Actions */}
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => promoteMutation.mutate(npc)}
-                      disabled={isPromoting}
-                      title={localizeUi("ui.npcRegistry.promoteTitle", {
-                        defaultValue: "Promote to full Character Card",
-                      })}
-                      className="inline-flex items-center gap-1.5 rounded-md border border-[var(--border)] bg-[var(--card)] px-2.5 py-1 text-xs font-medium text-[var(--foreground)] transition-colors hover:bg-[var(--accent)] hover:text-[var(--accent-foreground)] disabled:opacity-50"
-                    >
-                      {isPromoting ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <UserPlus className="h-3.5 w-3.5" />
-                      )}
-                      <span>{localizeUi("ui.npcRegistry.promoteBtn", { defaultValue: "Promote to Card" })}</span>
-                    </button>
-                  </div>
+                  <NpcLooksField
+                    key={npc.looks ?? ""}
+                    chatId={chatId}
+                    npc={npc}
+                    onSaved={() => void qc.invalidateQueries({ queryKey })}
+                  />
                 </div>
               );
             })}

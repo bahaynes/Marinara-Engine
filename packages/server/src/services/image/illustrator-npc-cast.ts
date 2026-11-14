@@ -1,6 +1,6 @@
 // custom-mods: people the Illustrator can draw who have no card of their own.
 import { getCapabilityService } from "../capability-packages/capability-service-registry.service.js";
-import { buildUncaptionedCharacterAppearanceBlock } from "./character-prompts.js";
+import { buildUncaptionedCharacterAppearanceBlock, splitEnsembleAppearance } from "./character-prompts.js";
 import { resolveComfyLayoutLookWithSource } from "./comfyui-layout-placeholders.js";
 import type { IllustratorChatCharacterReference } from "./illustrator-references.js";
 
@@ -46,7 +46,10 @@ export function buildIllustratorCastLookLines(args: {
 /** The NPC Registry package's service (agents fork, `fork/packages/npc-registry`). */
 export type NpcRegistryService = {
   current: (chatId: string) => Promise<{
-    npcs: Map<string, { id: string; name: string; avatar?: string; looks?: string; aliases?: string[] }>;
+    npcs: Map<
+      string,
+      { id: string; name: string; gender?: string; avatar?: string; looks?: string; aliases?: string[] }
+    >;
   }>;
   setAvatar?: (chatId: string, npcIdOrName: string, avatarPath: string) => Promise<string | null>;
   setLooks?: (chatId: string, npcIdOrName: string, looks: string) => Promise<string | null>;
@@ -66,18 +69,27 @@ const text = (value: unknown) => (typeof value === "string" ? value.trim() : "")
 /**
  * Card-less people for the Illustrator cast: this turn's tracker rows that carry a portrait, and
  * NPC Registry entries with a portrait or stored looks. Names the cast already holds are skipped;
- * a registry entry fills what the tracker row lacks for the same name.
+ * a registry entry fills what the tracker row lacks for the same name. A member of an ensemble
+ * card keeps its portrait but no looks text: the card's own segment describes them.
  */
 export async function loadIllustratorNpcCast(args: {
   chatId: string;
-  knownNames: readonly string[];
+  /** The chat's cards and the user's identity, with their image appearance. */
+  cards: ReadonlyArray<{ name: string; appearance?: string | null }>;
   presentCharacters?: unknown;
 }): Promise<IllustratorChatCharacterReference[]> {
   const byName = new Map<string, IllustratorChatCharacterReference>();
-  const known = new Set(args.knownNames.map((name) => name.trim().toLowerCase()));
+  const known = new Set(args.cards.map((card) => card.name.trim().toLowerCase()));
+  const cardDescribed = new Set(
+    args.cards.flatMap(
+      (card) =>
+        splitEnsembleAppearance(card.appearance ?? "")?.map((segment) => segment.name.trim().toLowerCase()) ?? [],
+    ),
+  );
   const add = (entry: IllustratorChatCharacterReference) => {
     const key = entry.name.toLowerCase();
     if (known.has(key)) return;
+    if (cardDescribed.has(key)) entry.appearance = null;
     const existing = byName.get(key);
     if (!existing) {
       byName.set(key, entry);

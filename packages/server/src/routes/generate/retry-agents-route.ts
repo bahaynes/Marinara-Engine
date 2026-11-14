@@ -287,7 +287,11 @@ import {
   illustratorPromptTemplateOwnsComposition,
   resolveIllustratorCharacterReferences,
 } from "./illustrator-references.js";
-import { buildIllustratorCastLookLines, loadIllustratorNpcCast } from "../../services/image/illustrator-npc-cast.js";
+import {
+  buildIllustratorCastLookLines,
+  isIllustratorNpcCastId,
+  loadIllustratorNpcCast,
+} from "../../services/image/illustrator-npc-cast.js";
 import {
   explicitlyRequestsTextRewrite,
   isBuiltInTextRewriteAgentType,
@@ -796,7 +800,10 @@ async function retryIllustratorClipCast(
   chatCharacters.push(
     ...(await loadIllustratorNpcCast({
       chatId,
-      knownNames: chatCharacters.map((character) => character.name),
+      cards: chatCharacters.map((character) => ({
+        name: character.name,
+        appearance: character.appearanceOverride || character.appearance,
+      })),
       presentCharacters: agentContext.gameState?.presentCharacters,
     })),
   );
@@ -4255,7 +4262,10 @@ async function applyRetryResultEffects(args: {
                 referenceNames: useAvatarRefs ? referenceResolution.referenceNames : [],
                 locationImage: spatialLocationReferenceImage,
                 source: imgSource,
-                lookSources: comfyLayoutLookSourcesFromContext(agentContext),
+                lookSources: {
+                  ...comfyLayoutLookSourcesFromContext(agentContext),
+                  npcs: clipCast.chatCharacters.filter((entry) => isIllustratorNpcCastId(entry.id)),
+                },
                 logPrefix: "[retry-agents] Illustrator layout box",
                 bindPlainNames: requestOrderedReferences,
               });

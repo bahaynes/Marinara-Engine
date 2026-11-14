@@ -128,6 +128,7 @@ import { createGameWorldSnapshotsStorage } from "../services/storage/game-world-
 import { createMessageTrashStorage, MessageTrashPinnedLimitError } from "../services/storage/message-trash.storage.js";
 import { createAppSettingsStorage } from "../services/storage/app-settings.storage.js";
 import { createChatPresetsStorage } from "../services/storage/chat-presets.storage.js";
+import { getNpcRegistryService } from "../services/image/illustrator-npc-cast.js";
 import { createCharactersStorage } from "../services/storage/characters.storage.js";
 import { resolveChatUserIdentity } from "../services/chat-user-identity.js";
 import { withAvatarFileLifecycleLock } from "../services/image/avatar-file-lifecycle.js";
@@ -263,7 +264,6 @@ import {
   parseStoredScenePackageData,
   releaseScenePackageOrigin,
 } from "../services/capability-packages/capability-scene-origin.service.js";
-import { getCapabilityService } from "../services/capability-packages/capability-service-registry.service.js";
 import {
   isBackgroundAutonomousCandidate,
   hasRoleplayDmThreadMarkers,
@@ -3571,10 +3571,7 @@ export async function chatsRoutes(app: FastifyInstance) {
     if (!chat) return reply.status(404).send({ error: "Chat not found" });
 
     const NPC_AVATAR_DIR = join(DATA_DIR, "avatars", "npc");
-    const npcRegistry = getCapabilityService<{
-      current: (chatId: string) => Promise<{ npcs: Map<string, any> }>;
-      setAvatar?: (chatId: string, npcId: string, avatarPath: string) => Promise<string | null>;
-    }>("npc-registry");
+    const npcRegistry = getNpcRegistryService();
 
     if (!npcRegistry) {
       return reply.send({ active: false, npcs: [] });
@@ -3602,6 +3599,7 @@ export async function chatsRoutes(app: FastifyInstance) {
           gender: entry.gender || null,
           aliases: entry.aliases || [],
           avatar,
+          looks: entry.looks || null,
         };
       });
       return reply.send({ active: true, npcs });
@@ -3617,9 +3615,7 @@ export async function chatsRoutes(app: FastifyInstance) {
       const { npcId, avatarPath } = req.body || {};
       if (!npcId || !avatarPath) return reply.status(400).send({ error: "Missing npcId or avatarPath" });
 
-      const npcRegistry = getCapabilityService<{
-        setAvatar?: (chatId: string, npcId: string, avatarPath: string) => Promise<string | null>;
-      }>("npc-registry");
+      const npcRegistry = getNpcRegistryService();
 
       if (!npcRegistry?.setAvatar) {
         return reply.status(400).send({ error: "NPC registry service not available" });
@@ -3627,6 +3623,23 @@ export async function chatsRoutes(app: FastifyInstance) {
 
       const result = await npcRegistry.setAvatar(req.params.id, npcId, avatarPath);
       return reply.send({ ok: Boolean(result), avatarPath: result });
+    },
+  );
+
+  // Set (or clear, with an empty string) an NPC registry entry's looks: body only, never clothing.
+  app.post<{ Params: { id: string }; Body: { npcId?: string; looks?: string } }>(
+    "/:id/npc-registry/looks",
+    async (req, reply) => {
+      const { npcId, looks } = req.body || {};
+      if (!npcId || typeof looks !== "string") return reply.status(400).send({ error: "Missing npcId or looks" });
+
+      const npcRegistry = getNpcRegistryService();
+      if (!npcRegistry?.setLooks) {
+        return reply.status(400).send({ error: "NPC registry service not available" });
+      }
+
+      const result = await npcRegistry.setLooks(req.params.id, npcId, looks);
+      return reply.send({ ok: result !== null, looks: result });
     },
   );
 
@@ -3641,17 +3654,17 @@ export async function chatsRoutes(app: FastifyInstance) {
     let name = req.body.name?.trim();
     let description = req.body.description?.trim() || "";
     let avatarPath = req.body.avatarPath || null;
+    let appearance = "";
 
     if (req.body.npcId) {
-      const npcRegistry = getCapabilityService<{ current: (chatId: string) => Promise<{ npcs: Map<string, any> }> }>(
-        "npc-registry",
-      );
+      const npcRegistry = getNpcRegistryService();
       if (npcRegistry) {
         const resolved = await npcRegistry.current(req.params.id).catch(() => null);
         const entry = resolved?.npcs.get(req.body.npcId);
         if (entry) {
           if (!name) name = entry.name;
           if (!avatarPath && entry.avatar) avatarPath = entry.avatar;
+          appearance = entry.looks ?? "";
           if (!description) {
             const details = [];
             if (entry.gender) details.push(`Pronouns: ${entry.gender}`);
@@ -3667,6 +3680,7 @@ export async function chatsRoutes(app: FastifyInstance) {
     const charData = characterDataSchema.parse({
       name,
       description,
+      extensions: { appearance },
     });
     const charsStore = createCharactersStorage(app.db);
     const newCard = await charsStore.create(charData, avatarPath ?? undefined);
