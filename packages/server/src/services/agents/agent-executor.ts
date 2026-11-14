@@ -3,6 +3,7 @@ import { roomAgentAllowed } from "../multiplayer/generation-policy.js";
 // Agent Executor — Single & Batched LLM execution
 // ──────────────────────────────────────────────
 import { buildBlankWorldStateRequest, placeWorldStateRows } from "./world-state-rows.js";
+import { buildBlankCharacterLooksRequest } from "./character-tracker-looks.js";
 import { existsSync, readdirSync, statSync, type Dirent } from "node:fs";
 import {
   buildCharacterAppearanceReferenceBlock,
@@ -3460,6 +3461,11 @@ function buildAgentExtras(
   if (agentTypes.includes("world-state")) {
     const blankWorldState = buildBlankWorldStateRequest(context.gameState);
     if (blankWorldState) parts.push(blankWorldState);
+  }
+
+  if (agentTypes.includes("character-tracker")) {
+    const blankLooks = buildBlankCharacterLooksRequest(context.gameState);
+    if (blankLooks) parts.push(blankLooks);
   }
 
   const gameImageStylePrompt =
