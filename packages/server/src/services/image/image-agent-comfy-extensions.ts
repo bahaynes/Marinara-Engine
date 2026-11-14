@@ -9,6 +9,7 @@
 //   present in the scene.
 import type { AgentContext } from "@marinara-engine/shared";
 import { logger } from "../../lib/logger.js";
+import { readIllustratorImageAppearanceOverride, splitEnsembleAppearance } from "./character-prompts.js";
 import { COMFYUI_MAX_REFERENCE_IMAGES } from "./comfyui-reference-placeholders.js";
 
 export const WORKFLOW_VARIABLES_KEY = "marinara_variables";
@@ -351,10 +352,17 @@ export function applyImageAgentContextExtensions(
     if (present.length > 0) {
       // A current roster needs no rescue from the reply, which also names people who are only mentioned.
       const response = rosterIsCurrent ? "" : normalizeName(next.mainResponse ?? "");
+      const memory = next.memory;
+      // An ensemble card ("[Name] traits | ...") is never present by its own name; keep it while a member is.
+      const ensembleMembers = (character: AgentContext["characters"][number]) =>
+        splitEnsembleAppearance(
+          readIllustratorImageAppearanceOverride(memory, character.id) ?? character.appearance ?? "",
+        )?.map((segment) => segment.name) ?? [];
       const characters = next.characters.filter(
         (character) =>
           present.some((name) => namesMatch(name, character.name)) ||
-          (response && ` ${response} `.includes(` ${normalizeName(character.name)} `)),
+          (response && ` ${response} `.includes(` ${normalizeName(character.name)} `)) ||
+          ensembleMembers(character).some((member) => present.some((name) => namesMatch(name, member))),
       );
       next = { ...next, characters };
     }

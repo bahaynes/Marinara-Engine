@@ -287,7 +287,7 @@ import {
   illustratorPromptTemplateOwnsComposition,
   resolveIllustratorCharacterReferences,
 } from "./illustrator-references.js";
-import { loadIllustratorNpcCast } from "../../services/image/illustrator-npc-cast.js";
+import { buildIllustratorCastLookLines, loadIllustratorNpcCast } from "../../services/image/illustrator-npc-cast.js";
 import {
   explicitlyRequestsTextRewrite,
   isBuiltInTextRewriteAgentType,
@@ -4210,6 +4210,18 @@ async function applyRetryResultEffects(args: {
                 fullPrompt += `\n\n${appearanceBlock}`;
                 logger.debug("[retry-agents] Illustrator Added appearance for characters without native captions");
               }
+            }
+            if (!comfyLayoutActive) {
+              // custom-mods: ensemble-card members and this turn's outfits.
+              const castLines = buildIllustratorCastLookLines({
+                sources: comfyLayoutLookSourcesFromContext(agentContext).cards,
+                visibleNames: requestedReferenceNames,
+                coveredNames: referenceResolution.appearanceNames,
+                trackerRows: agentContext.gameState?.presentCharacters,
+                includeLooks: includeCharacterAppearance && illustratorCharacterPrompts.length === 0,
+                includeOutfits: includeCharacterAppearance || useAvatarRefs,
+              });
+              if (castLines) fullPrompt += `\n\n${castLines}`;
             }
             if (useAvatarRefs && referenceResolution.referenceImages.length > 0) {
               // custom-mods: on a layout workflow each box is paired with its own slot instead.
