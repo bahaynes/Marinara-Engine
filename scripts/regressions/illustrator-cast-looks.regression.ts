@@ -174,4 +174,21 @@ assert.deepEqual(
   ],
 );
 
+// A member named in an ensemble card's own name still gets a portrait (the card avatar shows someone else).
+const ensemblePortraits: string[] = [];
+await ensureIllustratorNpcPortraits({
+  chatId: "portrait-regression-chat",
+  requestedNames: ["Nyx", "Lena"],
+  cards: [
+    { name: "Nyx and Jinx", appearance: "[Nyx] ink-black hair, violet eyes | [Jinx] black hair with a purple streak" },
+    { name: "Lena Hart", appearance: "" },
+  ],
+  cast: [],
+  generate: async (character) => {
+    ensemblePortraits.push(character.name);
+    return "/x.png";
+  },
+});
+assert.deepEqual(ensemblePortraits, ["Nyx"]);
+
 console.log("Illustrator cast looks regression passed");

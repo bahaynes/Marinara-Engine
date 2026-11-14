@@ -93,7 +93,13 @@ export async function ensureIllustratorNpcPortraits(args: {
 }): Promise<IllustratorChatCharacterReference[]> {
   const cast = [...args.cast];
   for (const name of args.requestedNames) {
-    if (args.cards.some((card) => sameName(card.name, name))) continue;
+    // A member of an ensemble card ("Nyx and Jinx") is not that card: the card's avatar is not their face.
+    const coveredByCard = args.cards.some(
+      (card) =>
+        sameName(card.name, name) &&
+        !splitEnsembleAppearance(card.appearance ?? "")?.some((segment) => sameName(segment.name, name)),
+    );
+    if (coveredByCard) continue;
     const index = cast.findIndex((entry) => sameName(entry.name, name));
     const entry = index >= 0 ? cast[index] : null;
     if (entry?.avatarPath) continue;
