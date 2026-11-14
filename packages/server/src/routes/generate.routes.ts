@@ -521,9 +521,8 @@ import {
   supportsNovelAiCharacterPrompts,
 } from "../services/image/character-prompts.js";
 import {
-  composeComfyLayoutCharacterPrompts,
-  logComfyLayoutBox,
   comfyLayoutLookSourcesFromContext,
+  finishComfyLayoutBoxes,
 } from "../services/image/comfyui-layout-placeholders.js";
 import { resolveCustomAgentStyleProfileId } from "../services/generation/custom-agent-image-settings.js";
 import { buildSpotifyDjConstraints } from "../services/spotify/spotify-dj-constraints.js";
@@ -15655,21 +15654,8 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                         requestedReferenceNames,
                         characterPromptLimit,
                       );
-                      const illustratorCharacterPrompts = comfyLayoutActive
-                        ? composeComfyLayoutCharacterPrompts(
-                            writerCharacterPrompts,
-                            comfyLayoutLookSourcesFromContext(
-                              agentContext,
-                              await gameStateStore
-                                .getByChatAndMessage(input.chatId, messageId, targetSwipeIndex)
-                                .then((row) =>
-                                  row ? parseGameStateRow(row as Record<string, unknown>).presentCharacters : null,
-                                )
-                                .catch(() => null),
-                            ),
-                            logComfyLayoutBox("[illustrator] layout box"),
-                          )
-                        : writerCharacterPrompts;
+                      // custom-mods: layout boxes are composed once the reference slots are known (below).
+                      let illustratorCharacterPrompts = writerCharacterPrompts;
                       if (illustratorCharacterPrompts.length > 0) {
                         logger.debug(
                           "[illustrator] Sending %d native NovelAI character caption(s): %s",
@@ -15813,7 +15799,8 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                         }
                       }
                       if (useAvatarRefs && referenceResolution.referenceImages.length > 0) {
-                        if (referenceResolution.referenceLine && !suppressReferencePromptLine)
+                        // custom-mods: on a layout workflow each box is paired with its own slot instead.
+                        if (referenceResolution.referenceLine && !suppressReferencePromptLine && !comfyLayoutActive)
                           fullPrompt += `\n\n${referenceResolution.referenceLine}`;
                         logger.debug(
                           "[illustrator] Sending %d character reference(s) for: %s",
@@ -15829,18 +15816,44 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                       if (mergedReferenceImages.length > 0) {
                         illustratorRefImages = mergedReferenceImages;
                       }
-                      if (spatialLocationReferenceImage) {
+                      if (spatialLocationReferenceImage && !comfyLayoutActive) {
                         // Illustrator 2 names the location slot itself via [[location]].
                         if (!requestOrderedReferences) fullPrompt += `\n\n${SPATIAL_LOCATION_REFERENCE_PROMPT_LINE}`;
                         logger.debug("[illustrator] Sending the current Maps location reference image first");
                       }
-                      fullPrompt = bindIllustratorReferenceTokens(fullPrompt, {
-                        locationImage: spatialLocationReferenceImage,
-                        referenceImages: useAvatarRefs ? referenceResolution.referenceImages : [],
-                        referenceNames: useAvatarRefs ? referenceResolution.referenceNames : [],
-                        source: imgSource,
-                        bindPlainNames: requestOrderedReferences,
-                      });
+                      if (comfyLayoutActive) {
+                        // custom-mods: box k is paired with reference image k on the workflow side.
+                        const layout = finishComfyLayoutBoxes({
+                          prompt: fullPrompt,
+                          writerCharacterPrompts,
+                          referenceImages: useAvatarRefs ? referenceResolution.referenceImages : [],
+                          referenceNames: useAvatarRefs ? referenceResolution.referenceNames : [],
+                          locationImage: spatialLocationReferenceImage,
+                          source: imgSource,
+                          lookSources: comfyLayoutLookSourcesFromContext(
+                            agentContext,
+                            await gameStateStore
+                              .getByChatAndMessage(input.chatId, messageId, targetSwipeIndex)
+                              .then((row) =>
+                                row ? parseGameStateRow(row as Record<string, unknown>).presentCharacters : null,
+                              )
+                              .catch(() => null),
+                          ),
+                          logPrefix: "[illustrator] layout box",
+                          bindPlainNames: requestOrderedReferences,
+                        });
+                        fullPrompt = layout.prompt;
+                        illustratorCharacterPrompts = layout.characterPrompts;
+                        illustratorRefImages = layout.referenceImages;
+                      } else {
+                        fullPrompt = bindIllustratorReferenceTokens(fullPrompt, {
+                          locationImage: spatialLocationReferenceImage,
+                          referenceImages: useAvatarRefs ? referenceResolution.referenceImages : [],
+                          referenceNames: useAvatarRefs ? referenceResolution.referenceNames : [],
+                          source: imgSource,
+                          bindPlainNames: requestOrderedReferences,
+                        });
+                      }
 
                       const compiledPrompt = compileImagePrompt({
                         kind: "illustration",
