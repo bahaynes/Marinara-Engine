@@ -163,18 +163,13 @@ other sessions' uncommitted edits ship under the wrong commit.
 ### Step 3: Erin's instance (`marinara-wife`)
 `marinara-deploy.py` automatically deploys `marinara-wife` whenever the rebased tree's `package.json` version is higher (patch, minor, or major) than `marinara-wife`'s running version, reusing the validated candidate image as `:local` while both instances are idle.
 
-To deploy or rebuild `marinara-wife` manually outside of version bumps:
+To deploy `marinara-wife` outside of version bumps (only when Ben says Erin wants it):
 ```bash
-python3 scripts/marinara-deploy.py deploy --wife
+python3 scripts/marinara-deploy.py deploy [REF] --wife        # marinara, then marinara-wife
+python3 scripts/marinara-deploy.py deploy [REF] --wife-only   # marinara-wife alone
 ```
-Or build `:local` by hand from a clean worktree of the commit, check `marinara-deploy.py idle` in the same
-command, then recreate only `marinara-wife`:
-```bash
-cd /home/bah/git/marinara-engine && git worktree add --detach /tmp/mw-build <commit>
-docker build --build-arg BUILD_BRANCH=staging --build-arg BUILD_COMMIT=$(git -C /tmp/mw-build rev-parse --short HEAD) -t marinara-engine:local /tmp/mw-build
-python3 scripts/marinara-deploy.py idle | grep -q '"idle": true' && (cd /home/bah/git/minecraftdocker/marinara && docker compose up -d --build --force-recreate marinara-wife)
-git worktree remove /tmp/mw-build
-```
+Both wait for idle before each recreate, keep `:local-prev` as the rollback image and check `/api/health`.
+Don't build `:local` by hand; extend the script if it lacks a mode you need.
 
 ### Nightly deploys (primary + conditional wife upgrades)
 bah-nixos's `marinara-rebase` systemd timer (01:00) rebases `custom-mods` onto `upstream/staging` in `~/.cache/marinara-rebase/repo`, runs `pnpm check` and `pnpm regression`, and when they pass builds `marinara-engine:nightly` and recreates `marinara` once both instances are idle (until 03:30), rolling back to `marinara-engine:nightly-prev` if `/api/health` doesn't report the new commit. When the rebase includes an upstream version bump (patch/minor/major), `marinara-deploy.py` also tags the candidate as `:local` and updates `marinara-wife`. It skips deploys when `storage-format.json` changed. The report is `~/.claude/handoffs/marinara-nightly-rebase.md`; `/api/health`'s `commit` is a `nightly/rebased` commit, not a `custom-mods` one. A manual deploy to `marinara` replaces the nightly until the next night.

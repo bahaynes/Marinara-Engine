@@ -4,12 +4,14 @@
   marinara-deploy.py idle
       Prints {"idle": bool, "reason": str}: whether restarting a container now would cut off a generation.
   marinara-deploy.py deploy [REF] [--tree DIR] [--wait-minutes N | --until HH:MM] [--retry-seconds N]
-                            [--allow-untested] [--wife] [--no-wife]
+                            [--allow-untested] [--wife] [--no-wife] [--wife-only]
       Builds marinara-engine:nightly from a clean worktree of REF (default custom-mods), waits until both
       instances and the local model backend (llama-backend or strata-backend) are idle, keeps the running image as :nightly-prev, recreates marinara, and
       rolls back if /api/health doesn't report REF. --tree builds an existing clean checkout instead.
       When tree package.json has a higher version (patch, minor, or major) than marinara-wife runs,
       also auto-deploys marinara-wife using the same validated candidate image (unless --no-wife).
+      --wife-only builds the same validated candidate and deploys it to marinara-wife alone, with the same
+      idle wait, rollback image (:local-prev) and health check.
 
 Refuses: a tree that never passed `pnpm check` + `pnpm regression` (the pre-push hook and the nightly record
 passing trees in ~/.cache/marinara-rebase/validated-trees), a storage-format change (one-way; back up and
@@ -137,13 +139,26 @@ def wife_needs_upgrade(tree):
     return tree_ver > wife_ver, f"marinara-wife is on {wife_ver_str}, tree is on {tree_pkg.get('version')}"
 
 
-def deploy_wife(tree, commit):
+def wait_idle(deadline, retry_seconds):
+    """Waits until nothing is generating; returns "" then, or the busy reason once the deadline would pass."""
+    while (reason := busy_reason()):
+        if datetime.datetime.now() + datetime.timedelta(seconds=retry_seconds) > deadline:
+            return reason
+        say(f"waiting: {reason}")
+        time.sleep(retry_seconds)
+    return ""
+
+
+def deploy_wife(tree, commit, deadline, retry_seconds):
     """Deploys the built candidate image to marinara-wife if storage format allows it."""
     want = json.load(open(f"{tree}/storage-format.json"))["storageFormat"]
     ok, text = docker("exec", "marinara-wife", "cat", "/app/data/storage/manifest.json", timeout=30)
     have = json.loads(text).get("version") if ok else None
     if have != want:
         return f"marinara-wife NOT DEPLOYED: storage format {have} -> {want}; manual backup required"
+    # Checked again here: a turn may have started while marinara restarted and passed its health check.
+    if (reason := wait_idle(deadline, retry_seconds)):
+        return f"marinara-wife NOT DEPLOYED: still busy at {deadline:%H:%M} ({reason}); {IMAGE}-candidate is built"
     say(f"tagging candidate image for marinara-wife as {WIFE_IMAGE}")
     docker("tag", WIFE_IMAGE, f"{WIFE_IMAGE}-prev")
     docker("tag", f"{IMAGE}-candidate", WIFE_IMAGE)
@@ -158,8 +173,9 @@ def deploy_wife(tree, commit):
             + ("marinara-wife is back on the previous image" if ok2 else f"ROLLBACK FAILED TOO: {text2[-300:]}"))
 
 
-def deploy(tree, commit, deadline, retry_seconds, allow_untested, force_wife=False, no_wife=False):
-    """Builds `tree` (a clean checkout of `commit`) and deploys it to marinara. Returns one line for the report."""
+def deploy(tree, commit, deadline, retry_seconds, allow_untested, force_wife=False, no_wife=False, wife_only=False):
+    """Builds `tree` (a clean checkout of `commit`) and deploys it to marinara (or, with wife_only, only to
+    marinara-wife). Returns one line for the report."""
     if datetime.datetime.now() > deadline:  # the nightly's cutoff keeps it clear of the 04:00 reboot
         return f"NOT DEPLOYED: already past {deadline:%H:%M}"
     validated = open(VALIDATED).read().split() if os.path.exists(VALIDATED) else []
@@ -168,18 +184,17 @@ def deploy(tree, commit, deadline, retry_seconds, allow_untested, force_wife=Fal
     want = json.load(open(f"{tree}/storage-format.json"))["storageFormat"]
     ok, text = docker("exec", "marinara", "cat", "/app/data/storage/manifest.json", timeout=30)
     have = json.loads(text).get("version") if ok else None
-    if have != want:
+    if have != want and not wife_only:
         return f"NOT DEPLOYED: storage format {have} -> {want}; back up the data directory and deploy by hand"
     say(f"building {IMAGE}-candidate from {commit}")
     ok, text = docker("build", "-q", "--build-arg", "BUILD_BRANCH=staging", "--build-arg", f"BUILD_COMMIT={commit}",
                       "-t", f"{IMAGE}-candidate", tree, timeout=3600)
     if not ok:
         return f"NOT DEPLOYED: image build failed: {text[-400:]}"
-    while (reason := busy_reason()):
-        if datetime.datetime.now() + datetime.timedelta(seconds=retry_seconds) > deadline:
-            return f"NOT DEPLOYED: still busy at {deadline:%H:%M} ({reason}); {IMAGE}-candidate is built"
-        say(f"waiting: {reason}")
-        time.sleep(retry_seconds)
+    if wife_only:  # deploy_wife checks marinara-wife's own storage format and waits for idle itself
+        return deploy_wife(tree, commit, deadline, retry_seconds)
+    if (reason := wait_idle(deadline, retry_seconds)):
+        return f"NOT DEPLOYED: still busy at {deadline:%H:%M} ({reason}); {IMAGE}-candidate is built"
     # Checked idle just above; the recreate follows within seconds (the compose build only copies ffmpeg in).
     ok, text = docker("tag", IMAGE, f"{IMAGE}-prev")
     if not ok:  # e.g. pruned; without it a failed health check would have nothing to roll back to
@@ -192,7 +207,7 @@ def deploy(tree, commit, deadline, retry_seconds, allow_untested, force_wife=Fal
         upgrade_needed, wife_reason = wife_needs_upgrade(tree)
         if (upgrade_needed or force_wife) and not no_wife:
             say(f"deploying marinara-wife ({wife_reason})")
-            wife_res = deploy_wife(tree, commit)
+            wife_res = deploy_wife(tree, commit, deadline, retry_seconds)
             res += f"; {wife_res}"
         return res
     docker("tag", f"{IMAGE}-prev", IMAGE)
@@ -214,7 +229,10 @@ def main():
     dep.add_argument("--allow-untested", action="store_true")
     dep.add_argument("--wife", action="store_true", help="force deploy to marinara-wife even without a version bump")
     dep.add_argument("--no-wife", action="store_true", help="skip auto-deploying marinara-wife on version bumps")
+    dep.add_argument("--wife-only", action="store_true", help="deploy only to marinara-wife; marinara is left as it is")
     args = parser.parse_args()
+    if args.wife_only and args.no_wife:
+        parser.error("--wife-only and --no-wife contradict each other")
 
     if args.cmd == "idle":
         reason = busy_reason()
@@ -239,14 +257,14 @@ def main():
             return 1
         commit = git("rev-parse", "--short", "HEAD", cwd=tree)
         result = deploy(tree, commit, deadline, args.retry_seconds, args.allow_untested,
-                        force_wife=args.wife, no_wife=args.no_wife)
+                        force_wife=args.wife, no_wife=args.no_wife, wife_only=args.wife_only)
     else:
         commit = git("rev-parse", "--short", f"{args.ref}^{{commit}}")
         tree = tempfile.mkdtemp(prefix="marinara-deploy-")
         git("worktree", "add", "--detach", tree, commit)
         try:
             result = deploy(tree, commit, deadline, args.retry_seconds, args.allow_untested,
-                            force_wife=args.wife, no_wife=args.no_wife)
+                            force_wife=args.wife, no_wife=args.no_wife, wife_only=args.wife_only)
         finally:
             git("worktree", "remove", "--force", tree)
     say(result)
