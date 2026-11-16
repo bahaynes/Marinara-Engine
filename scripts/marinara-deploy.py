@@ -231,7 +231,7 @@ def main():
     dep.add_argument("--no-wife", action="store_true", help="skip auto-deploying marinara-wife on version bumps")
     dep.add_argument("--wife-only", action="store_true", help="deploy only to marinara-wife; marinara is left as it is")
     args = parser.parse_args()
-    if args.wife_only and args.no_wife:
+    if args.cmd == "deploy" and args.wife_only and args.no_wife:
         parser.error("--wife-only and --no-wife contradict each other")
 
     if args.cmd == "idle":
