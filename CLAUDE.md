@@ -47,8 +47,8 @@ Two instances run from `/home/bah/git/minecraftdocker/marinara`: `marinara` (Ben
 has the commands; these rules hold for every agent:
 
 - **Erin's instance is hands-off.** No data, settings, agent, or rebuild changes to
-  `marinara-wife` unless Ben says Erin wants that change. Never recreate both instances in
-  one command. Her `marinara-engine:local` image is built by hand, from a clean worktree, only then.
+  `marinara-wife` unless Ben says Erin wants that change. Her `marinara-engine:local` image is
+  built from a clean worktree, only then.
 - **Use the `marinara` MCP tools** (`scripts/mari-mcp.mjs`) or `mari` for data. Dry-run first. Never
   edit storage JSON on the host while a container runs. The MCP refuses writes to `marinara-wife`.
 - **Restart and deploy only through the tools.** A recreate kills in-flight turns, and game turns can't
