@@ -2,7 +2,7 @@
 // with the choices it still waits on, Back and Next that never block, and the character as it stands
 // beside them. Everything it writes goes through the shared builder, which keeps the build the one
 // sheet the rest of the Engine reads and takes back what an unpicked entry gave.
-import { Check, ChevronLeft, ChevronRight, Dices, Minus, Plus, Trash2 } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Dices, Info, Minus, Plus, Trash2 } from "lucide-react";
 import { SearchInput } from "../ui/SearchInput";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useQueries } from "@tanstack/react-query";
@@ -151,6 +151,7 @@ function ChoiceSlot({
   held,
   filterLabelOf = (id) => id,
   infoOf,
+  heldElsewhere = [],
 }: {
   title: string;
   slot: RulesetBuilderAbilitySlot | RulesetBuilderTrainedSlot | RulesetBuilderEntrySlot;
@@ -164,6 +165,9 @@ function ChoiceSlot({
   /** What an option is, for its Info (laptop class builds 2026-10-24): a Fighting Style's summary, as
    *  a catalog step's card shows it. */
   infoOf?: (id: string) => string | undefined;
+  /** What the choice lists but the sheet already has from elsewhere (a Soldier's Athletics), shown as
+   *  taken so it does not look missing. */
+  heldElsewhere?: string[];
 }) {
   const { t } = useUiTranslation();
   const [openInfo, setOpenInfo] = useState<string | null>(null);
@@ -243,7 +247,11 @@ function ChoiceSlot({
           const known = !on && !!held?.(id);
           const info = infoOf?.(id);
           return (
-            <span key={id} className="inline-flex items-start gap-0.5">
+            // An option with Info is one bubble, so its Info reads as its own and not the next option's.
+            <span
+              key={id}
+              className={`inline-flex items-start gap-0.5 ${info ? "rounded-lg border border-[var(--border)] bg-[var(--card)] p-0.5" : ""}`}
+            >
               <button
                 type="button"
                 aria-pressed={on}
@@ -267,15 +275,24 @@ function ChoiceSlot({
                   aria-expanded={openInfo === id}
                   aria-controls={infoDomId}
                   aria-label={t("ui.rulesets.builder.infoFor", { name: labelOf(id) })}
+                  title={t("ui.rulesets.builder.info")}
                   onClick={() => setOpenInfo(openInfo === id ? null : id)}
-                  className={`${chipClass} ${chipOff}`}
+                  className={`${chipClass} ${openInfo === id ? chipOn : chipOff} self-stretch`}
                 >
-                  {t("ui.rulesets.builder.info")}
+                  <Info size={12} aria-hidden="true" />
                 </button>
               )}
             </span>
           );
         })}
+        {heldElsewhere
+          .filter((id) => !slot.from.includes(id))
+          .map((id) => (
+            <button key={id} type="button" disabled className={`${chipClass} ${chipOff}`}>
+              {labelOf(id)}
+              <span className="block font-normal">{t("ui.rulesets.builder.reasonTrained")}</span>
+            </button>
+          ))}
       </div>
       {openInfo && infoOf?.(openInfo) && (
         <div id={infoDomId} className="space-y-1 text-[0.6875rem] text-[var(--muted-foreground)]">
@@ -506,6 +523,17 @@ export function RulesetSheetBuilder({
   const abilityLabel = (id: string) => rt(definition.sheet.abilities.find((ability) => ability.id === id)?.label ?? id);
   const skillLabel = (id: string) => rt(definition.sheet.skills.find((skill) => skill.id === id)?.label ?? id);
   const saveLabel = (id: string) => rt(definition.sheet.saves.find((save) => save.id === id)?.label ?? id);
+  // What a grant's skill choice lists but leaves out because the sheet already has it trained: a
+  // background picked after the class (a Soldier's Athletics) drops it from the class's choice.
+  const trainedHeldElsewhere = (slot: RulesetBuilderTrainedSlot): string[] => {
+    const index = slot.key.split("/").at(-1);
+    const choice = (slot.entry?.grants?.trained?.choose ?? []).find((each, at) => String(each.id ?? at) === index);
+    const untrained = definition.resolution.proficiencyTiers[0]?.id;
+    const have = slot.what === "skills" ? build.skills : build.saves;
+    return (choice?.from ?? []).filter(
+      (id) => !slot.from.includes(id) && have?.[id] !== undefined && have[id] !== untrained,
+    );
+  };
 
   const slotsHere = (
     <>
@@ -564,6 +592,7 @@ export function RulesetSheetBuilder({
             })}
             slot={slot}
             labelOf={slot.what === "skills" ? skillLabel : saveLabel}
+            heldElsewhere={trainedHeldElsewhere(slot)}
             onChange={(chosen) => update({ ...state, trainedChoices: { ...state.trainedChoices, [slot.key]: chosen } })}
           />
         ))}
