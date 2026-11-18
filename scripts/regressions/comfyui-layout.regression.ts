@@ -798,4 +798,53 @@ assert.equal(layoutRun["21"]!.inputs.bboxes, pairReplacements["%layout_bboxes%"]
 assert.equal(layoutRun["22"]!.inputs.character_boxes, "1, 2");
 assert.match(String(plainRun["6"]!.inputs.text), /A: a tall knight in silver armor/, "other workflows still flatten");
 
+// Stance sets a box's height from the floor line; columns stay as wide as before.
+{
+  const standing = { name: "A", prompt: "a", position: { x: 0.3, y: 0.5 } };
+  const seated = { name: "B", prompt: "b", position: { x: 0.7, y: 0.5 }, stance: "seated" as const };
+  const full = resolveCharacterBoundingBox1000(standing, 0, [standing, seated]);
+  const short = resolveCharacterBoundingBox1000(seated, 1, [standing, seated]);
+  assert.equal(full[0], 50);
+  assert.equal(short[2], full[2], "a seated box keeps the floor line");
+  assert.ok(short[0] > full[0], "a seated box is shorter than a standing one");
+  assert.equal(short[3] - short[1], full[3] - full[1], "stance does not change the width");
+  const [stanceEntry] = sanitizeCharacterPrompts(
+    [
+      { name: "A", prompt: "p", stance: " Seated " },
+      { name: "B", prompt: "p", stance: "flying" },
+    ],
+    ["A", "B"],
+    6,
+  );
+  assert.equal(stanceEntry!.stance, "seated");
+  assert.equal(
+    sanitizeCharacterPrompts([{ name: "B", prompt: "p", stance: "flying" }], ["B"], 6)[0]!.stance,
+    undefined,
+  );
+}
+
+// The registry's pronouns reach the box as a word Flux reads.
+{
+  const boxes = composeComfyLayoutCharacterPrompts(
+    [
+      { name: "Vennet", prompt: "Vennet lies by the forge", position: { x: 0.5, y: 0.5 } },
+      { name: "Hollen", prompt: "stands by the door", position: { x: 0.2, y: 0.5 } },
+      { name: "Moth", prompt: "hovers", position: { x: 0.8, y: 0.5 } },
+    ],
+    {
+      cards: [],
+      lore: [],
+      tracker: [],
+      npcs: [
+        { name: "Vennet", gender: "she" },
+        { name: "Hollen", gender: "he" },
+        { name: "Moth", gender: "they" },
+      ],
+    },
+  );
+  assert.match(boxes[0]!.prompt, /^Vennet \(female\): /);
+  assert.match(boxes[1]!.prompt, /^Hollen \(male\): /);
+  assert.match(boxes[2]!.prompt, /^Moth: /, "they/them adds no word");
+}
+
 console.log("ComfyUI layout regression passed");

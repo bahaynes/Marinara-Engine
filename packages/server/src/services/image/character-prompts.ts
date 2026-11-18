@@ -131,6 +131,7 @@ export function sanitizeCharacterPrompts(
     const role = typeof entry.role === "string" ? entry.role.trim() : "";
     const bbox = sanitizeCharacterBbox(entry.bbox);
     const transformed = entry.transformed === true;
+    const stance = typeof entry.stance === "string" ? entry.stance.toLowerCase().trim() : "";
     candidates.push({
       name,
       prompt,
@@ -144,6 +145,9 @@ export function sanitizeCharacterPrompts(
       ...(role ? { role } : {}),
       ...(bbox ? { bbox } : {}),
       ...(transformed ? { transformed: true } : {}),
+      ...(stance === "standing" || stance === "seated" || stance === "lying" || stance === "crouched"
+        ? { stance }
+        : {}),
     });
   }
 
@@ -198,7 +202,8 @@ function buildComfyLayoutCharacterPromptInstruction(limit: number): string {
   return [
     "<illustrator_character_prompts>",
     `${COMFY_LAYOUT_INSTRUCTION_MARKER} that draws each named character inside their own box of the picture.`,
-    'Extend the JSON you return with "characterPrompts": [ { "name": string, "prompt": string, "negativePrompt": string, "position": { "x": number, "y": number }, "role"?: string, "bbox"?: [ymin, xmin, ymax, xmax], "transformed"?: boolean } ].',
+    'Extend the JSON you return with "characterPrompts": [ { "name": string, "prompt": string, "negativePrompt": string, "position": { "x": number, "y": number }, "role"?: string, "bbox"?: [ymin, xmin, ymax, xmax], "transformed"?: boolean, "stance"?: "standing" | "seated" | "lying" | "crouched" } ].',
+    'Set "stance" to how that character holds their body in this scene (standing, seated, lying or crouched). Never give a size or box for it; the engine sizes the box.',
     'Include exactly one characterPrompts entry for every name in "characters", using the exact same spelling, even when only one character is visible.',
     `Never name more than ${limit} characters. If more are present, pick the ones this beat is about and leave the rest out of the picture and out of "characters".`,
     'A pet, companion animal or mount that is held by, perched on or ridden by a character belongs to that character: name it in their pose or action, and leave it out of "characters".',

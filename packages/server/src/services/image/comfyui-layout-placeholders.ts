@@ -59,6 +59,14 @@ function normalizedRole(entry: SceneIllustrationCharacterPrompt): string {
     : "";
 }
 
+/**
+ * Share of the full box height a stance fills, the box anchored to the floor line. A seated or lying
+ * figure in a full-height column left room for a second copy of itself.
+ * ponytail: guessed ratios, one table; tune them against flagged images. Widths stay equal columns,
+ * so a lying figure is not widened.
+ */
+const STANCE_HEIGHT_SHARE: Record<string, number> = { standing: 1, crouched: 0.7, seated: 0.65, lying: 0.4 };
+
 /** The two roles that mean "touching": their presets overlap on purpose. */
 const CONTACT_ROLES = new Set(["center_left", "center_right"]);
 
@@ -165,7 +173,9 @@ export function resolveCharacterBoundingBox1000(
     }
   }
 
-  return [OUTER_MARGIN_1000, xmin, 1000 - OUTER_MARGIN_1000, xmax];
+  const floor = 1000 - OUTER_MARGIN_1000;
+  const share = STANCE_HEIGHT_SHARE[entry.stance ?? "standing"] ?? 1;
+  return [Math.round(floor - (floor - OUTER_MARGIN_1000) * share), xmin, floor, xmax];
 }
 
 /**
@@ -226,7 +236,7 @@ export type ComfyLayoutLookSources = {
   /** Character tracker rows. */
   tracker: ReadonlyArray<{ name: string; appearance?: string | null; outfit?: string | null }>;
   /** People with no card: NPC Registry looks (see loadIllustratorNpcCast). */
-  npcs?: ReadonlyArray<{ name: string; appearance?: string | null }>;
+  npcs?: ReadonlyArray<{ name: string; appearance?: string | null; gender?: string | null }>;
 };
 
 function normalizeLookName(value: string): string {
@@ -437,6 +447,14 @@ export function filterLayoutCharacterReferences(args: {
   return { referenceImages: images, referenceNames: names };
 }
 
+/** "she" / "he" from the NPC Registry as a word Flux reads; anything else (they, it) adds nothing. */
+function genderWord(gender: string | null | undefined): string {
+  const g = (gender ?? "").toLowerCase().trim();
+  if (/^(she|her|female|woman)\b/.test(g)) return "female";
+  if (/^(he|him|male|man)\b/.test(g)) return "male";
+  return "";
+}
+
 /** Strip a repeated leading character name ("Nyx: Nyx lies..." or "Lena lies..." for "Lena Luthor") before prepending "<Name>: ". */
 function stripLeadingCharacterName(action: string, name: string): string {
   const full = escapeRegExp(name.trim());
@@ -495,6 +513,7 @@ export function composeComfyLayoutCharacterPrompts(
     }
 
     const rawAction = entry.prompt.trim();
+    const gender = genderWord(sources.npcs?.find((n) => sameLookName(n.name, entry.name))?.gender);
     const action = stripLeadingCharacterName(rawAction, entry.name) || rawAction;
     const carried = companions.filter(
       (companion) =>
@@ -505,7 +524,7 @@ export function composeComfyLayoutCharacterPrompts(
     // The Flux regional stack keeps about 128 tokens of a box's text, so the pose comes first and
     // the looks, the longest part, last.
     const parts = [
-      action ? `${entry.name}: ${trimLook(action)}.` : `${entry.name}:`,
+      action ? `${entry.name}${gender ? ` (${gender})` : ""}: ${trimLook(action)}.` : `${entry.name}:`,
       ...(outfit ? [`Wearing ${trimLook(outfit)}.`] : []),
       ...(looks ? [`${trimLook(looks)}.`] : []),
       ...carried.map((companion) => `${companion.name}: ${trimLook(companion.looks)}.`),

@@ -53,6 +53,8 @@ export type IllustratorChatCharacterReference = {
   name: string;
   avatarPath?: string | null;
   appearance?: string | null;
+  /** Pronouns the story uses for them (NPC Registry), e.g. "she". */
+  gender?: string | null;
   /**
    * Image-prompt appearance override (#7053). When set it wins over BOTH the
    * caller `appearance` and the DB row, because the card's explicit override is

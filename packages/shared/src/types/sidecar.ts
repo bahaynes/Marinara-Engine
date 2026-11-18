@@ -207,6 +207,8 @@ export interface SceneIllustrationCharacterPrompt {
   bbox?: [number, number, number, number];
   /** True when the character is in a transformed, shapeshifted, or non-standard form in this scene. */
   transformed?: boolean;
+  /** How the character holds their body in this scene; sets the height of a layout box. */
+  stance?: "standing" | "seated" | "lying" | "crouched";
 }
 
 /** Rare request for a VN CG-style illustration background. */

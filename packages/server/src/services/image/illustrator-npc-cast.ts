@@ -168,6 +168,7 @@ export async function loadIllustratorNpcCast(args: {
     }
     existing.avatarPath ||= entry.avatarPath ?? null;
     existing.appearance ||= entry.appearance ?? null;
+    if (entry.gender && !existing.gender) existing.gender = entry.gender;
   };
 
   if (Array.isArray(args.presentCharacters)) {
@@ -185,7 +186,13 @@ export async function loadIllustratorNpcCast(args: {
       const avatarPath = text(entry.avatar);
       const looks = text(entry.looks);
       if (name && (avatarPath || looks)) {
-        add({ id: `npc-registry:${entry.id}`, name, avatarPath: avatarPath || null, appearance: looks || null });
+        add({
+          id: `npc-registry:${entry.id}`,
+          name,
+          avatarPath: avatarPath || null,
+          appearance: looks || null,
+          ...(text(entry.gender) ? { gender: text(entry.gender) } : {}),
+        });
       }
     }
   } catch {
