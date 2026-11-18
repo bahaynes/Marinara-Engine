@@ -367,6 +367,17 @@ export function TrackerSectionList({
       ))}
       {!orderedTrackerSections.includes("custom") ? beforeCustomSections : null}
       {afterCustomSections}
+      {/* The roster otherwise lives in the Characters section, which needs the Character Tracker. */}
+      {activeChatId && enabledAgentTypes.has("npc-registry") && !orderedTrackerSections.includes("characters") ? (
+        <button
+          type="button"
+          onClick={() => useUIStore.getState().openModal("npc-registry", { chatId: activeChatId })}
+          className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs text-[var(--muted-foreground)] transition-colors hover:text-[var(--foreground)]"
+        >
+          <BookUser size="0.75rem" />
+          {localizeUi("ui.npcRegistry.openRoster", { defaultValue: "Story NPC Roster" })}
+        </button>
+      ) : null}
     </>
   );
 }
