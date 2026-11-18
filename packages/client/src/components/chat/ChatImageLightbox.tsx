@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { Download, Pin, RefreshCw } from "lucide-react";
+import { Download, Flag, Pin, RefreshCw } from "lucide-react";
+import { toast } from "sonner";
+import { showPromptDialog } from "../../lib/app-dialogs";
 import { parseChatImageGenerationRecord, type GeneratedSceneVideo } from "@marinara-engine/shared";
-import { useGalleryImages, type ChatImage } from "../../hooks/use-gallery";
+import { useFlagGalleryImage, useGalleryImages, type ChatImage } from "../../hooks/use-gallery";
 import { useGalleryStore } from "../../stores/gallery.store";
 import { ImageDownloadButton } from "../ui/ImageDownloadButton";
 import { ImageViewer, VIEWER_BUTTON_CLASS } from "../ui/ImageViewer";
@@ -85,6 +87,8 @@ export function ChatImageLightbox({
   const [activeImage, setImage] = useState(initialImage);
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
+  const flagImage = useFlagGalleryImage();
+  const [flagged, setFlagged] = useState(!!initialImage.flag);
   // Lightweight message and storyboard images omit the generation record. Resolve
   // it once here so viewing and editing use the same saved request.
   const needsGalleryRow = !!regenerate && activeImage.generation === undefined;
@@ -95,6 +99,26 @@ export function ChatImageLightbox({
   const prompt = record?.prompt ?? image.prompt;
   const meta = [formatChatImageMeta(image), extraMeta].filter(Boolean).join(" | ");
   const downloadName = getChatImageDownloadName(image);
+  const toggleFlag = async () => {
+    let note = "";
+    if (!flagged) {
+      const answer = await showPromptDialog({
+        title: localizeUi("ui.chat.chatimagelightbox.flagTitle"),
+        message: localizeUi("ui.chat.chatimagelightbox.flagMessage"),
+        placeholder: localizeUi("ui.chat.chatimagelightbox.flagPlaceholder"),
+        confirmLabel: localizeUi("ui.chat.chatimagelightbox.flagConfirm"),
+      });
+      if (answer === null) return;
+      note = answer.trim();
+    }
+    flagImage.mutate(
+      { chatId: image.chatId, imageId: image.id, flag: !flagged, note, messageId: regenerate?.messageId },
+      {
+        onSuccess: () => setFlagged(!flagged),
+        onError: () => toast.error(localizeUi("ui.chat.chatimagelightbox.flagFailed")),
+      },
+    );
+  };
   const loadingDetails = needsGalleryRow && gallery.isFetching && !gallery.data;
   const detailsFailed = needsGalleryRow && gallery.isError && !gallery.data;
   // Nothing to re-send for an upload without a prompt.
@@ -140,6 +164,18 @@ export function ChatImageLightbox({
               title={localizeUi("ui.chat.chatimagelightbox.regenerateImage")}
             >
               <RefreshCw size="0.875rem" />
+            </button>
+          )}
+          {regenerate && !editing && (
+            <button
+              type="button"
+              onClick={() => void toggleFlag()}
+              aria-label={localizeUi(flagged ? "ui.chat.chatimagelightbox.unflagImage" : "ui.chat.chatimagelightbox.flagImage")}
+              aria-pressed={flagged}
+              className={cn(VIEWER_BUTTON_CLASS, flagged && "text-amber-300")}
+              title={localizeUi(flagged ? "ui.chat.chatimagelightbox.unflagImage" : "ui.chat.chatimagelightbox.flagImage")}
+            >
+              <Flag size="0.875rem" fill={flagged ? "currentColor" : "none"} />
             </button>
           )}
           {pinEnabled && (

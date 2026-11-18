@@ -22,6 +22,8 @@ export interface ChatImage {
   customName?: string | null;
   /** What the picture shows, written by hand or by the Image reading model. */
   description?: string | null;
+  /** JSON {note, messageId, flaggedAt} when the user marked the image as not matching its scene. */
+  flag?: string | null;
   createdAt: string;
   url: string;
 }
@@ -155,6 +157,30 @@ export function useGenerateGallerySelfie(chatId: string) {
       qc.invalidateQueries({ queryKey: galleryKeys.chat(chatId) });
       qc.invalidateQueries({ queryKey: galleryKeys.assets(chatId) });
     },
+  });
+}
+
+/** Mark an image as not matching its scene (note optional), or clear the mark with `flag: false`. */
+export function useFlagGalleryImage() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      chatId,
+      imageId,
+      flag,
+      note,
+      messageId,
+    }: {
+      chatId: string;
+      imageId: string;
+      flag: boolean;
+      note?: string;
+      messageId?: string;
+    }) => {
+      const url = `/gallery/${chatId}/images/${encodeURIComponent(imageId)}/flag`;
+      return flag ? api.post(url, { note, messageId }) : api.delete(url);
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: galleryKeys.all }),
   });
 }
 

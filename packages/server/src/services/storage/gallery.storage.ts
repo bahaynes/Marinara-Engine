@@ -65,6 +65,14 @@ export function createGalleryStorage(db: DB) {
       return this.getById(id, input.chatId);
     },
 
+    /** Mark (or, with null, unmark) an image as not matching its scene. */
+    async setFlag(id: string, chatId: string, flag: { note: string; messageId: string | null } | null) {
+      await db
+        .update(chatImages)
+        .set({ flag: flag ? JSON.stringify({ ...flag, flaggedAt: now() }) : null })
+        .where(and(eq(chatImages.chatId, chatId), eq(chatImages.id, id)));
+    },
+
     async remove(id: string, chatId?: string) {
       const condition = chatId ? and(eq(chatImages.chatId, chatId), eq(chatImages.id, id)) : eq(chatImages.id, id);
       await db.delete(chatImages).where(condition);
