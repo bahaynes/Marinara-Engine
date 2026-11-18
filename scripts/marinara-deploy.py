@@ -72,7 +72,8 @@ def busy_reason():
             continue  # a stopped instance runs no turns, so there is nothing to cut off
         ok, text = docker("exec", container, "mari", "chats", "list", "--limit", str(RECENT_CHATS), timeout=60)
         try:
-            ids = [c["id"] for c in json.loads(text)]
+            listed = json.loads(text)
+            ids = [c["id"] for c in (listed["items"] if isinstance(listed, dict) else listed)]  # newer mari wraps the list in {"items": ...}
         except Exception:
             return f"{container}: could not list chats"
         for line in node_in(container, STATUS_JS, base, *ids).splitlines() or ["{}"]:
