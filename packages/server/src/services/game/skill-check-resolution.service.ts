@@ -597,39 +597,11 @@ export async function loadSkillCheckModifierContext(
   if (attributes && !playerMrpg)
     return { skills, attributes, sheetAttributes: {}, ...(roomCharacters ? { roomCharacters } : {}) };
   const rpgStats = playerCard?.rpgStats as { attributes?: Array<{ name: string; value: number }> } | undefined;
-  let rawSheetAttributes = rpgStats?.attributes;
-
-  // Fallback to the active persona's personaStats.rpgStats when character cards lack stats (e.g. Game Mode)
-  const setupConfig =
-    meta.gameSetupConfig && typeof meta.gameSetupConfig === "object" && !Array.isArray(meta.gameSetupConfig)
-      ? (meta.gameSetupConfig as Record<string, unknown>)
-      : null;
-  const personaId = readTrimmedString(chat?.personaId) || readTrimmedString(setupConfig?.personaId);
-  if (personaId) {
-    try {
-      const persona = await createCharactersStorage(db).getPersona(personaId);
-      if (persona) {
-        const pStats =
-          typeof persona.personaStats === "string"
-            ? persona.personaStats.trim()
-              ? JSON.parse(persona.personaStats)
-              : undefined
-            : (persona.personaStats as Record<string, unknown> | undefined);
-        if ((!rawSheetAttributes || rawSheetAttributes.length === 0) && Array.isArray(pStats?.rpgStats?.attributes)) {
-          rawSheetAttributes = pStats.rpgStats.attributes;
-        }
-      }
-    } catch (err) {
-      logger.warn(err, "[game/skill-check] Could not read persona rpgStats for chat %s", chatId);
-    }
-  }
-
-  const sheetAttributes = mapSheetAttributesToRPG(rawSheetAttributes);
 
   return {
     skills,
     attributes: null,
-    sheetAttributes,
+    sheetAttributes: mapSheetAttributesToRPG(rpgStats?.attributes),
     ...(playerMrpg ? { mrpgStats: playerMrpg } : {}),
     ...(roomCharacters ? { roomCharacters } : {}),
   };

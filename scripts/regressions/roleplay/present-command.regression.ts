@@ -4,8 +4,8 @@ import {
   buildRoleplayCommandsReminder,
   parseRoleplayCommands,
   RoleplayCommandStreamFilter,
-} from "../../packages/server/src/services/generation/roleplay-commands.js";
-import { buildPresentRows, resolvePresentNames } from "../../packages/server/src/routes/generate/present-command.js";
+} from "../../../packages/server/src/services/generation/roleplay-commands.js";
+import { buildPresentRows, resolvePresentNames } from "../../../packages/server/src/routes/generate/present-command.js";
 
 // Parse: a bare list at the start; states in parentheses are not part of the name.
 const reply = '[present: Dana, Alice, Bram (asleep), "Cole"]\nAlice sets down the cup.';

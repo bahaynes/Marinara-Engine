@@ -10,11 +10,11 @@ import {
   buildPresentRows,
   replyAskedForPicture,
   resolvePresentNames,
-} from "../../packages/server/src/routes/generate/present-command.js";
+} from "../../../packages/server/src/routes/generate/present-command.js";
 import {
   buildComfyReferenceSlotReplacements,
   COMFYUI_MAX_REFERENCE_IMAGES,
-} from "../../packages/server/src/services/image/comfyui-reference-placeholders.js";
+} from "../../../packages/server/src/services/image/comfyui-reference-placeholders.js";
 import {
   applyImageAgentContextExtensions,
   bindReferenceTokens,
@@ -25,8 +25,8 @@ import {
   renderWorkflowVariableInstructions,
   resolveWorkflowVariableReplacements,
   stripWorkflowVariableDeclarations,
-} from "../../packages/server/src/services/image/image-agent-comfy-extensions.js";
-import { replaceComfyUiPlaceholders } from "../../packages/server/src/services/image/image-generation.js";
+} from "../../../packages/server/src/services/image/image-agent-comfy-extensions.js";
+import { replaceComfyUiPlaceholders } from "../../../packages/server/src/services/image/image-generation.js";
 import type { AgentContext } from "@marinara-engine/shared";
 
 // ── Slot flags: exact-match placeholders become JSON booleans/numbers, not strings ──

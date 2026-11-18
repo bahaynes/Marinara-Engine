@@ -170,10 +170,14 @@ export function ChatImageLightbox({
             <button
               type="button"
               onClick={() => void toggleFlag()}
-              aria-label={localizeUi(flagged ? "ui.chat.chatimagelightbox.unflagImage" : "ui.chat.chatimagelightbox.flagImage")}
+              aria-label={localizeUi(
+                flagged ? "ui.chat.chatimagelightbox.unflagImage" : "ui.chat.chatimagelightbox.flagImage",
+              )}
               aria-pressed={flagged}
               className={cn(VIEWER_BUTTON_CLASS, flagged && "text-amber-300")}
-              title={localizeUi(flagged ? "ui.chat.chatimagelightbox.unflagImage" : "ui.chat.chatimagelightbox.flagImage")}
+              title={localizeUi(
+                flagged ? "ui.chat.chatimagelightbox.unflagImage" : "ui.chat.chatimagelightbox.flagImage",
+              )}
             >
               <Flag size="0.875rem" fill={flagged ? "currentColor" : "none"} />
             </button>

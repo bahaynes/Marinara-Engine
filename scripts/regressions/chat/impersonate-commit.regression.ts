@@ -1,6 +1,6 @@
 // custom-mods: an impersonated message commits the reply it follows, on that reply's visible swipe.
 import assert from "node:assert/strict";
-import { commitStateBeforeImpersonatedMessage } from "../../packages/server/src/routes/generate/commit-impersonated-turn.js";
+import { commitStateBeforeImpersonatedMessage } from "../../../packages/server/src/routes/generate/commit-impersonated-turn.js";
 
 function run(messages: Array<{ id: string; role: string; activeSwipeIndex?: number }>, messageId: string) {
   const committed: string[] = [];

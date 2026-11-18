@@ -21,27 +21,27 @@ import {
   resolveComfyLayoutLooks,
   rewriteIllustratorTemplateForComfyLayout,
   ROLE_PRESETS_1000,
-} from "../../packages/server/src/services/image/comfyui-layout-placeholders.js";
-import type { AgentContext } from "../../packages/shared/src/index.js";
-import { alignComfyLayoutReferences } from "../../packages/server/src/services/image/image-agent-comfy-extensions.js";
-import { renderAgentPromptTemplate } from "../../packages/server/src/services/agents/agent-executor.js";
+} from "../../../packages/server/src/services/image/comfyui-layout-placeholders.js";
+import type { AgentContext } from "../../../packages/shared/src/index.js";
+import { alignComfyLayoutReferences } from "../../../packages/server/src/services/image/image-agent-comfy-extensions.js";
+import { renderAgentPromptTemplate } from "../../../packages/server/src/services/agents/agent-executor.js";
 import {
   buildManualIllustratorPromptMessages,
   parseManualIllustratorPromptPlan,
-} from "../../packages/server/src/services/generation/illustrator-manual-prompt-generation.js";
+} from "../../../packages/server/src/services/generation/illustrator-manual-prompt-generation.js";
 import {
   buildIllustratorCharacterPromptInstruction,
   readComfyLayoutCharacterLimit,
   sanitizeCharacterPrompts,
-} from "../../packages/server/src/services/image/character-prompts.js";
+} from "../../../packages/server/src/services/image/character-prompts.js";
 import {
   generateImage,
   replaceComfyUiPlaceholders,
-} from "../../packages/server/src/services/image/image-generation.js";
+} from "../../../packages/server/src/services/image/image-generation.js";
 import {
   resolveComfyLayoutCharacterPromptLimit,
   resolveIllustratorCharacterPromptInstruction,
-} from "../../packages/server/src/services/generation/illustrator-background-generation.js";
+} from "../../../packages/server/src/services/generation/illustrator-background-generation.js";
 
 type Element = { type: string; desc: string; bbox: number[] };
 const parse = (replacements: Record<string, string>) => JSON.parse(replacements["%layout_bboxes%"]!) as Element[];

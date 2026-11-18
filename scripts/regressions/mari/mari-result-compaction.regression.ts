@@ -5,7 +5,7 @@ import {
   compactWorkspaceResultHistory,
   type WorkspaceCommandResult,
   type WorkspaceResultRecord,
-} from "../../packages/server/src/services/professor-mari/workspace-agent.service.js";
+} from "../../../packages/server/src/services/professor-mari/workspace-agent.service.js";
 
 const limits = { highWaterChars: 80_000, lowWaterChars: 40_000 };
 let sequence = 0;

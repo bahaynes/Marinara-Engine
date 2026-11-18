@@ -12,13 +12,13 @@ process.env.NODE_ENV = "test";
 process.env.MARINARA_LITE = "true";
 process.env.LOG_LEVEL = "silent";
 
-const { default: Fastify } = await import("../../packages/server/node_modules/fastify/fastify.js");
-const { getDB, closeDB } = await import("../../packages/server/src/db/connection.js");
-const { chatsRoutes } = await import("../../packages/server/src/routes/chats.routes.js");
-const { createAdvancedMemoryService } = await import("../../packages/server/src/services/advanced-memory.js");
-const { createChatsStorage } = await import("../../packages/server/src/services/storage/chats.storage.js");
-const { createCharactersStorage } = await import("../../packages/server/src/services/storage/characters.storage.js");
-const { characterDataSchema, normalizeAdvancedMemorySettings } = await import("../../packages/shared/src/index.js");
+const { default: Fastify } = await import("../../../packages/server/node_modules/fastify/fastify.js");
+const { getDB, closeDB } = await import("../../../packages/server/src/db/connection.js");
+const { chatsRoutes } = await import("../../../packages/server/src/routes/chats.routes.js");
+const { createAdvancedMemoryService } = await import("../../../packages/server/src/services/advanced-memory.js");
+const { createChatsStorage } = await import("../../../packages/server/src/services/storage/chats.storage.js");
+const { createCharactersStorage } = await import("../../../packages/server/src/services/storage/characters.storage.js");
+const { characterDataSchema, normalizeAdvancedMemorySettings } = await import("../../../packages/shared/src/index.js");
 
 const db = await getDB();
 const app = Fastify();

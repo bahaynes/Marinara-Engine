@@ -2057,7 +2057,6 @@ export function ChatSettingsDrawer({
             </Section>
           )}
 
-
           {/* Card field alternatives — hidden when no card in this chat has any */}
           <CardFieldAlternativesSection chat={chat} characters={characters} personas={personas} />
 

@@ -871,18 +871,6 @@ try {
     "a player with no card of their own falls back to the first card, unchanged",
   );
 
-  // ── 15. A persona's own rpgStats attributes score the check when no card carries stats ──
-  const statPersona = await characters.createPersona("Ilse Morrow", "The player character.", undefined, {
-    personaStats: JSON.stringify({ rpgStats: { attributes: [{ name: "INT", value: 18 }] } }),
-  });
-  assert.ok(statPersona?.id, "precondition — the chat needs a persona to read stats from");
-  const statChatId = await newGameChat("persona stats", statPersona.id, []);
-  assert.equal(
-    (await loadSkillCheckModifierContext(db, statChatId)).sheetAttributes.int,
-    18,
-    "the persona's attributes stand in for a missing card",
-  );
-
   console.log("gm-skill-check-resolution regression passed");
 } finally {
   const db = await getDB().catch(() => null);

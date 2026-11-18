@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import {
   placeGameWorldInfo,
   selectGameWindow,
-} from "../../packages/server/src/routes/generate/generate-route-utils.js";
+} from "../../../packages/server/src/routes/generate/generate-route-utils.js";
 
 const before = "<lore>\nBEFORE\n</lore>";
 const after = "<lore>\nAFTER\n</lore>";

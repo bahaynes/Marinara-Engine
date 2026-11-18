@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { normalizeBackgroundMeta } from "../../packages/server/src/routes/backgrounds.routes.js";
-import { backgroundsVisibleToChat } from "../../packages/server/src/services/backgrounds/background-ownership.js";
+import { normalizeBackgroundMeta } from "../../../packages/server/src/routes/backgrounds.routes.js";
+import { backgroundsVisibleToChat } from "../../../packages/server/src/services/backgrounds/background-ownership.js";
 
 // A generated background records the chat it was made for, so other stories' background agents don't pick
 // it. Every tag edit rewrites meta.json through normalizeBackgroundMeta; it must keep that owner.

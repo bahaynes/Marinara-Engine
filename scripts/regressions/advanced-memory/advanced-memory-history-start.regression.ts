@@ -40,7 +40,8 @@ const requireServer = createRequire(new URL("../../../packages/server/package.js
 const Fastify = requireServer("fastify") as typeof import("fastify").default;
 const { createFileNativeDB } = await import("../../../packages/server/src/db/file-backed-store.js");
 const { createChatsStorage } = await import("../../../packages/server/src/services/storage/chats.storage.js");
-const { createConnectionsStorage } = await import("../../../packages/server/src/services/storage/connections.storage.js");
+const { createConnectionsStorage } =
+  await import("../../../packages/server/src/services/storage/connections.storage.js");
 const { createAdvancedMemoryService } = await import("../../../packages/server/src/services/advanced-memory.js");
 const { advancedMemoryRoutes } = await import("../../../packages/server/src/routes/advanced-memory.routes.js");
 const { chatsRoutes } = await import("../../../packages/server/src/routes/chats.routes.js");
@@ -699,7 +700,7 @@ try {
   await chats.patchMetadata(rollingChat.id, { advancedMemoryRollingScenes: true });
 
   // Fork: advancedMemoryLooseScenes allows endings inside a message and passes tracked location changes.
-  const { gameStateSnapshots } = await import("../../packages/server/src/db/schema/game-state.js");
+  const { gameStateSnapshots } = await import("../../../packages/server/src/db/schema/game-state.js");
   const snapshotAt = (index: number, location: string) =>
     db.insert(gameStateSnapshots).values({
       id: `rolling-${index}`,

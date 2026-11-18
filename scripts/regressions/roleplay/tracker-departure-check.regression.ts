@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import {
   dropDepartedTrackerCharacters,
   trackerDepartureQuestion,
-} from "../../packages/server/src/services/generation/tracker-departure-check.js";
+} from "../../../packages/server/src/services/generation/tracker-departure-check.js";
 
 const asked: Array<{ state: unknown; questions: Array<{ id: string; instructions: string }> }> = [];
 const backend = (left: Record<string, number>, omit: string[] = []) => ({

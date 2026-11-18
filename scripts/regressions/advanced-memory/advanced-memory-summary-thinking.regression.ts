@@ -10,8 +10,8 @@ process.env.NODE_ENV = "test";
 process.env.LOG_LEVEL = "silent";
 process.env.MARINARA_LITE = "true";
 
-const { summaryReasoningOptions } = await import("../../packages/server/src/services/advanced-memory.ts");
-const { advancedMemorySettingsSchema } = await import("../../packages/shared/src/types/advanced-memory.ts");
+const { summaryReasoningOptions } = await import("../../../packages/server/src/services/advanced-memory.ts");
+const { advancedMemorySettingsSchema } = await import("../../../packages/shared/src/types/advanced-memory.ts");
 
 try {
   // Saved settings predate the field and must keep thinking off.

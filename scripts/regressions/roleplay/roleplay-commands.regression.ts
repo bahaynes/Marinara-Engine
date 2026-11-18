@@ -887,50 +887,6 @@ assert.equal(
   "Hero Loïm",
 );
 
-// Skill checks add proficiency like Game Mode: structured rpgStats first, description line as fallback.
-const trained = (rpgStats: Partial<RPGStatsConfig>, description?: string, skill = "Athletics") =>
-  prepareRoleplayRoll(
-    { notation: "d20", skill },
-    [
-      {
-        id: "t",
-        name: "T",
-        description,
-        rpgStats: { ...diceCharacters[0]!.rpgStats!, ...rpgStats },
-      },
-    ],
-    "t",
-  ).notation;
-assert.equal(trained({}), "d20+1", "untrained Athletics is STR only");
-assert.equal(trained({ proficiencies: { athletics: "proficient" } }), "d20+3", "level 1 proficiency adds +2");
-assert.equal(
-  trained({ proficiencies: { sleight_of_hand: "expertise" } }, undefined, "Sleight of Hand"),
-  "d20+3",
-  "expertise doubles, on a multi-word skill (DEX 8 is -1)",
-);
-assert.equal(trained({}, "Proficiencies: Athletics"), "d20+3", "the legacy description line still counts");
-
-// Formula breakdown properties are attached to the prepared roll object
-const preparedBreakdown = prepareRoleplayRoll(
-  { notation: "d20", skill: "Athletics", character: "T" },
-  [
-    {
-      id: "t",
-      name: "T",
-      rpgStats: {
-        ...diceCharacters[0]!.rpgStats!,
-        proficiencies: { athletics: "proficient" },
-      },
-    },
-  ],
-  "t",
-);
-assert.equal(preparedBreakdown.skill, "Athletics");
-assert.equal(preparedBreakdown.attribute, "STR");
-assert.equal(preparedBreakdown.attributeModifier, 1);
-assert.equal(preparedBreakdown.proficiency, 2);
-assert.equal(preparedBreakdown.bonus, 3);
-
 // The native tool and text command reach the same real roller. Fix only the
 // random face, so the production path must supply every modifier and the DC.
 const executeRoll = async (args: Record<string, unknown>) => {
@@ -1026,23 +982,6 @@ try {
   }
   assert.equal(parseRoleplayCommands("[roll: 1d20]").roll?.command.notation, "1d20");
   assert.equal(parseRoleplayCommands('[roll: "1d20+4"]').roll?.command.notation, "1d20+4");
-
-  const withBreakdown = await executeRoll({
-    notation: "d20",
-    character: "Dottore",
-    skill: "Stealth",
-    attribute: "DEX",
-    situationalModifier: -2,
-  });
-  assert.equal(withBreakdown.success, true);
-  const parsedBreakdown = parseRollDiceToolResult(withBreakdown.result);
-  assert.equal(parsedBreakdown?.character, "Dottore");
-  assert.equal(parsedBreakdown?.skill, "Stealth");
-  assert.equal(parsedBreakdown?.attribute, "DEX");
-  assert.equal(parsedBreakdown?.attributeModifier, -1);
-  assert.equal(parsedBreakdown?.proficiency, 0);
-  assert.equal(parsedBreakdown?.situationalModifier, -2);
-  assert.equal(parsedBreakdown?.bonus, -1);
 } finally {
   Math.random = random;
   unpinSecureDraws();
@@ -1200,12 +1139,18 @@ assert.equal(scopeArtifactSvgAttribute("d", "M0 0 L1 1", "a1-"), "M0 0 L1 1");
 assert.equal(scopeArtifactSvgAttribute("fill", "url(https://example.com/x.svg#g)", "a1-"), null);
 assert.equal(scopeArtifactSvgAttribute("fill", "\\75rl(https://example.com/x.svg)", "a1-"), null);
 assert.equal(scopeArtifactSvgAttribute("href", "https://example.com/x.svg", "a1-"), null);
-const artifactChatHtml = readFileSync(new URL("../../../packages/client/src/lib/chat-html.ts", import.meta.url), "utf8");
+const artifactChatHtml = readFileSync(
+  new URL("../../../packages/client/src/lib/chat-html.ts", import.meta.url),
+  "utf8",
+);
 assert.match(artifactChatHtml, /concat\(\s*allowSvg \? \[\] : \["svg"\],?\s*\)/u, "messages keep the SVG ban");
 const artifactPrompt = buildHtmlArtifactMessages({ reply: "One. Two.", offset: 4, request: "a sign" });
 assert.ok(
-  (buildHtmlArtifactMessages({ reply: "One.", offset: 4, request: "a sign", scene: "<speaker>Raven</speaker>" }).at(-1)!
-    .content as string).startsWith("<speaker>Raven</speaker>\n\n<reply>"),
+  (
+    buildHtmlArtifactMessages({ reply: "One.", offset: 4, request: "a sign", scene: "<speaker>Raven</speaker>" }).at(
+      -1,
+    )!.content as string
+  ).startsWith("<speaker>Raven</speaker>\n\n<reply>"),
   "the scene comes before the reply",
 );
 assert.match(artifactPrompt.at(-1)!.content as string, /One\.\n\[ARTIFACT GOES HERE\]\n Two\./u);

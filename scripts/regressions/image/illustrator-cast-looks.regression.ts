@@ -1,16 +1,16 @@
 // Fork: people without a card of their own reach the Illustrator: NPC Registry looks and portraits,
 // this turn's tracker portraits, and members of an ensemble card.
 import assert from "node:assert/strict";
-import { registerCapabilityService } from "../../packages/server/src/services/capability-packages/capability-service-registry.service.js";
+import { registerCapabilityService } from "../../../packages/server/src/services/capability-packages/capability-service-registry.service.js";
 import {
   buildIllustratorCastLookLines,
   ensureIllustratorNpcPortraits,
   isIllustratorNpcCastId,
   loadIllustratorNpcCast,
-} from "../../packages/server/src/services/image/illustrator-npc-cast.js";
-import { buildBlankCharacterLooksRequest } from "../../packages/server/src/services/agents/character-tracker-looks.js";
-import { applyImageAgentContextExtensions } from "../../packages/server/src/services/image/image-agent-comfy-extensions.js";
-import type { AgentContext } from "../../packages/shared/src/index.js";
+} from "../../../packages/server/src/services/image/illustrator-npc-cast.js";
+import { buildBlankCharacterLooksRequest } from "../../../packages/server/src/services/agents/character-tracker-looks.js";
+import { applyImageAgentContextExtensions } from "../../../packages/server/src/services/image/image-agent-comfy-extensions.js";
+import type { AgentContext } from "../../../packages/shared/src/index.js";
 
 // Plain prompts: ensemble members upstream's block left out get their own segment; outfits come
 // from this turn's tracker, and a "none" outfit is no outfit.

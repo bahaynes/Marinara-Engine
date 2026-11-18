@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { embedMemoryRecallTexts } from "../../packages/server/src/services/memory-recall.js";
+import { embedMemoryRecallTexts } from "../../../packages/server/src/services/memory-recall.js";
 
 const texts = Array.from({ length: 70 }, (_, index) => `chunk ${index}`);
 

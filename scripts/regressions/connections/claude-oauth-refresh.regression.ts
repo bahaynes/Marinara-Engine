@@ -5,7 +5,7 @@ import { join } from "node:path";
 import {
   OAUTH_REFRESH_WINDOW_MS,
   ensureFreshOAuthCredentials,
-} from "../../packages/server/src/services/llm/providers/claude-subscription/oauth-refresh.js";
+} from "../../../packages/server/src/services/llm/providers/claude-subscription/oauth-refresh.js";
 
 const dir = mkdtempSync(join(tmpdir(), "claude-oauth-"));
 const path = join(dir, ".credentials.json");

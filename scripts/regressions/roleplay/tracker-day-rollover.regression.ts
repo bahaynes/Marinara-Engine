@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 
 const { advanceDateOnClockRollover: roll } =
-  await import("../../packages/server/src/services/game/tracker-day-rollover.js");
+  await import("../../../packages/server/src/services/game/tracker-day-rollover.js");
 
 // The observed failure: afternoon -> midnight, date left alone.
 assert.equal(roll("Day 1", "14:30", "Day 1", "00:00"), "Day 2");

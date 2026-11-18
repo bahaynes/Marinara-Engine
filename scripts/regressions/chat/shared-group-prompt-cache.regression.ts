@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { usesSharedGroupPromptCache } from "../../packages/server/src/routes/generate/generate-route-utils.js";
-import { scopeSharedGroupMessagesForTarget } from "../../packages/server/src/services/generation/prompt-message-scope.js";
+import { usesSharedGroupPromptCache } from "../../../packages/server/src/routes/generate/generate-route-utils.js";
+import { scopeSharedGroupMessagesForTarget } from "../../../packages/server/src/services/generation/prompt-message-scope.js";
 
 const on = { groupSharedPromptCache: true };
 

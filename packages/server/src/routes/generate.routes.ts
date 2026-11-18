@@ -9596,14 +9596,6 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                   characterId: roleplayCallerId,
                   interruptAvailable: Boolean(roleplayInterruptionTarget),
                   video: roleplayVideoOffer,
-                  activeSkills: getActiveGameSkills({
-                    enabledSystemIds: Array.isArray(chatMeta.gameSkillSystems)
-                      ? (chatMeta.gameSkillSystems as string[])
-                      : null,
-                    disabledSkillIds: Array.isArray(chatMeta.gameDisabledSkills)
-                      ? (chatMeta.gameDisabledSkills as string[])
-                      : null,
-                  }),
                 }),
                 roleplayRulesetReminder,
               ]

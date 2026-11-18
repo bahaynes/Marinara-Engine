@@ -16,7 +16,6 @@ import {
   type RoleplayCommandActivity,
   type RoleplayWhisperRecipient,
   type WrapFormat,
-  type GameSkillDefinition,
 } from "@marinara-engine/shared";
 import { parseQuotedParam } from "../conversation/character-commands.js";
 import { wrapContent } from "../prompt/format-engine.js";
@@ -868,7 +867,6 @@ export function buildRoleplayCommandsReminder(args: {
   interruptAvailable?: boolean;
   /** Set when a clip may be made now: a video connection exists and the Video Run Interval has passed. */
   video?: { instructions: string } | null;
-  activeSkills?: readonly GameSkillDefinition[];
   /** Fork: the latest [scene] title, so the model can repeat it exactly while the scene continues. */
   sceneTitle?: string | null;
 }): string {
@@ -925,16 +923,12 @@ export function buildRoleplayCommandsReminder(args: {
       '- [whisper: character="name" text="text hidden from anyone but the specified character"] Hides a part of the message and makes it available only to a selected character. No one else will be able to access it, except for the appointed narrator. This can be used to whisper secrets, show visions, etc. Name exactly one chat character or the user\'s persona. Put the command where the secret belongs in the message, and do not repeat its text in public narration. The text may span several lines and quote dialogue as is, for example text=""I love you."".',
     );
   if (enabled("roll")) {
-    const skillsList =
-      args.activeSkills && args.activeSkills.length > 0
-        ? ` Available skills for checks: ${args.activeSkills.map((s) => s.name).join(", ")}.`
-        : "";
     lines.push(
       // A chat played by a ruleset rolls its checks off the character sheets (the ruleset block below),
       // so [roll] is left for dice those rules do not cover, and never stands in for a check.
       args.metadata.gameRuleset != null
         ? '- [roll: notation="2d6" reason="what the dice decide"] requests plain dice the ruleset does not cover (a random table, a number of hours). An attempt by a character is a check from the RULESET block, never a roll. Stop after the command and wait for the result before narrating the outcome. Never invent results or reroll.'
-        : `- [roll: character="participant name" notation="1d20" attribute="Strength" skill="Skill Name" modifier="+2" dc="15" reason="action being attempted"] requests a real roll; use roll_dice with the same fields when available. You may target any chat participant, including the user's persona by name. Attribute and skill are both optional and only one is needed; the engine automatically adds the assigned ability/skill modifier from character stats, so do not add it yourself. Optional modifier adds a situational bonus/penalty once; optional dc sets the total needed to succeed. Keep DCs and modifiers in command/tool fields, not narration. Stop after the command and wait for the result before narrating the outcome. Never invent results or reroll an action.${skillsList}`,
+        : `- [roll: character="participant name" notation="1d20" attribute="Strength" skill="Skill Name" modifier="+2" dc="15" reason="action being attempted"] requests a real roll; use roll_dice with the same fields when available. You may target any chat participant, including the user's persona by name. Attribute and skill are both optional and only one is needed; the engine automatically adds the assigned ability/skill modifier from character stats, so do not add it yourself. Optional modifier adds a situational bonus/penalty once; optional dc sets the total needed to succeed. Keep DCs and modifiers in command/tool fields, not narration. Stop after the command and wait for the result before narrating the outcome. Never invent results or reroll an action.`,
     );
   }
   if (enabled("inspire"))

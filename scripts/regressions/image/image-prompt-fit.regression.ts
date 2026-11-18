@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { fitPromptToLimit } from "../../packages/server/src/services/image/prompt-fit.js";
+import { fitPromptToLimit } from "../../../packages/server/src/services/image/prompt-fit.js";
 
 // Under the limit: untouched.
 assert.equal(fitPromptToLimit("a short prompt", 3000), "a short prompt");

@@ -447,7 +447,6 @@ import {
   experienceDressedNpc,
   storyPerson,
   worldPersonNpc,
-  MAX_INSPIRATION_CAP,
   isRoleplayCommandEnabled,
   type RPGStatsConfig,
 } from "@marinara-engine/shared";

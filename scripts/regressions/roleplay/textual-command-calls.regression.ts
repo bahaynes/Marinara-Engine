@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { parseCharacterCommands } from "../../packages/server/src/services/conversation/character-commands.ts";
+import { parseCharacterCommands } from "../../../packages/server/src/services/conversation/character-commands.ts";
 
 const qwen =
   'Fine.\n<tool_call>\n<function=spotify>\n<parameter=title>\nBlue "Moon"\n</parameter>\n<parameter=artist>\nNina\n</parameter>\n</function>\n</tool_call>';

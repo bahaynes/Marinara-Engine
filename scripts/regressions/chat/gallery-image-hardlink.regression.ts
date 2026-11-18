@@ -9,7 +9,7 @@ import { join } from "node:path";
 const dataDir = mkdtempSync(join(tmpdir(), "marinara-gallery-link-"));
 process.env.DATA_DIR = dataDir;
 const { linkImageToDisk, removeSavedImageFromDisk } =
-  await import("../../packages/server/src/services/image/image-generation.js");
+  await import("../../../packages/server/src/services/image/image-generation.js");
 
 try {
   const assetDir = join(dataDir, "game-assets", "backgrounds", "illustrations");

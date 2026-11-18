@@ -2058,7 +2058,7 @@ assert.match(
 );
 assert.match(
   chatInputSource,
-  /const composerCtx = withComposerReplyAndAttachments[\s\S]{0,600}if \(generationStatus\.succeeded === false\) \{\s*restoreSubmittedDraft\(\);/u,
+  /runHeldSlashCommand\(\{[\s\S]{0,900}restore: restoreSubmittedDraft/u,
   "Enter-submitted slash commands must restore the draft when generation fails",
 );
 

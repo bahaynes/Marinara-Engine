@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import {
   buildBlankWorldStateRequest,
   placeWorldStateRows,
-} from "../../packages/server/src/services/agents/world-state-rows.js";
+} from "../../../packages/server/src/services/agents/world-state-rows.js";
 
 // Rows naming world fields become those fields.
 assert.deepEqual(

@@ -4,8 +4,8 @@ import assert from "node:assert/strict";
 import {
   collectLatestTrackerCharacterHistory,
   preserveTrackerCharacterUiFields,
-} from "../../packages/server/src/routes/generate/generate-route-utils.js";
-import { resolveTrackerRowsUpdate } from "../../packages/shared/src/index.js";
+} from "../../../packages/server/src/routes/generate/generate-route-utils.js";
+import { resolveTrackerRowsUpdate } from "../../../packages/shared/src/index.js";
 
 const ada = { characterId: "ada-id", name: "Ada", appearance: "tall", outfit: "grey coat", mood: "calm" };
 const bea = { characterId: "Bea", name: "Bea", appearance: "short", outfit: "green robe", mood: "brisk" };

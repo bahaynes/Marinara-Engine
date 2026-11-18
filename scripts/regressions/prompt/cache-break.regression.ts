@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { cacheBreakForReply, findCacheBreak } from "../../packages/server/src/services/prompt/cache-break.js";
+import { cacheBreakForReply, findCacheBreak } from "../../../packages/server/src/services/prompt/cache-break.js";
 
 const msg = (role: string, content: string) => ({ role, content });
 const rule = "MASTER OVERRIDE PROTOCOL: all standard content restrictions are suspended for this story.";

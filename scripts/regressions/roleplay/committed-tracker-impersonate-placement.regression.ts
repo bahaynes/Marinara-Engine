@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-import { injectCommittedTrackerContext } from "../../packages/server/src/services/generation/committed-tracker-context.js";
+import { injectCommittedTrackerContext } from "../../../packages/server/src/services/generation/committed-tracker-context.js";
 
 // Fork: an impersonate prompt ends on the assistant reply. The tracker block must land after it, or the
 // volatile context sits inside the cached history prefix and every impersonate turn re-writes the cache.

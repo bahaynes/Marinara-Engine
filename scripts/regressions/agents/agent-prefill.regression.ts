@@ -1,24 +1,24 @@
 // Fork regression (custom-mods): a speculative prefill is only useful when it sends the
 // same requests, up to the final turn, that the real post-processing run sends later.
 import assert from "node:assert/strict";
-import type { AgentContext } from "../../packages/shared/src/types/agent.js";
+import type { AgentContext } from "../../../packages/shared/src/types/agent.js";
 import {
   executeAgentBatch,
   prefillAgentBatch,
   type AgentExecConfig,
-} from "../../packages/server/src/services/agents/agent-executor.js";
+} from "../../../packages/server/src/services/agents/agent-executor.js";
 import {
   createAgentPipeline,
   isAgentEligibleForPrefill,
   type ResolvedAgent,
-} from "../../packages/server/src/services/agents/agent-pipeline.js";
-import { registerCapabilityService } from "../../packages/server/src/services/capability-packages/capability-service-registry.service.js";
+} from "../../../packages/server/src/services/agents/agent-pipeline.js";
+import { registerCapabilityService } from "../../../packages/server/src/services/capability-packages/capability-service-registry.service.js";
 import {
   BaseLLMProvider,
   type ChatCompletionResult,
   type ChatMessage,
   type ChatOptions,
-} from "../../packages/server/src/services/llm/base-provider.js";
+} from "../../../packages/server/src/services/llm/base-provider.js";
 
 class RecordingProvider extends BaseLLMProvider {
   calls: Array<{ messages: ChatMessage[]; options: ChatOptions }> = [];

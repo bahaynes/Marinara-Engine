@@ -8,16 +8,16 @@
  */
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { createConnectionSchema } from "../../packages/shared/src/index.js";
-import { resolveDecisionConnection } from "../../packages/server/src/services/decision/decision-connection.js";
+import { createConnectionSchema } from "../../../packages/shared/src/index.js";
+import { resolveDecisionConnection } from "../../../packages/server/src/services/decision/decision-connection.js";
 import {
   askSidecarNoulQuestions,
   connectionChatTarget,
-} from "../../packages/server/src/services/decision/sidecar-decision.backend.js";
+} from "../../../packages/server/src/services/decision/sidecar-decision.backend.js";
 import {
   clearDecisionThinkingCache,
   getAnswerStyle,
-} from "../../packages/server/src/services/decision/decision-thinking-cache.js";
+} from "../../../packages/server/src/services/decision/decision-thinking-cache.js";
 
 const input = { name: "Decision", provider: "decision", decisionSource: "openai_compatible" };
 assert.equal(createConnectionSchema.parse(input).decisionThinking, null, "unset means Auto");

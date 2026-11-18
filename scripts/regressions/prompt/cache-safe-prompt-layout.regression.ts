@@ -1,20 +1,20 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { injectConnectedConversationPromptBlocks } from "../../packages/server/src/routes/generate/connected-conversation-injections.js";
+import { injectConnectedConversationPromptBlocks } from "../../../packages/server/src/routes/generate/connected-conversation-injections.js";
 import {
   applyContextWindow,
   postProcessMessages,
-} from "../../packages/server/src/routes/generate/generate-route-utils.js";
-import { newChatCacheDefaults } from "../../packages/server/src/services/generation/new-chat-cache-defaults.js";
+} from "../../../packages/server/src/routes/generate/generate-route-utils.js";
+import { newChatCacheDefaults } from "../../../packages/server/src/services/generation/new-chat-cache-defaults.js";
 import {
   closeHistoryOnLastMessage,
   pullHistoryInjectionsIntoInstruction,
-} from "../../packages/server/src/services/prompt/impersonate-tail.js";
+} from "../../../packages/server/src/services/prompt/impersonate-tail.js";
 import {
   ADVANCED_MEMORY_MARKER_TYPES,
   createAdvancedMemoryPlacement,
   insertAdvancedMemoryFallbacks,
-} from "../../packages/server/src/services/prompt/advanced-memory-prompt.js";
+} from "../../../packages/server/src/services/prompt/advanced-memory-prompt.js";
 
 // Fork: a prompt is only cheap if the next turn starts with everything up to this turn's last reply. These build two
 // consecutive turns through the real placement and post-processing code and check exactly that.

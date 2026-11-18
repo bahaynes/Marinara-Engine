@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 // @ts-expect-error plain .mjs script without types
-import { dryUnlessApplied, guardInstanceCall } from "../mari-mcp-guard.mjs";
+import { dryUnlessApplied, guardInstanceCall } from "../../mari-mcp-guard.mjs";
 
 // The marinara MCP keeps agents read-only on Erin's instance unless Ben enables writes; a tool description
 // asking nicely did not stop an agent from recreating it.
