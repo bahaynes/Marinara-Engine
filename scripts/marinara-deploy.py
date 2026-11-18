@@ -4,7 +4,7 @@
   marinara-deploy.py idle
       Prints {"idle": bool, "reason": str}: whether restarting a container now would cut off a generation.
   marinara-deploy.py deploy [REF] [--tree DIR] [--wait-minutes N | --until HH:MM] [--retry-seconds N]
-                            [--allow-untested] [--wife] [--no-wife] [--wife-only]
+                            [--allow-untested] [--wife] [--no-wife] [--wife-only] [--backup-to DIR]
       Builds marinara-engine:nightly from a clean worktree of REF (default custom-mods), waits until both
       instances and the local model backend (llama-backend or strata-backend) are idle, keeps the running image as :nightly-prev, recreates marinara, and
       rolls back if /api/health doesn't report REF. --tree builds an existing clean checkout instead.
@@ -14,8 +14,8 @@
       idle wait, rollback image (:local-prev) and health check.
 
 Refuses: a tree that never passed `pnpm check` + `pnpm regression` (the pre-push hook and the nightly record
-passing trees in ~/.cache/marinara-rebase/validated-trees), a storage-format change (one-way; back up and
-deploy by hand), and a second deploy while one runs.
+passing trees in ~/.cache/marinara-rebase/validated-trees), a storage-format change (one-way) unless --backup-to DIR
+is given: it then stops marinara and tars the data dir into DIR before recreating, and a second deploy while one runs.
 The waits are flags because nobody has settled on numbers; the defaults are guesses.
 """
 import argparse, datetime, fcntl, json, os, re, subprocess, sys, tempfile, time
@@ -25,6 +25,7 @@ COMPOSE_DIR = os.environ.get("MARINARA_COMPOSE_DIR", "/home/bah/git/minecraftdoc
 CACHE = os.path.expanduser("~/.cache")
 VALIDATED = f"{CACHE}/marinara-rebase/validated-trees"
 LOCK = f"{CACHE}/marinara-deploy.lock"
+DATA_DIR = "/nix/faststorage/marinara/data"
 IMAGE = "marinara-engine:nightly"
 WIFE_IMAGE = "marinara-engine:local"
 RECENT_CHATS = 10  # a turn bumps its chat's updatedAt, so a running generation is in the newest few
@@ -173,7 +174,25 @@ def deploy_wife(tree, commit, deadline, retry_seconds):
             + ("marinara-wife is back on the previous image" if ok2 else f"ROLLBACK FAILED TOO: {text2[-300:]}"))
 
 
-def deploy(tree, commit, deadline, retry_seconds, allow_untested, force_wife=False, no_wife=False, wife_only=False):
+def backup_data(dest_dir):
+    """Stops marinara and tars its data dir (uncompressed; restic dedups it) so a storage-format change can be undone.
+    Returns "" on success, else the failure; marinara is started again when the backup fails."""
+    dest = f"{dest_dir}/marinara-data-{datetime.datetime.now():%Y%m%d_%H%M%S}.tar"
+    say("stopping marinara for the backup")
+    ok, text = docker("stop", "marinara", timeout=300)
+    if not ok:
+        return f"could not stop marinara: {text[-200:]}"
+    say(f"backing up the data dir to {dest}")
+    r = subprocess.run(["tar", "-cf", dest, "-C", os.path.dirname(DATA_DIR), os.path.basename(DATA_DIR)],
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        docker("start", "marinara")
+        return f"backup failed, marinara started again: {r.stderr[-300:]}"
+    return ""
+
+
+def deploy(tree, commit, deadline, retry_seconds, allow_untested, force_wife=False, no_wife=False, wife_only=False,
+           backup_to=None):
     """Builds `tree` (a clean checkout of `commit`) and deploys it to marinara (or, with wife_only, only to
     marinara-wife). Returns one line for the report."""
     if datetime.datetime.now() > deadline:  # the nightly's cutoff keeps it clear of the 04:00 reboot
@@ -184,8 +203,8 @@ def deploy(tree, commit, deadline, retry_seconds, allow_untested, force_wife=Fal
     want = json.load(open(f"{tree}/storage-format.json"))["storageFormat"]
     ok, text = docker("exec", "marinara", "cat", "/app/data/storage/manifest.json", timeout=30)
     have = json.loads(text).get("version") if ok else None
-    if have != want and not wife_only:
-        return f"NOT DEPLOYED: storage format {have} -> {want}; back up the data directory and deploy by hand"
+    if have != want and not wife_only and not backup_to:
+        return f"NOT DEPLOYED: storage format {have} -> {want}; rerun with --backup-to DIR to stop marinara, back up its data dir and deploy"
     say(f"building {IMAGE}-candidate from {commit}")
     ok, text = docker("build", "-q", "--build-arg", "BUILD_BRANCH=staging", "--build-arg", f"BUILD_COMMIT={commit}",
                       "-t", f"{IMAGE}-candidate", tree, timeout=3600)
@@ -199,6 +218,8 @@ def deploy(tree, commit, deadline, retry_seconds, allow_untested, force_wife=Fal
     ok, text = docker("tag", IMAGE, f"{IMAGE}-prev")
     if not ok:  # e.g. pruned; without it a failed health check would have nothing to roll back to
         return f"NOT DEPLOYED: no {IMAGE} to keep as the rollback image ({text[-200:]})"
+    if have != want and (failure := backup_data(backup_to)):
+        return f"NOT DEPLOYED: {failure}"
     docker("tag", f"{IMAGE}-candidate", IMAGE)
     say("recreating marinara")
     ok, text = docker("compose", "up", "-d", "--build", "--force-recreate", "marinara", timeout=900)
@@ -229,6 +250,7 @@ def main():
     dep.add_argument("--allow-untested", action="store_true")
     dep.add_argument("--wife", action="store_true", help="force deploy to marinara-wife even without a version bump")
     dep.add_argument("--no-wife", action="store_true", help="skip auto-deploying marinara-wife on version bumps")
+    dep.add_argument("--backup-to", metavar="DIR", help="across a storage-format change: stop marinara, tar its data dir into DIR, then deploy")
     dep.add_argument("--wife-only", action="store_true", help="deploy only to marinara-wife; marinara is left as it is")
     args = parser.parse_args()
     if args.cmd == "deploy" and args.wife_only and args.no_wife:
@@ -257,14 +279,14 @@ def main():
             return 1
         commit = git("rev-parse", "--short", "HEAD", cwd=tree)
         result = deploy(tree, commit, deadline, args.retry_seconds, args.allow_untested,
-                        force_wife=args.wife, no_wife=args.no_wife, wife_only=args.wife_only)
+                        force_wife=args.wife, no_wife=args.no_wife, wife_only=args.wife_only, backup_to=args.backup_to)
     else:
         commit = git("rev-parse", "--short", f"{args.ref}^{{commit}}")
         tree = tempfile.mkdtemp(prefix="marinara-deploy-")
         git("worktree", "add", "--detach", tree, commit)
         try:
             result = deploy(tree, commit, deadline, args.retry_seconds, args.allow_untested,
-                            force_wife=args.wife, no_wife=args.no_wife, wife_only=args.wife_only)
+                            force_wife=args.wife, no_wife=args.no_wife, wife_only=args.wife_only, backup_to=args.backup_to)
         finally:
             git("worktree", "remove", "--force", tree)
     say(result)
