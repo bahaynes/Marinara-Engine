@@ -67,6 +67,9 @@ def node_in(container, js, *args):
 def busy_reason():
     """Why a restart now could cut off a generation, or "" when both instances and the backend are idle."""
     for container, base in INSTANCES:
+        ok, state = docker("inspect", "-f", "{{.State.Running}}", container, timeout=30)
+        if ok and state == "false":
+            continue  # a stopped instance runs no turns, so there is nothing to cut off
         ok, text = docker("exec", container, "mari", "chats", "list", "--limit", str(RECENT_CHATS), timeout=60)
         try:
             ids = [c["id"] for c in json.loads(text)]
