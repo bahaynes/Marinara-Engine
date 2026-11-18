@@ -50,6 +50,42 @@ export const ROLE_PRESETS_1000: Record<string, [number, number, number, number]>
   background_right: [60, 620, 680, 940],
 };
 
+function normalizedRole(entry: SceneIllustrationCharacterPrompt): string {
+  return typeof entry.role === "string"
+    ? entry.role
+        .toLowerCase()
+        .trim()
+        .replace(/[\s-]+/g, "_")
+    : "";
+}
+
+/** The two roles that mean "touching": their presets overlap on purpose. */
+const CONTACT_ROLES = new Set(["center_left", "center_right"]);
+
+/**
+ * Where a character stands left to right (0..1). A role says it in words (the writer is not asked for
+ * geometry), so its preset's horizontal centre outranks `position.x`; the columns are laid out from
+ * the order this gives.
+ */
+function layoutX(entry: SceneIllustrationCharacterPrompt, index: number): number {
+  const preset = ROLE_PRESETS_1000[normalizedRole(entry)];
+  return preset ? (preset[1] + preset[3]) / 2000 : (entry.position?.x ?? defaultCharacterPromptPosition(index, 1).x);
+}
+
+/** Left-to-right column per entry: by layoutX, then position.x, then the caller's order. */
+function layoutColumns(entries: readonly SceneIllustrationCharacterPrompt[]): Map<number, number> {
+  return new Map(
+    entries
+      .map((entry, index) => ({
+        x: layoutX(entry, index),
+        px: entry.position?.x ?? defaultCharacterPromptPosition(index, 1).x,
+        index,
+      }))
+      .sort((a, b) => a.x - b.x || a.px - b.px || a.index - b.index)
+      .map(({ index }, column) => [index, column] as const),
+  );
+}
+
 function clampSpan1000(minVal: number, maxVal: number): [number, number] {
   let start = Math.max(0, Math.min(1000, Math.round(minVal)));
   let end = Math.max(0, Math.min(1000, Math.round(maxVal)));
@@ -98,25 +134,17 @@ export function resolveCharacterBoundingBox1000(
     }
   }
 
-  // Tier 2: preset role
-  if (typeof entry.role === "string" && entry.role.trim()) {
-    const key = entry.role
-      .toLowerCase()
-      .trim()
-      .replace(/[\s-]+/g, "_");
-    const preset = ROLE_PRESETS_1000[key];
-    if (preset) {
-      return [...preset];
-    }
+  // Tier 2: the touching pair keeps its overlapping presets. Any other role only orders the
+  // columns (layoutX): presets for other roles overlap each other, and two characters on one role
+  // got the same box, which drew them on top of each other.
+  // ponytail: depth (foreground/background) is ignored; boxes stay full height, because short stacked boxes duplicated people.
+  const role = normalizedRole(entry);
+  if (entries.length === 2 && CONTACT_ROLES.has(role) && entries.every((e) => CONTACT_ROLES.has(normalizedRole(e)))) {
+    return [...ROLE_PRESETS_1000[role]!];
   }
 
   // Tier 3: column layout with close contact widening
-  const col =
-    columnIndex ??
-    entries
-      .map((e, idx) => ({ x: e.position?.x ?? defaultCharacterPromptPosition(idx, 1).x, index: idx }))
-      .sort((a, b) => a.x - b.x || a.index - b.index)
-      .findIndex((item) => item.index === index);
+  const col = columnIndex ?? layoutColumns(entries).get(index) ?? -1;
   const column = col >= 0 ? col : index;
 
   const margin = (1 - LAYOUT_FILL) / 2;
@@ -156,12 +184,7 @@ export function buildComfyLayoutReplacements(
 ): Record<string, string> {
   const entries = (characterPrompts ?? []).slice(0, COMFYUI_LAYOUT_MAX_CHARACTER_PROMPTS);
   // Gallery regenerations may arrive without a position; they keep their order.
-  const columnByIndex = new Map(
-    entries
-      .map((entry, index) => ({ x: entry.position?.x ?? defaultCharacterPromptPosition(index, 1).x, index }))
-      .sort((a, b) => a.x - b.x || a.index - b.index)
-      .map(({ index }, column) => [index, column] as const),
-  );
+  const columnByIndex = layoutColumns(entries);
   const elements = entries.map((entry, index) => {
     const column = columnByIndex.get(index) ?? index;
     return {
@@ -170,6 +193,10 @@ export function buildComfyLayoutReplacements(
       bbox: resolveCharacterBoundingBox1000(entry, index, entries, column),
     };
   });
+  logger.info(
+    "[illustrator] layout boxes: %s",
+    elements.map((element, index) => `${entries[index]!.name} ${JSON.stringify(element.bbox)}`).join("; "),
+  );
   return {
     [COMFYUI_LAYOUT_BBOXES_PLACEHOLDER]: JSON.stringify(elements),
     [COMFYUI_LAYOUT_CHARACTER_BOXES_PLACEHOLDER]: elements.map((_, index) => index + 1).join(", "),

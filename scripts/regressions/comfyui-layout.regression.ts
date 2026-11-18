@@ -101,6 +101,35 @@ assert.deepEqual(
   ],
 );
 
+// Roles only order the columns: the stored council scenes (two characters on background_left, center over
+// center_left) used to share or overlap preset boxes and drew people on top of each other.
+const noOverlap = (roles: string[]) => {
+  const boxes = parse(
+    buildComfyLayoutReplacements(roles.map((role, index) => ({ name: `N${index}`, prompt: `p${index}`, role }))),
+  ).map((entry) => entry.bbox);
+  for (let i = 0; i < boxes.length; i++) {
+    for (let j = i + 1; j < boxes.length; j++) {
+      assert.ok(boxes[i]![3]! <= boxes[j]![1]! || boxes[j]![3]! <= boxes[i]![1]!, `boxes ${i}/${j} overlap: ${boxes}`);
+    }
+  }
+  return boxes;
+};
+noOverlap(["center", "center_left", "foreground_right", "background_left", "background_left"]);
+noOverlap(["foreground_left", "center", "background_right", "background_left", "background_left"]);
+noOverlap(["foreground_left", "center", "background_right"]);
+const roleOrder = parse(
+  buildComfyLayoutReplacements([
+    { name: "R", prompt: "right", role: "foreground_right", position: { x: 0.1, y: 0.5 } },
+    { name: "L", prompt: "left", role: "foreground_left", position: { x: 0.9, y: 0.5 } },
+  ]),
+);
+assert.deepEqual(
+  roleOrder.map((entry) => entry.desc),
+  ["right", "left"],
+  "elements keep the caller's order",
+);
+assert.ok(roleOrder[1]!.bbox[1]! < roleOrder[0]!.bbox[1]!, "a role outranks position.x for left-to-right order");
+
 // Tier 1 explicit bbox and minimum 150x150 span clamping.
 const explicitEntry = { name: "A", prompt: "explicit", bbox: [200, 100, 900, 850] as [number, number, number, number] };
 assert.deepEqual(resolveCharacterBoundingBox1000(explicitEntry, 0, [explicitEntry]), [200, 100, 900, 850]);
