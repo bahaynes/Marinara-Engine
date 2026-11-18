@@ -235,10 +235,17 @@ export function NpcRegistryModal({ open, onClose, chatId }: NpcRegistryModalProp
                 <div key={npc.id} className="flex flex-col gap-1.5 pt-2">
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-3 min-w-0">
-                      {/* Avatar circle */}
-                      <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-full border border-[var(--border)] bg-[var(--muted)]">
+                      {/* Portrait: whole picture, not a face crop, so a dragon reads as one. Click opens it full size. */}
+                      <div className="relative h-28 w-28 shrink-0 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--muted)]">
                         {npc.avatar ? (
-                          <img src={npc.avatar} alt={npc.name} className="h-full w-full object-cover" />
+                          <a
+                            href={npc.avatar}
+                            target="_blank"
+                            rel="noreferrer"
+                            title={localizeUi("ui.npcRegistry.viewPortrait", { defaultValue: "Open portrait" })}
+                          >
+                            <img src={npc.avatar} alt={npc.name} className="h-full w-full object-contain" />
+                          </a>
                         ) : (
                           <div className="flex h-full w-full items-center justify-center text-xs font-semibold text-[var(--muted-foreground)]">
                             {npc.name.slice(0, 2).toUpperCase()}
@@ -249,12 +256,12 @@ export function NpcRegistryModal({ open, onClose, chatId }: NpcRegistryModalProp
                           onClick={() => triggerUpload(npc.id)}
                           disabled={isUploading}
                           title={localizeUi("ui.npcRegistry.changeAvatar", { defaultValue: "Upload Avatar" })}
-                          className="absolute inset-0 flex items-center justify-center bg-black/40 text-white opacity-0 transition-opacity hover:opacity-100 disabled:opacity-50"
+                          className="absolute bottom-1 right-1 flex h-6 w-6 items-center justify-center rounded-md bg-black/60 text-white transition-colors hover:bg-black/80 disabled:opacity-50"
                         >
                           {isUploading ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
                           ) : (
-                            <ImagePlus className="h-4 w-4" />
+                            <ImagePlus className="h-3.5 w-3.5" />
                           )}
                         </button>
                       </div>
