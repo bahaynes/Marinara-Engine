@@ -24,13 +24,31 @@ export interface TrackerPortraitCharacter {
 
 const clause = (value: unknown) => (typeof value === "string" ? value : "").replace(/\s+/g, " ").trim();
 
+// ponytail: a keyword guess at "not a person". It misses other creatures and a dragon described only by parts;
+// upgrade path is a per-character form record that names the form.
+const CREATURE_RE = /\b(?:dragons?|wyverns?|drakes?)\b/i;
+const HUMAN_FORM_RE = /\bhuman form\b/i;
+
+/** Dragons and the like: a "head and shoulders, detailed face" frame turned them into anthros. */
+export function isCreatureLooks(appearance: string): boolean {
+  return CREATURE_RE.test(appearance) && !HUMAN_FORM_RE.test(appearance);
+}
+
 /**
  * The portrait prompt: the tracked look, plus the tracked outfit unless `includeOutfit` is off.
  * Keep the complete tracked text; style compilation must not choose which visual details survive.
+ * A creature gets a whole-animal frame and no outfit.
  */
 export function buildTrackerPortraitPrompt(character: TrackerPortraitCharacter, includeOutfit: boolean): string {
   const name = clause(character.name) || "Character";
   const appearance = clause(character.appearance);
+  if (isCreatureLooks(appearance)) {
+    return [
+      `Portrait of ${name}.`,
+      appearance,
+      "Full-body creature portrait: the whole animal in its natural four-limbed pose, animal anatomy and proportions, not a humanoid, no clothing, no human face, high quality",
+    ].join("\n");
+  }
   const outfit = includeOutfit ? clause(character.outfit) : "";
   return [
     `Portrait of ${name}.`,

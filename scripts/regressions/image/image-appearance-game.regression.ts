@@ -610,6 +610,25 @@ try {
     appearance: "Short man with a messy brown beard and grey eyes.",
     outfit: "a simple red tunic",
   };
+  const dragonPrompt = buildTrackerPortraitPrompt(
+    { name: "Yssarn", appearance: "large moss-dark dragon, chipped horns", outfit: "a brown tunic" },
+    true,
+  );
+  assert.ok(
+    dragonPrompt.includes("moss-dark dragon") && dragonPrompt.includes("not a humanoid"),
+    "a dragon gets the creature frame",
+  );
+  assert.ok(
+    !dragonPrompt.includes("head and shoulders") && !dragonPrompt.includes("tunic"),
+    "no person frame, no outfit",
+  );
+  assert.ok(
+    buildTrackerPortraitPrompt(
+      { name: "Cinder", appearance: "Human form: lean woman, amber eyes (dragon kin)" },
+      true,
+    ).includes("head and shoulders"),
+    "a human form keeps the person frame",
+  );
   const lookOnly = buildTrackerPortraitPrompt(npc, false);
   const lookAndOutfit = buildTrackerPortraitPrompt(npc, true);
   assert.ok(!lookOnly.includes("tunic"), "Look leaves the outfit out");
