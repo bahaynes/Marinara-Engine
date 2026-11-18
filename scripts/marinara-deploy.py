@@ -186,7 +186,7 @@ def backup_data(dest_dir):
     if not ok:
         return f"could not stop marinara: {text[-200:]}"
     say(f"backing up the data dir to {dest}")
-    r = subprocess.run(["tar", "-cf", dest, "-C", os.path.dirname(DATA_DIR), os.path.basename(DATA_DIR)],
+    r = subprocess.run(["tar", "-cf", dest, "--exclude", f"{os.path.basename(DATA_DIR)}/backups", "-C", os.path.dirname(DATA_DIR), os.path.basename(DATA_DIR)],
                        capture_output=True, text=True)
     if r.returncode != 0:
         docker("start", "marinara")
@@ -253,7 +253,7 @@ def main():
     dep.add_argument("--allow-untested", action="store_true")
     dep.add_argument("--wife", action="store_true", help="force deploy to marinara-wife even without a version bump")
     dep.add_argument("--no-wife", action="store_true", help="skip auto-deploying marinara-wife on version bumps")
-    dep.add_argument("--backup-to", metavar="DIR", help="across a storage-format change: stop marinara, tar its data dir into DIR, then deploy")
+    dep.add_argument("--backup-to", metavar="DIR", help="across a storage-format change: stop marinara, tar its data dir (minus the Engine's own backups/) into DIR, then deploy")
     dep.add_argument("--wife-only", action="store_true", help="deploy only to marinara-wife; marinara is left as it is")
     args = parser.parse_args()
     if args.cmd == "deploy" and args.wife_only and args.no_wife:
