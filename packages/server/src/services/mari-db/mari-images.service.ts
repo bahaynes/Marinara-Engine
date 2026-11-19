@@ -13,6 +13,8 @@ import {
 } from "@marinara-engine/shared";
 import type { DB } from "../../db/connection.js";
 import { flushDB } from "../../db/connection.js";
+import { and, eq } from "../../db/file-query.js";
+import { agentRuns } from "../../db/schema/index.js";
 import { logger } from "../../lib/logger.js";
 import { realPathInAppFolder } from "../../utils/app-folder.js";
 import { DATA_DIR } from "../../utils/data-dir.js";
@@ -1970,18 +1972,42 @@ export class MariImagesService {
             return null;
           }
         };
-        const output = rows.slice(0, limit).map((row) => ({
-          id: row.id,
-          chatId: row.chatId,
-          filePath: row.filePath,
-          provider: row.provider,
-          model: row.model,
-          width: row.width,
-          height: row.height,
-          prompt: row.prompt,
-          flag: parse(row.flag),
-          generation: parse(row.generation),
-        }));
+        // The record saved on the image keeps only name, prompt and position; the Illustrator's raw answer
+        // (role, stance, transformed, bbox, props) lives on its agent run, so join it through the flag's messageId.
+        const illustratorRun = async (row: (typeof rows)[number]) => {
+          const messageId = parse(row.flag)?.messageId;
+          if (!messageId) return null;
+          const runs = await this.db
+            .select()
+            .from(agentRuns)
+            .where(
+              and(
+                eq(agentRuns.messageId, messageId),
+                eq(agentRuns.agentConfigId, "builtin:illustrator"),
+                eq(agentRuns.resultType, "image_prompt"),
+              ),
+            );
+          // Newest run that existed when the image was made, else the newest of all.
+          const before = runs.filter((run) => run.createdAt <= row.createdAt);
+          const pool = before.length ? before : runs;
+          const run = pool.sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+          return run ? { runId: run.id, createdAt: run.createdAt, result: parse(run.resultData) } : null;
+        };
+        const output = await Promise.all(
+          rows.slice(0, limit).map(async (row) => ({
+            illustratorRun: await illustratorRun(row),
+            id: row.id,
+            chatId: row.chatId,
+            filePath: row.filePath,
+            provider: row.provider,
+            model: row.model,
+            width: row.width,
+            height: row.height,
+            prompt: row.prompt,
+            flag: parse(row.flag),
+            generation: parse(row.generation),
+          })),
+        );
         return { ok: true, mode: "read", command: context.command, output };
       }
       case "character-gallery": {
