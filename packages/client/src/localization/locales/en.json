@@ -6860,6 +6860,8 @@
   "roleplay.commands.sound.label": "Sound Cues",
   "roleplay.commands.sound.play": "Play sound cue",
   "roleplay.commands.sound.requirements": "Choose a Music & Sound Effects connection with sound effects enabled. A compatible server also needs a sound-effect endpoint path.",
+  "roleplay.commands.task.description": "Quest board: the narrator works up to three Quest Tracker cards at a time and files new threads for later instead of stacking them. Needs the Quest Tracker.",
+  "roleplay.commands.task.label": "Quest board",
   "roleplay.commands.title": "Commands",
   "roleplay.commands.video.description": "Let characters request a short video clip for a key moment, within the Video Run Interval.",
   "roleplay.commands.video.label": "Video clips",

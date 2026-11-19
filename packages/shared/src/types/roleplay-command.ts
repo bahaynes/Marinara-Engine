@@ -19,6 +19,8 @@ export const ROLEPLAY_COMMAND_KEYS = [
   "scene",
   // Fork: the story model opens each reply with who is in the scene; the Engine owns presentCharacters from it.
   "present",
+  // Fork: the story model works the quest board's current tasks; the Engine keeps the columns (utils/quest-board.ts).
+  "task",
 ] as const;
 
 export type RoleplayCommandKey = (typeof ROLEPLAY_COMMAND_KEYS)[number];
@@ -61,7 +63,8 @@ export type RoleplayCommand =
   | { type: "interrupt"; part: string }
   | { type: "inspire" }
   | { type: "scene"; title: string }
-  | { type: "present"; names: string[] };
+  | { type: "present"; names: string[] }
+  | { type: "task"; action: "done" | "propose" | "start"; title: string; objective?: string };
 
 export interface RoleplayWhisperRecipient {
   id: string;

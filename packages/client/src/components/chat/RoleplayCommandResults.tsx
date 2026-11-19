@@ -626,7 +626,10 @@ export function RoleplayCommandResults({
     : [];
   // Fork: a scene title rides on every reply; it is bookkeeping for Advanced Memory, not a visible event.
   const hidden = (item: RoleplayCommandActivity) =>
-    (item.command.type === "whisper" || item.command.type === "scene" || item.command.type === "present") &&
+    (item.command.type === "whisper" ||
+      item.command.type === "scene" ||
+      item.command.type === "present" ||
+      item.command.type === "task") &&
     !item.error;
   if (!activity.some((item) => !hidden(item)) && !sounds.length) return null;
   return (

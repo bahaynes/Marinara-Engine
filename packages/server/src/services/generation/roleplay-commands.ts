@@ -173,6 +173,16 @@ function readCommand(type: string, body: string): RoleplayCommand | null {
         .slice(0, 40);
       return names.length ? { type, names } : null;
     }
+    case "task": {
+      // Fork: [task: done="title" objective="text"], [task: propose="title"], [task: start="title"].
+      for (const action of ["done", "propose", "start"] as const) {
+        const title = field(action, 160);
+        if (!title) continue;
+        const objective = action === "done" ? field("objective", 500) : "";
+        return { type, action, title, ...(objective ? { objective } : {}) };
+      }
+      return null;
+    }
     case "interrupt": {
       const part = field("part", 8_000);
       return part ? { type, part } : null;
@@ -869,6 +879,8 @@ export function buildRoleplayCommandsReminder(args: {
   video?: { instructions: string } | null;
   /** Fork: the latest [scene] title, so the model can repeat it exactly while the scene continues. */
   sceneTitle?: string | null;
+  /** Fork: backlog titles the model may start, offered only while a quest board slot is free. */
+  taskShortlist?: readonly string[];
 }): string {
   const lines: string[] = [];
   const enabled = (key: RoleplayCommandKey) => isRoleplayCommandAllowed(args.metadata, key, args.characterId);
@@ -906,6 +918,15 @@ export function buildRoleplayCommandsReminder(args: {
     lines.push(
       "- [present: Name, Name, Name (asleep)] begins every reply, before anything else: list everyone physically in the scene by the end of your reply, including the player's character when present. People only mentioned, remembered or elsewhere are not present.",
     );
+  if (enabled("task") && args.availableAgentIds.has("quest")) {
+    lines.push(
+      '- [task: done="task title"] tells the Engine one of your Current Tasks is finished; add objective="objective text" to tick a single objective instead. Treat Current Tasks as your work list: each scene moves one forward or finishes it. When the story raises something new that is not on the list, file it with [task: propose="short title"] and keep working the current tasks; the Engine holds it for later. A finished task stays finished.',
+    );
+    if (args.taskShortlist?.length)
+      lines.push(
+        `  A task slot is free. When the current scene allows, start one of these with [task: start="title"]: ${args.taskShortlist.map((title) => `"${title.replace(/"/g, "'")}"`).join(", ")}.`,
+      );
+  }
   if (enabled("music") && args.availableAgentIds.has("spotify"))
     lines.push(
       '- [music: mood="scene mood and musical direction"] asks Music DJ to change the soundtrack when the scene calls for it.',

@@ -736,6 +736,12 @@ import {
   writePresentForTurn,
 } from "./generate/present-command.js";
 import {
+  questBoardOn,
+  taskCommandsFrom,
+  taskShortlistForPrompt,
+  writeTaskBoardForTurn,
+} from "./generate/task-board.js";
+import {
   customAgentCanApplyResult,
   customAgentCanEmitResult,
   findResultAgent,
@@ -9589,6 +9595,13 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                 buildRoleplayCommandsReminder({
                   metadata: chatMeta,
                   sceneTitle: latestRoleplaySceneTitle(roleplayTimeline),
+                  taskShortlist: questBoardOn(
+                    chatMode,
+                    chatMeta,
+                    resolvedAgents.map((agent) => agent.type),
+                  )
+                    ? taskShortlistForPrompt(latestGameState, chatMeta)
+                    : undefined,
                   privateAvailable: roleplayPrivateAvailable,
                   availableAgentIds: new Set(resolvedAgents.map((agent) => agent.type)),
                   format: wrapFormat,
@@ -15006,7 +15019,12 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                   }
                   const existingPS = parseSnapshotPlayerStats(snap);
                   const questMerge = applyQuestUpdatesToPlayerStats(existingPS, updates, {
-                    autoRemoveFullyCompleted: true,
+                    // custom-mods: on the quest board finished cards stay, as closed tasks (generate/task-board.ts).
+                    autoRemoveFullyCompleted: !questBoardOn(
+                      chatMode,
+                      chatMeta,
+                      resolvedAgents.map((agent) => agent.type),
+                    ),
                   });
                   const questLockState = snap ? parseGameStateRow(snap as Record<string, unknown>) : null;
                   const questTrackerPatch = buildLockedPlayerStatsArrayPatch<any>({
@@ -16432,6 +16450,33 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
             resolve: resolveTurnPresent,
             onPersisted: (rows) => {
               sendSseEvent(reply, { type: "game_state_patch", data: { presentCharacters: rows } });
+            },
+          });
+        }
+
+        // custom-mods: the narrator's [task] commands move quest board cards (generate/task-board.ts). After the
+        // agents, so cards the Quest Tracker made this turn get a column. Impersonate turns have no narrator reply.
+        if (
+          questBoardOn(
+            chatMode,
+            chatMeta,
+            resolvedAgents.map((agent) => agent.type),
+          ) &&
+          !input.impersonate &&
+          lastSavedMsg?.role === "assistant" &&
+          typeof lastSavedSwipeIndex === "number" &&
+          !generationSignal.aborted
+        ) {
+          await writeTaskBoardForTurn({
+            store: gameStateStore,
+            chatId: input.chatId,
+            messageId: lastSavedMsg.id,
+            swipeIndex: lastSavedSwipeIndex,
+            baseSnapshot: baseGameStateSnapshot,
+            commands: taskCommandsFrom(lastReplyRoleplayActivity),
+            metadata: chatMeta,
+            onPersisted: (activeQuests) => {
+              sendSseEvent(reply, { type: "game_state_patch", data: { playerStats: { activeQuests } } });
             },
           });
         }
