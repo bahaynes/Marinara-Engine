@@ -88,7 +88,8 @@ export function ChatImageLightbox({
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const flagImage = useFlagGalleryImage();
-  const [flagged, setFlagged] = useState(!!initialImage.flag);
+  // Per image: paging to another picture must not inherit the last one's flag.
+  const [flagOverrides, setFlagOverrides] = useState<Record<string, boolean>>({});
   // Lightweight message and storyboard images omit the generation record. Resolve
   // it once here so viewing and editing use the same saved request.
   const needsGalleryRow = !!regenerate && activeImage.generation === undefined;
@@ -99,6 +100,7 @@ export function ChatImageLightbox({
   const prompt = record?.prompt ?? image.prompt;
   const meta = [formatChatImageMeta(image), extraMeta].filter(Boolean).join(" | ");
   const downloadName = getChatImageDownloadName(image);
+  const flagged = flagOverrides[image.id] ?? !!image.flag;
   const toggleFlag = async () => {
     let note = "";
     if (!flagged) {
@@ -114,7 +116,7 @@ export function ChatImageLightbox({
     flagImage.mutate(
       { chatId: image.chatId, imageId: image.id, flag: !flagged, note, messageId: regenerate?.messageId },
       {
-        onSuccess: () => setFlagged(!flagged),
+        onSuccess: () => setFlagOverrides((prev) => ({ ...prev, [image.id]: !flagged })),
         onError: () => toast.error(localizeUi("ui.chat.chatimagelightbox.flagFailed")),
       },
     );
@@ -166,7 +168,8 @@ export function ChatImageLightbox({
               <RefreshCw size="0.875rem" />
             </button>
           )}
-          {regenerate && !editing && (
+          {/* Flags live on gallery rows; a Mari preview asset (it has a `regenerator`) has none. */}
+          {regenerate && !regenerator && !editing && (
             <button
               type="button"
               onClick={() => void toggleFlag()}

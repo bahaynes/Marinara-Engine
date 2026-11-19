@@ -2473,9 +2473,6 @@ export async function galleryRoutes(app: FastifyInstance) {
     };
   });
 
-  // Regenerate an existing image from its final request, optionally edited (#7767). The new image
-  // replaces the old one wherever a message or storyboard frame shows it; the old one stays in the
-  // gallery.
   app.post<{ Params: { chatId: string; imageId: string } }>("/:chatId/images/:imageId/flag", async (req, reply) => {
     const { chatId, imageId } = req.params;
     if (!isValidChatId(chatId)) return reply.status(400).send({ error: "Invalid chatId" });
@@ -2493,6 +2490,9 @@ export async function galleryRoutes(app: FastifyInstance) {
     return { success: true };
   });
 
+  // Regenerate an existing image from its final request, optionally edited (#7767). The new image
+  // replaces the old one wherever a message or storyboard frame shows it; the old one stays in the
+  // gallery.
   app.post<{ Params: { chatId: string; imageId: string } }>(
     "/:chatId/images/:imageId/regenerate",
     async (req, reply) => {
