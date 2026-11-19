@@ -64,6 +64,8 @@ export function QuestRow({
   const totalObjectives = quest.objectives.length;
   const completionPercent = quest.completed ? 100 : totalObjectives > 0 ? (completed / totalObjectives) * 100 : 0;
   const completionLabel = totalObjectives > 0 ? `${completed}/${totalObjectives}` : quest.completed ? "done" : "open";
+  // custom-mods: a quest-board card waiting for a free slot; the narrator doesn't see it yet.
+  const backlog = quest.status === "backlog";
   const objectiveGridColumns = deleteMode
     ? "grid-cols-[0.875rem_minmax(0,1fr)_1rem]"
     : "grid-cols-[0.875rem_minmax(0,1fr)]";
@@ -112,7 +114,7 @@ export function QuestRow({
   };
 
   return (
-    <article className={cn(QUEST_CARD_CLASS, quest.completed && "opacity-75")}>
+    <article className={cn(QUEST_CARD_CLASS, quest.completed && "opacity-75", backlog && "opacity-55")}>
       <div className={QUEST_CARD_TOP_RULE_CLASS} />
       <div className={cn(QUEST_HEADER_CLASS, deleteMode && QUEST_HEADER_DELETE_CLASS)}>
         {onUpdate && (
@@ -195,7 +197,12 @@ export function QuestRow({
             {questTitle}
           </div>
         )}
-        <span className={QUEST_COMPLETION_BADGE_CLASS}>{completionLabel}</span>
+        <span
+          className={QUEST_COMPLETION_BADGE_CLASS}
+          title={backlog ? localizeUi("ui.trackerPanel.questrow.backlogHint") : undefined}
+        >
+          {backlog ? localizeUi("ui.trackerPanel.questrow.backlog") : completionLabel}
+        </span>
         {onRemove && deleteMode && (
           <button
             type="button"

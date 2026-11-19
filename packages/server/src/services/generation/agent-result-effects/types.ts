@@ -24,6 +24,8 @@ export interface TrackerEffectTarget {
   loadSnapshot: () => Promise<TrackerSnapshotRow | null>;
   /** Sends a `game_state_patch` event so the HUD updates without a reload. */
   emitGameStatePatch: (patch: Record<string, unknown>) => void;
+  /** When false (e.g., quest board), completed quest cards stay instead of being auto-removed. */
+  autoRemoveCompletedQuests?: boolean;
   characters: CharacterTrackerTarget;
   world: WorldStateTarget;
 }

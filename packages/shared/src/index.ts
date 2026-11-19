@@ -254,6 +254,7 @@ export * from "./utils/chat-persona.js";
 export * from "./utils/message-continuation.js";
 export * from "./utils/scene-breaks.js";
 export * from "./utils/quest-state.js";
+export * from "./utils/quest-board.js";
 export * from "./utils/quote-format.js";
 export * from "./utils/image-prompt-compiler.js";
 export * from "./utils/image-appearance.js";

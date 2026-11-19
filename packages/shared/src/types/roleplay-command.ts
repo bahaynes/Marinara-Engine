@@ -19,6 +19,8 @@ export const ROLEPLAY_COMMAND_KEYS = [
   "scene",
   // Fork: the story model opens each reply with who is in the scene; the Engine owns presentCharacters from it.
   "present",
+  // Fork: the story model works the quest board's current tasks; the Engine keeps the columns (utils/quest-board.ts).
+  "task",
 ] as const;
 
 export type RoleplayCommandKey = (typeof ROLEPLAY_COMMAND_KEYS)[number];
@@ -61,7 +63,8 @@ export type RoleplayCommand =
   | { type: "interrupt"; part: string }
   | { type: "inspire" }
   | { type: "scene"; title: string }
-  | { type: "present"; names: string[] };
+  | { type: "present"; names: string[] }
+  | { type: "task"; action: "done" | "propose" | "start"; title: string; objective?: string; partOf?: string };
 
 export interface RoleplayWhisperRecipient {
   id: string;
@@ -302,9 +305,12 @@ export function getRoleplayCommandNoticeVisibility(
   for (let index = 0; index < activity.length; index++) {
     const item = activity[index];
     if (!item) continue;
-    // Fork: scene titles and [present] rosters ride on replies as bookkeeping, not visible events.
+    // Fork: scene titles, [present] rosters, and [task] actions are bookkeeping, not visible events.
     if (
-      (item.command.type === "whisper" || item.command.type === "scene" || item.command.type === "present") &&
+      (item.command.type === "whisper" ||
+        item.command.type === "scene" ||
+        item.command.type === "present" ||
+        item.command.type === "task") &&
       !item.error
     )
       continue;
