@@ -16,7 +16,6 @@ import {
   type RoleplayCommandActivity,
   type RoleplayWhisperRecipient,
   type WrapFormat,
-  type GameSkillDefinition,
 } from "@marinara-engine/shared";
 import { parseQuotedParam } from "../conversation/character-commands.js";
 import { wrapContent } from "../prompt/format-engine.js";
@@ -173,6 +172,17 @@ function readCommand(type: string, body: string): RoleplayCommand | null {
         .filter((name) => name.length > 0 && name.length <= 120)
         .slice(0, 40);
       return names.length ? { type, names } : null;
+    }
+    case "task": {
+      // Fork: [task: done="title" objective="text"], [task: propose="title" partOf="open task"], [task: start="title"].
+      for (const action of ["done", "propose", "start"] as const) {
+        const title = field(action, 160);
+        if (!title) continue;
+        const objective = action === "done" ? field("objective", 500) : "";
+        const partOf = action === "propose" ? field("partOf", 160) : "";
+        return { type, action, title, ...(objective ? { objective } : {}), ...(partOf ? { partOf } : {}) };
+      }
+      return null;
     }
     case "interrupt": {
       const part = field("part", 8_000);
@@ -868,9 +878,10 @@ export function buildRoleplayCommandsReminder(args: {
   interruptAvailable?: boolean;
   /** Set when a clip may be made now: a video connection exists and the Video Run Interval has passed. */
   video?: { instructions: string } | null;
-  activeSkills?: readonly GameSkillDefinition[];
   /** Fork: the latest [scene] title, so the model can repeat it exactly while the scene continues. */
   sceneTitle?: string | null;
+  /** Fork: backlog titles the model may start, offered only while a quest board slot is free. */
+  taskShortlist?: readonly string[];
 }): string {
   const lines: string[] = [];
   const enabled = (key: RoleplayCommandKey) => isRoleplayCommandAllowed(args.metadata, key, args.characterId);
@@ -908,6 +919,15 @@ export function buildRoleplayCommandsReminder(args: {
     lines.push(
       "- [present: Name, Name, Name (asleep)] begins every reply, before anything else: list everyone physically in the scene by the end of your reply, including the player's character when present. People only mentioned, remembered or elsewhere are not present.",
     );
+  if (enabled("task") && args.availableAgentIds.has("quest")) {
+    lines.push(
+      '- [task: done="task title"] tells the Engine one of your Current Tasks is finished; add objective="objective text" to tick a single objective instead. Treat Current Tasks as your work list: each scene moves one forward or finishes it. When the story raises something new that is not on the list, file it with [task: propose="short title"] and keep working the current tasks; the Engine holds it for later. If it is a step toward one of your Current Tasks, add partOf="title of that task" and the Engine adds it to that task instead. A finished task stays finished.',
+    );
+    if (args.taskShortlist?.length)
+      lines.push(
+        `  A task slot is free. When the current scene allows, start one of these with [task: start="title"]: ${args.taskShortlist.map((title) => `"${title.replace(/"/g, "'")}"`).join(", ")}.`,
+      );
+  }
   if (enabled("music") && args.availableAgentIds.has("spotify"))
     lines.push(
       '- [music: mood="scene mood and musical direction"] asks Music DJ to change the soundtrack when the scene calls for it.',
@@ -925,16 +945,12 @@ export function buildRoleplayCommandsReminder(args: {
       '- [whisper: character="name" text="text hidden from anyone but the specified character"] Hides a part of the message and makes it available only to a selected character. No one else will be able to access it, except for the appointed narrator. This can be used to whisper secrets, show visions, etc. Name exactly one chat character or the user\'s persona. Put the command where the secret belongs in the message, and do not repeat its text in public narration. The text may span several lines and quote dialogue as is, for example text=""I love you."".',
     );
   if (enabled("roll")) {
-    const skillsList =
-      args.activeSkills && args.activeSkills.length > 0
-        ? ` Available skills for checks: ${args.activeSkills.map((s) => s.name).join(", ")}.`
-        : "";
     lines.push(
       // A chat played by a ruleset rolls its checks off the character sheets (the ruleset block below),
       // so [roll] is left for dice those rules do not cover, and never stands in for a check.
       args.metadata.gameRuleset != null
         ? '- [roll: notation="2d6" reason="what the dice decide"] requests plain dice the ruleset does not cover (a random table, a number of hours). An attempt by a character is a check from the RULESET block, never a roll. Stop after the command and wait for the result before narrating the outcome. Never invent results or reroll.'
-        : `- [roll: character="participant name" notation="1d20" attribute="Strength" skill="Skill Name" modifier="+2" dc="15" reason="action being attempted"] requests a real roll; use roll_dice with the same fields when available. You may target any chat participant, including the user's persona by name. Attribute and skill are both optional and only one is needed; the engine automatically adds the assigned ability/skill modifier from character stats, so do not add it yourself. Optional modifier adds a situational bonus/penalty once; optional dc sets the total needed to succeed. Keep DCs and modifiers in command/tool fields, not narration. Stop after the command and wait for the result before narrating the outcome. Never invent results or reroll an action.${skillsList}`,
+        : `- [roll: character="participant name" notation="1d20" attribute="Strength" skill="Skill Name" modifier="+2" dc="15" reason="action being attempted"] requests a real roll; use roll_dice with the same fields when available. You may target any chat participant, including the user's persona by name. Attribute and skill are both optional and only one is needed; the engine automatically adds the assigned ability/skill modifier from character stats, so do not add it yourself. Optional modifier adds a situational bonus/penalty once; optional dc sets the total needed to succeed. Keep DCs and modifiers in command/tool fields, not narration. Stop after the command and wait for the result before narrating the outcome. Never invent results or reroll an action.`,
     );
   }
   if (enabled("inspire"))

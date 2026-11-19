@@ -34,7 +34,7 @@ export function QuestBoard({
 }) {
   const { t: localizeUi } = useUiTranslation();
   const completedQuests = quests.filter((quest) => quest.completed).length;
-  const activeQuests = quests.length - completedQuests;
+  const activeQuests = quests.filter((quest) => !quest.completed && quest.status !== "backlog").length;
   const questTextLineCount = getQuestTextLineCount(trackerPanelSizeProfile, quests.length);
 
   return (

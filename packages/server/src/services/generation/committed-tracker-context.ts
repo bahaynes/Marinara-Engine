@@ -1,4 +1,10 @@
-import { compactQuestProgressForContext, formatCustomTrackerFieldForPrompt } from "@marinara-engine/shared";
+import {
+  compactQuestProgressForContext,
+  formatCustomTrackerFieldForPrompt,
+  isQuestBoard,
+  normalizeQuestCollectionForQuestMerge,
+  questBoardPromptLines,
+} from "@marinara-engine/shared";
 import { formatBeholderStateForPrompt, normalizeBeholderState } from "../agents/beholder-state.js";
 import { wrapContent } from "../prompt/format-engine.js";
 import { parseJsonOrNull } from "../../utils/large-json.js";
@@ -218,7 +224,13 @@ export function buildCommittedTrackerContextBlock(args: {
         trackerParts.push(wrapContent(`Status: ${stats.status}`, "Status", args.wrapFormat));
       }
 
-      if (hasQuest && Array.isArray(stats.activeQuests) && stats.activeQuests.length > 0) {
+      const questBoard = hasQuest ? normalizeQuestCollectionForQuestMerge(stats.activeQuests) : [];
+      if (isQuestBoard(questBoard)) {
+        // custom-mods: on the quest board the narrator sees its current tasks and what is closed, never the backlog.
+        const { current, closed } = questBoardPromptLines(questBoard);
+        if (current.length > 0) trackerParts.push(wrapContent(current.join("\n"), "Current Tasks", args.wrapFormat));
+        if (closed.length > 0) trackerParts.push(wrapContent(closed.join("\n"), "Closed Tasks", args.wrapFormat));
+      } else if (hasQuest && Array.isArray(stats.activeQuests) && stats.activeQuests.length > 0) {
         const activeQuestsForContext = compactQuestProgressForContext(stats.activeQuests);
         const questLines = activeQuestsForContext.map(formatQuestLine).filter(isNonEmptyLine);
         if (questLines.length > 0) {

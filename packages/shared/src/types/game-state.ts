@@ -174,10 +174,15 @@ export interface InventoryItem {
 }
 
 /** Quest progress data tracked in game state. */
+/** custom-mods: a card's column on the quest board (utils/quest-board.ts). */
+export type QuestBoardStatus = "active" | "backlog" | "done";
+
 export interface QuestProgress {
   questEntryId: string;
   name: string;
   currentStage: number;
   objectives: Array<{ text: string; completed: boolean }>;
   completed: boolean;
+  /** custom-mods: set only when the chat plays on the quest board. */
+  status?: QuestBoardStatus;
 }

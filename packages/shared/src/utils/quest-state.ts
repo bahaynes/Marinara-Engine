@@ -1,4 +1,5 @@
 import type { PlayerStats, QuestProgress } from "../types/game-state.js";
+import { addStepToOpenCard } from "./quest-board.js";
 
 type QuestObjective = QuestProgress["objectives"][number];
 
@@ -11,6 +12,8 @@ export interface NormalizedQuestUpdate {
   objectives?: QuestObjective[];
   rewards?: string[];
   notes?: string;
+  /** custom-mods: a create that is a step of this open quest-board card. */
+  partOf?: string;
 }
 
 export interface QuestMergeResult {
@@ -197,6 +200,7 @@ function normalizeQuestUpdate(value: unknown): NormalizedQuestUpdate | null {
     ...(objectives !== undefined ? { objectives } : {}),
     ...(rewards !== undefined ? { rewards } : {}),
     notes: firstString(value.notes),
+    ...(firstString(value.partOf) ? { partOf: firstString(value.partOf) } : {}),
   };
 }
 
@@ -242,10 +246,17 @@ export function applyQuestUpdatesToPlayerStats(
   const playerStats = normalizePlayerStatsForQuestMerge(value);
   const originalQuests = playerStats.activeQuests.map(cloneQuest);
   const quests = originalQuests.map(cloneQuest);
+  const folded = new Set<NormalizedQuestUpdate>();
 
   for (const update of updates) {
     const idx = quests.findIndex((quest) => quest.name === update.questName || quest.questEntryId === update.questName);
-    if (update.action === "create" && idx === -1) {
+    // custom-mods: a step of an open quest-board card joins it as an objective, not a card (and no journal entry).
+    const joined =
+      update.action === "create" && idx === -1 ? addStepToOpenCard(quests, update.partOf, update.questName) : null;
+    if (joined) {
+      quests.splice(0, quests.length, ...joined);
+      folded.add(update);
+    } else if (update.action === "create" && idx === -1) {
       quests.push({
         questEntryId: update.questName,
         name: update.questName,
@@ -278,7 +289,7 @@ export function applyQuestUpdatesToPlayerStats(
   }
 
   return {
-    updates,
+    updates: updates.filter((update) => !folded.has(update)),
     originalQuests,
     quests,
     playerStats: { ...playerStats, activeQuests: quests },

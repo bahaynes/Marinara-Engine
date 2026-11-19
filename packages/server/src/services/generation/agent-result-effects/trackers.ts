@@ -198,7 +198,7 @@ export async function applyQuestResult(result: AgentResult, deps: AgentResultEff
     if (updates.length === 0) return;
     const snapshot = await loadSnapshot(deps);
     const questMerge = applyQuestUpdatesToPlayerStats(parseSnapshotPlayerStats(snapshot), updates, {
-      autoRemoveFullyCompleted: true,
+      autoRemoveFullyCompleted: deps.trackers.autoRemoveCompletedQuests ?? true,
     });
     const lockState = lockStateOf(snapshot);
     const questPatch = buildLockedPlayerStatsArrayPatch<any>({
