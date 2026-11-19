@@ -19,7 +19,8 @@ const { generateRoutes } = await import("../../../packages/server/src/routes/gen
 const { chatsRoutes } = await import("../../../packages/server/src/routes/chats.routes.js");
 const { createChatsStorage } = await import("../../../packages/server/src/services/storage/chats.storage.js");
 const { createAgentsStorage } = await import("../../../packages/server/src/services/storage/agents.storage.js");
-const { createConnectionsStorage } = await import("../../../packages/server/src/services/storage/connections.storage.js");
+const { createConnectionsStorage } =
+  await import("../../../packages/server/src/services/storage/connections.storage.js");
 const { createCharactersStorage } = await import("../../../packages/server/src/services/storage/characters.storage.js");
 const { createAdvancedMemoryService } = await import("../../../packages/server/src/services/advanced-memory.js");
 const { estimateTextTokens, measureContextBudget } =
@@ -3207,6 +3208,55 @@ try {
   rewriteFailsFor = undefined;
   mainReplyFor = undefined;
   mainReply = undefined;
+
+  const freshStartChat = await chats.create({
+    name: "Fresh-start constant summary update",
+    mode: "roleplay",
+    characterIds: [character.id],
+    connectionId: connection.id,
+  });
+  assert(freshStartChat);
+  chatIds.push(freshStartChat.id);
+  await chats.patchMetadata(freshStartChat.id, {
+    enableAgents: false,
+    advancedMemoryFreshStart: true,
+    advancedMemory: {
+      ...DEFAULT_ADVANCED_MEMORY_SETTINGS,
+      enabled: true,
+      maxContextTokens: 65_000,
+      summaryBudgetTokens: 10_000,
+      sceneCheckInterval: 100,
+    },
+  });
+  await chats.createMessage({ chatId: freshStartChat.id, role: "user", content: "First scene." });
+  await chats.createMessage({
+    chatId: freshStartChat.id,
+    role: "user",
+    content: "SCENE_CHANGE Second scene.",
+    extra: { isConversationStart: true },
+  });
+  summaryResponse = "Summary of first scene.";
+  await memory.initialize(freshStartChat.id);
+  await memory.checkScenesAfterGeneration(freshStartChat.id, { blocking: false });
+  const freshStartEntries = JSON.parse((await chats.getById(freshStartChat.id))!.metadata).summaryEntries;
+  assert.equal(
+    freshStartEntries?.length,
+    1,
+    "fresh-start chats must save constant summaries without failing the preparationPolicyRevision check",
+  );
+  // Compaction must also match the fresh-start policy revision when combining summaries.
+  await chats.patchMetadata(freshStartChat.id, {
+    summaryEntries: [{ ...freshStartEntries[0], content: `{{char}} ${"FRESH_START_CONSTANT ".repeat(3000)}` }],
+  });
+  summaryResponse = "Compacted fresh-start summary.";
+  await memory.checkScenesAfterGeneration(freshStartChat.id, { blocking: false });
+  const compactedFreshStartEntries = JSON.parse((await chats.getById(freshStartChat.id))!.metadata).summaryEntries;
+  assert.equal(
+    compactedFreshStartEntries?.filter((entry: { enabled?: boolean }) => entry.enabled !== false).length,
+    1,
+    "fresh-start chats must compact constant summaries without failing the preparationPolicyRevision check",
+  );
+  summaryResponse = undefined;
 } finally {
   finishStream?.();
   for (const chatId of chatIds) await memory.cancel(chatId);

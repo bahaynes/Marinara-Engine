@@ -1045,6 +1045,18 @@ function withFreshStartKnowledge(
   return { ...settings, knowledgeStarts };
 }
 
+function effectiveSettingsFor(
+  mode: string,
+  metadata: Record<string, unknown>,
+  characterIds: string[],
+): AdvancedMemorySettings {
+  return withFreshStartKnowledge(
+    effectiveAdvancedMemorySettings(mode, normalizeAdvancedMemorySettings(metadata.advancedMemory)),
+    metadata,
+    characterIds,
+  );
+}
+
 function missingKnowledge(ctx: Context): string[] {
   if (!ctx.individual || !ctx.messages.some((message) => message.role === "user" || message.role === "assistant"))
     return [];
@@ -1412,16 +1424,12 @@ export function createAdvancedMemoryService(db: DB, { includeExcerptsInStatus = 
           : {};
       names.set(GAME_MASTER_MEMORY_READER_ID, typeof card.name === "string" ? card.name : "Game Master");
     }
-    const savedSettings = effectiveAdvancedMemorySettings(
-      chat.mode,
-      normalizeAdvancedMemorySettings(metadata.advancedMemory),
-    );
     return {
       chatId,
       mode: chat.mode,
       connectionId: chat.connectionId ?? null,
       metadata,
-      settings: withFreshStartKnowledge(savedSettings, metadata, characterIds),
+      settings: effectiveSettingsFor(chat.mode, metadata, characterIds),
       messages,
       characterIds,
       names,
@@ -5175,10 +5183,7 @@ export function createAdvancedMemoryService(db: DB, { includeExcerptsInStatus = 
               preparationPolicyRevision({
                 ...ctx,
                 metadata: fresh,
-                settings: effectiveAdvancedMemorySettings(
-                  ctx.mode,
-                  normalizeAdvancedMemorySettings(fresh.advancedMemory),
-                ),
+                settings: effectiveSettingsFor(ctx.mode, fresh, ctx.characterIds),
               }) !== preparationPolicyRevision(ctx)
             )
               throw new Error("Chat Summaries changed during preparation; retry");
@@ -5457,10 +5462,7 @@ export function createAdvancedMemoryService(db: DB, { includeExcerptsInStatus = 
             preparationPolicyRevision({
               ...ctx,
               metadata: fresh,
-              settings: effectiveAdvancedMemorySettings(
-                ctx.mode,
-                normalizeAdvancedMemorySettings(fresh.advancedMemory),
-              ),
+              settings: effectiveSettingsFor(ctx.mode, fresh, ctx.characterIds),
             }) !== preparationPolicyRevision(ctx)
           )
             throw new Error("Chat Summaries changed while being combined; retry");
