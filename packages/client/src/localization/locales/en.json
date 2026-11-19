@@ -11562,6 +11562,7 @@
   "ui.chat.localmusicplayer.pause": "Pause",
   "ui.chat.localmusicplayer.play": "Play",
   "ui.chat.mariappliededit.apply": "Apply",
+  "ui.chat.mariappliededit.done": "Done",
   "ui.chat.mariappliededit.factAddsKeys_one": "Adds {{count}} key: {{keys}}",
   "ui.chat.mariappliededit.factAddsKeys_other": "Adds {{count}} keys: {{keys}}",
   "ui.chat.mariappliededit.factChanged": "Changed {{fields}}",
