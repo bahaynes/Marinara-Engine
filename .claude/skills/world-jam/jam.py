@@ -79,7 +79,7 @@ def bundle(chat_id, last):
 
     if chat.get("personaId"):
         p = mari("db", "get", "personas", chat["personaId"])
-        files["persona.md"] = block(f"{p['name']} [personas {p['id']}]", [
+        files["persona.md"] = block(f"{p.get('name')} [personas {chat['personaId']}]", [
             (k, p.get(k)) for k in ("description", "personality", "backstory", "appearance", "aboutMe")])
 
     # Lorebooks the chat can see: chat-activated, chat-scoped, global, and character/persona-linked.
