@@ -24,6 +24,14 @@ export function createGalleryStorage(db: DB) {
       return db.select().from(chatImages).where(eq(chatImages.chatId, chatId)).orderBy(desc(chatImages.createdAt));
     },
 
+    /** Images the user flagged as not matching their scene, newest first; one chat, or all of them. */
+    async listFlagged(chatId?: string) {
+      const rows = chatId
+        ? await this.listByChatId(chatId)
+        : await db.select().from(chatImages).orderBy(desc(chatImages.createdAt));
+      return rows.filter((row) => row.flag);
+    },
+
     async listByChatIds(chatIds: string[]) {
       if (chatIds.length === 0) return [];
       return db

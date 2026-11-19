@@ -1958,6 +1958,32 @@ export class MariImagesService {
         const images = await createGalleryStorage(this.db).listByChatId(chatId);
         return { ok: true, mode: "read", command: context.command, output: images.slice(0, limit) };
       }
+      case "flagged": {
+        // Images the user flagged as not matching their scene: the note, the prompt as sent and the
+        // generation record, so a ComfyUI workflow or Illustrator prompt can be tuned against them.
+        const chatId = normalizeId(flagString(flags, "chat", "chat-id", "id"));
+        const rows = await createGalleryStorage(this.db).listFlagged(chatId || undefined);
+        const parse = (raw: string | null) => {
+          try {
+            return raw ? JSON.parse(raw) : null;
+          } catch {
+            return null;
+          }
+        };
+        const output = rows.slice(0, limit).map((row) => ({
+          id: row.id,
+          chatId: row.chatId,
+          filePath: row.filePath,
+          provider: row.provider,
+          model: row.model,
+          width: row.width,
+          height: row.height,
+          prompt: row.prompt,
+          flag: parse(row.flag),
+          generation: parse(row.generation),
+        }));
+        return { ok: true, mode: "read", command: context.command, output };
+      }
       case "character-gallery": {
         const characterId = normalizeId(flagString(flags, "character", "character-id", "id"));
         if (!characterId) throw new Error("character-gallery list requires --character <id>");
@@ -2051,7 +2077,7 @@ export class MariImagesService {
   private helpText() {
     return [
       "Usage: mari images <command> (mari images help shows this)",
-      "Discovery: connections [--edit], capabilities [--edit], list assets|backgrounds|sprites|chat-gallery|character-gallery, get <asset-id>",
+      "Discovery: connections [--edit], capabilities [--edit], list assets|backgrounds|sprites|chat-gallery|character-gallery|flagged [--chat <id>], get <asset-id>",
       "Styles: styles (short list), styles <id|name> (one profile in full, with its per-image tags)",
       "Look at images: look <asset-id|app-url|file> [up to 4] [--detail low|high], or look --target <target> for its current image (alias: view). You see the pictures in your next message.",
       "HITL preview: preview --operation generate|edit --prompt <text> [--negative <text>] [--kind <kind>] [--target <target>] [--source <asset|url|file>] [--connection <id|name|default>] [--style [default|<id|name>] | --no-style]",
