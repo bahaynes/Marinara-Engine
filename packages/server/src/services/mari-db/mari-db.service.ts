@@ -160,6 +160,14 @@ type TableMeta = {
   byKey: Map<string, ColumnMeta>;
   primaryKey: string | null;
 };
+const CONNECTION_MARI_EDITABLE_COLUMNS = new Set([
+  "name",
+  "comfyuiWorkflow",
+  "imagePromptInstructions",
+  "videoPromptInstructions",
+  "updatedAt",
+]);
+
 type PlanChange = MariDbRowChange & {
   beforeRaw?: Row | null;
   afterRaw?: Row | null;
@@ -9763,9 +9771,21 @@ export class MariDbService {
     // Raw writes apply before the Keep/Restore review, so an edited address could receive the key before the user
     // sees the change, without the checks the Connections editor and profile import make. Mari has no actions for
     // them, so deny every change (change-level, so transforms are covered too).
+    // A connection update is allowed when it touches only columns that name no address, key or endpoint
+    // (CONNECTION_MARI_EDITABLE_COLUMNS); an allowlist, so a column added later stays blocked until listed.
+    // Inserts and deletes stay denied: an insert could carry its own address and key reference.
+    const touchesConnectionSecretOrAddress = (change: PlanChange): boolean => {
+      const { beforeRaw, afterRaw } = change;
+      if (!beforeRaw || !afterRaw) return true;
+      return [...new Set([...Object.keys(beforeRaw), ...Object.keys(afterRaw)])].some(
+        (column) =>
+          !CONNECTION_MARI_EDITABLE_COLUMNS.has(column) &&
+          JSON.stringify(beforeRaw[column]) !== JSON.stringify(afterRaw[column]),
+      );
+    };
     const credentialChange = changes.find(
       (change) =>
-        change.table === "api_connections" ||
+        (change.table === "api_connections" && touchesConnectionSecretOrAddress(change)) ||
         change.table === "connection_accounts" ||
         (change.table === "app_settings" &&
           (change.id === TTS_SETTINGS_KEY || change.id === SPEECH_TO_TEXT_SETTINGS_KEY)),
@@ -9776,7 +9796,9 @@ export class MariDbService {
         table: credentialChange.table,
         id: credentialChange.id,
         message:
-          "Professor Mari cannot change Models, Connections or the speech server settings, because they hold stored keys. The user edits them in Connections and Settings.",
+          credentialChange.table === "api_connections"
+            ? `Professor Mari can edit a connection's ${[...CONNECTION_MARI_EDITABLE_COLUMNS].filter((column) => column !== "updatedAt").join(", ")} only. Its address, keys and endpoints, and adding or deleting connections, are edited by the user in Connections.`
+            : "Professor Mari cannot change Models, Connections or the speech server settings, because they hold stored keys. The user edits them in Connections and Settings.",
       });
     }
     // Same reason for the chat settings that send chat text to an address outside the app, hold its key, or
