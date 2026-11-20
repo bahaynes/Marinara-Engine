@@ -746,6 +746,9 @@ export async function persistLorebookKeeperUpdates(args: {
         keys,
         tag,
         enabled: true,
+        // Keeper memory changes every few turns. Position 1 (world info after) keeps it out of the
+        // world-info-before slot in the stable system prompt, which would break the prompt cache.
+        position: 1,
         ...(order !== undefined ? { order } : {}),
         ...(provenance ?? {}),
       },

@@ -54,6 +54,11 @@ assert.deepEqual(
   ["chosen", "chosen"],
 );
 assert.equal(createdBooks.length, 0, "An explicit target must not create model-proposed lorebooks");
+assert.deepEqual(
+  writes.map((write) => write.position),
+  [1, 1],
+  "Keeper entries must not land in world info before, inside the cached system prompt",
+);
 
 writes.length = 0;
 await persistLorebookKeeperUpdates({ ...options, updates: updates.slice(0, 2) });
