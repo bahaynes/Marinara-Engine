@@ -51,9 +51,10 @@ export function speaksOpenAIChat(provider: string | null | undefined): boolean {
 
 export const LOCAL_AUTH_PROVIDERS = ["openai_chatgpt", "claude_subscription", "grok_subscription"] as const;
 
-/** These subscription transports send text only; they ignore native tool schemas. */
+/** These subscription transports send text only; they ignore native tool schemas. Claude (Subscription)
+ *  takes them through an in-process MCP server (custom-mods). */
 export function supportsNativeToolCalls(provider: string | null | undefined): boolean {
-  return !!provider && provider !== "claude_subscription" && provider !== "grok_subscription";
+  return !!provider && provider !== "grok_subscription";
 }
 
 /**

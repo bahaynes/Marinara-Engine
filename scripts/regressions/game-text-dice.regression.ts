@@ -146,7 +146,7 @@ const app = Fastify();
 app.decorate("db", db);
 await app.register(generateRoutes, { prefix: "/api/generate" });
 try {
-  for (const provider of ["claude_subscription", "grok_subscription"] as const) {
+  for (const provider of ["grok_subscription"] as const) {
     const connection = await createConnectionsStorage(db).create({
       name: "Text-only fixture",
       provider,

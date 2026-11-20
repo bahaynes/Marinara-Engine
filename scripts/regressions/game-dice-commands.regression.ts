@@ -82,8 +82,8 @@ const { registerCapabilityService } =
   await import("../../packages/server/src/services/capability-packages/capability-service-registry.service.js");
 const { resolveGmVerbTable } =
   await import("../../packages/server/src/services/capability-packages/capability-gm-verb-runtime.service.js");
-const { ClaudeSubscriptionProvider } =
-  await import("../../packages/server/src/services/llm/providers/claude-subscription.provider.js");
+const { GrokSubscriptionProvider } =
+  await import("../../packages/server/src/services/llm/providers/grok-subscription.provider.js");
 const db = await getDB();
 const chats = createChatsStorage(db);
 // World Maps owns its persistence. Observe the real host dispatch at that
@@ -106,12 +106,12 @@ const removeSpatial = registerCapabilityService("hierarchical-maps:state-resolut
     return null;
   },
 });
-const original = ClaudeSubscriptionProvider.prototype.chat;
+const original = GrokSubscriptionProvider.prototype.chat;
 let roll = false;
 let rejectMovement = false;
 let calls = 0;
 const commands = '[spatial_move: destination_id="crypt"] [weather:{"word":"rain"}]';
-ClaudeSubscriptionProvider.prototype.chat = async function* (
+GrokSubscriptionProvider.prototype.chat = async function* (
   messages: ChatMessage[],
   options: ChatOptions,
 ): AsyncGenerator<string, LLMUsage> {
@@ -142,7 +142,7 @@ try {
   );
   const connection = await createConnectionsStorage(db).create({
     name: "Dice commands",
-    provider: "claude_subscription",
+    provider: "grok_subscription",
     model: "fixture",
     apiKey: "synthetic",
     maxContext: 32768,
@@ -186,7 +186,7 @@ try {
     assert.doesNotMatch(saved.content, /\[weather:|\[spatial_move:/);
   }
 } finally {
-  ClaudeSubscriptionProvider.prototype.chat = original;
+  GrokSubscriptionProvider.prototype.chat = original;
   removeSpatial();
   await app.close();
   await closeDB();

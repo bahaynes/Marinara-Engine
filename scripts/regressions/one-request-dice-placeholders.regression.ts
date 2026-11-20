@@ -67,8 +67,8 @@ const { resolveSkillCheckWithContext } =
   await import("../../packages/server/src/services/game/skill-check-resolution.service.js");
 const { parseAndStripGmVerbCalls } =
   await import("../../packages/server/src/services/capability-packages/capability-gm-verb-runtime.service.js");
-const { ClaudeSubscriptionProvider } =
-  await import("../../packages/server/src/services/llm/providers/claude-subscription.provider.js");
+const { GrokSubscriptionProvider } =
+  await import("../../packages/server/src/services/llm/providers/grok-subscription.provider.js");
 
 /** A scripted die, so every substituted number below is a number this lane chose. */
 function scriptedRoller(values: number[]): (sides: number) => number {
@@ -469,8 +469,8 @@ async function* scriptedChat(messages: ChatMessage[], options: ChatOptions): Asy
   yield scriptedDraft;
   return { promptTokens: 10, completionTokens: 5, totalTokens: 15, finishReason: "stop" };
 }
-const originalClaude = ClaudeSubscriptionProvider.prototype.chat;
-ClaudeSubscriptionProvider.prototype.chat = scriptedChat;
+const originalGrok = GrokSubscriptionProvider.prototype.chat;
+GrokSubscriptionProvider.prototype.chat = scriptedChat;
 const db = await getDB();
 const chats = createChatsStorage(db);
 const app = Fastify();
@@ -479,7 +479,7 @@ await app.register(generateRoutes, { prefix: "/api/generate" });
 try {
   const connection = await createConnectionsStorage(db).create({
     name: "Placeholder fixture",
-    provider: "claude_subscription",
+    provider: "grok_subscription",
     model: "fixture",
     apiKey: "synthetic-fixture",
     maxContext: 32768,
@@ -573,7 +573,7 @@ try {
   assert.match(untouched.content, /\[\[roll: 1d4\]\]/, untouched.content);
   assert.equal(JSON.parse(untouched.extra).gameDiceTurn, undefined);
 } finally {
-  ClaudeSubscriptionProvider.prototype.chat = originalClaude;
+  GrokSubscriptionProvider.prototype.chat = originalGrok;
   await app.close();
   await closeDB();
   rmSync(dir, { recursive: true, force: true });

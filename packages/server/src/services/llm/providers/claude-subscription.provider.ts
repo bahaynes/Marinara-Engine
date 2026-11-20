@@ -33,10 +33,18 @@ import {
 import {
   BaseLLMProvider,
   markLlmRequestActivity,
+  type ChatCompletionResult,
   type ChatMessage,
   type ChatOptions,
+  type LLMToolCall,
   type LLMUsage,
 } from "../base-provider.js";
+import {
+  buildMarinaraToolServer,
+  continueAfterToolResults,
+  marinaraToolCalls,
+  onlyMarinaraTools,
+} from "./claude-subscription/sdk-tools.js";
 import { resolveAnthropicAdaptiveEffort, supportsAnthropicThinkingDisable } from "./anthropic.provider.js";
 import { logger } from "../../../lib/logger.js";
 import { isClaudeSubscriptionResumeEnabled } from "../../../config/runtime-config.js";
@@ -51,6 +59,9 @@ import {
 import { ensureFreshOAuthCredentials } from "./claude-subscription/oauth-refresh.js";
 import { ResumeSessionStore, resumeScratchCwd } from "./claude-subscription/session-store.js";
 import { claudeCodeExecutableOption } from "./claude-subscription/installed-cli.js";
+
+/** Where `chatComplete` collects the tool calls `chat()` saw (rides the options object through the base). */
+const TOOL_CALL_SINK = Symbol("claudeSubscriptionToolCalls");
 
 /**
  * Standard API cost equivalents, not subscription billing. Claude chooses its
@@ -169,11 +180,17 @@ function formatClaudeSdkError(err: unknown): string {
  * the request before the model turn is used.
  */
 export function stopIfClaudeCodeExposesMcp(
-  init: { mcp_servers: Array<{ name: string; status: string }>; tools: string[]; claude_code_version?: string },
+  init: {
+    mcp_servers: Array<{ name: string; status: string; source?: string }>;
+    tools: string[];
+    claude_code_version?: string;
+  },
   abortController: AbortController,
+  marinaraToolsRegistered = false,
 ): void {
   const mcpTools = init.tools.filter((tool) => tool.startsWith("mcp__"));
   if (init.mcp_servers.length === 0 && mcpTools.length === 0) return;
+  if (onlyMarinaraTools(init, marinaraToolsRegistered)) return;
   abortController.abort();
   logger.error(
     {
@@ -408,11 +425,24 @@ export class ClaudeSubscriptionProvider extends BaseLLMProvider {
     );
   }
 
+  override async chatComplete(messages: ChatMessage[], options: ChatOptions): Promise<ChatCompletionResult> {
+    if (!options.tools?.length) return super.chatComplete(messages, options);
+    const toolCalls: LLMToolCall[] = [];
+    const result = await super.chatComplete(messages, { ...options, [TOOL_CALL_SINK]: toolCalls } as ChatOptions);
+    return toolCalls.length ? { ...result, toolCalls, finishReason: "tool_calls" } : result;
+  }
+
   async *chat(messages: ChatMessage[], options: ChatOptions): AsyncGenerator<string, LLMUsage | void, unknown> {
     assertChatContextPlugin();
+    // Native tools run only through chatComplete, which collects the calls; a bare chat() stays text-only.
+    const toolCallSink = (options as { [TOOL_CALL_SINK]?: LLMToolCall[] })[TOOL_CALL_SINK];
+    const toolsOffered = !!toolCallSink && !!options.tools?.length;
     const suppressModelParameters = this.shouldSuppressModelParameters(options);
     const configuredMaxTokens = this.applyMaxTokensCap(options.maxTokens ?? 4096);
-    const contextFit = this.fitMessagesToContext(messages, { ...options, maxTokens: configuredMaxTokens });
+    const contextFit = this.fitMessagesToContext(continueAfterToolResults(messages), {
+      ...options,
+      maxTokens: configuredMaxTokens,
+    });
     this.logContextTrim(contextFit, options.model);
 
     const { promptArg, systemPrompt, resumeSessionId, resumeCwd, sessionStore } = selectPromptPath(
@@ -420,7 +450,8 @@ export class ClaudeSubscriptionProvider extends BaseLLMProvider {
       options.model,
     );
 
-    const { query } = await loadSdk();
+    const sdk = await loadSdk();
+    const { query } = sdk;
 
     const abortController = new AbortController();
     const onUpstreamAbort = () => abortController.abort();
@@ -503,6 +534,13 @@ export class ClaudeSubscriptionProvider extends BaseLLMProvider {
       },
     };
     if (systemPrompt !== undefined) sdkOptions.systemPrompt = systemPrompt;
+    if (toolsOffered) {
+      sdkOptions.mcpServers = {
+        marinara: buildMarinaraToolServer(sdk as never, options.tools!) as NonNullable<
+          typeof sdkOptions.mcpServers
+        >[string],
+      };
+    }
 
     // ponytail: Agent SDK 0.3.282 has no "between_tools" thinking type and Sonnet 5.5 rejects
     // "disabled", so its Off runs adaptive at low effort here. Upgrade path: send between_tools
@@ -666,7 +704,7 @@ export class ClaudeSubscriptionProvider extends BaseLLMProvider {
             },
             "[claude-subscription] SDK init surface",
           );
-          stopIfClaudeCodeExposesMcp(message, abortController);
+          stopIfClaudeCodeExposesMcp(message, abortController, toolsOffered);
           // Only our mod's errors: a built-in Claude Code plugin's failure
           // doesn't bring the context back. This warns and doesn't throw,
           // because by now the CLI may already have sent the request.
@@ -696,6 +734,7 @@ export class ClaudeSubscriptionProvider extends BaseLLMProvider {
                 .trim() || "unknown API error";
             continue;
           }
+          if (toolCallSink) toolCallSink.push(...marinaraToolCalls(message.message?.content));
           if (options.stream ?? true) continue;
           // Non-streaming path: the SDK still yields the full assistant
           // message at the end; emit the text blocks once.
@@ -711,7 +750,10 @@ export class ClaudeSubscriptionProvider extends BaseLLMProvider {
         } else if (message.type === "result") {
           const resultStop = (message as { stop_reason?: string | null }).stop_reason;
           if (typeof resultStop === "string") stopReason = resultStop;
-          if (message.subtype === "success") {
+          // A tool call ends the turn at maxTurns: the SDK reports error_max_turns and, if iteration
+          // went on, throws. Marinara runs the calls, so that is this reply's normal end.
+          const stoppedForTools = message.subtype === "error_max_turns" && !!toolCallSink?.length;
+          if (message.subtype === "success" || stoppedForTools) {
             sawSuccessResult = true;
             const usage = message.usage ?? null;
             if (usage) {
@@ -787,7 +829,9 @@ export class ClaudeSubscriptionProvider extends BaseLLMProvider {
                 resumeSessionId ?? "fold-path",
               );
             }
-            const finalResult = typeof message.result === "string" ? message.result : "";
+            if (stoppedForTools) break;
+            const finalResult =
+              message.subtype === "success" && typeof message.result === "string" ? message.result : "";
             if ((message as { is_error?: boolean }).is_error === true) {
               apiErrorText ??= finalResult.trim() || "unknown API error";
             } else if (!apiErrorText && !emittedText && finalResult.trim()) {
@@ -848,7 +892,7 @@ export class ClaudeSubscriptionProvider extends BaseLLMProvider {
       );
     }
 
-    if (!emittedText) {
+    if (!emittedText && !toolCallSink?.length) {
       const diagnostic = [
         `model=${options.model}`,
         `successResult=${sawSuccessResult}`,

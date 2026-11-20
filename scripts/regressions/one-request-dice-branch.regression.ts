@@ -102,8 +102,8 @@ const { registerCapabilityService } =
   await import("../../packages/server/src/services/capability-packages/capability-service-registry.service.js");
 const { resolveGmVerbTable } =
   await import("../../packages/server/src/services/capability-packages/capability-gm-verb-runtime.service.js");
-const { ClaudeSubscriptionProvider } =
-  await import("../../packages/server/src/services/llm/providers/claude-subscription.provider.js");
+const { GrokSubscriptionProvider } =
+  await import("../../packages/server/src/services/llm/providers/grok-subscription.provider.js");
 const { createGameTurnChanceSession, resolveGameTurnBranches, runGameTurnChancePass, summarizeGameDiceTurn } =
   await import("../../packages/server/src/services/game/one-request-dice.js");
 const { stripGmCommandTags } = await import("../../packages/server/src/services/game/segment-edits.js");
@@ -509,8 +509,8 @@ function draftFor(roll: number): string {
     "[/branch]",
   ].join("\n");
 }
-const original = ClaudeSubscriptionProvider.prototype.chat;
-ClaudeSubscriptionProvider.prototype.chat = async function* (
+const original = GrokSubscriptionProvider.prototype.chat;
+GrokSubscriptionProvider.prototype.chat = async function* (
   messages: ChatMessage[],
   options: ChatOptions,
 ): AsyncGenerator<string, LLMUsage> {
@@ -534,7 +534,7 @@ try {
   );
   const connection = await createConnectionsStorage(db).create({
     name: "Branch ordering",
-    provider: "claude_subscription",
+    provider: "grok_subscription",
     model: "fixture",
     apiKey: "synthetic",
     maxContext: 32768,
@@ -633,7 +633,7 @@ try {
   // learned these four delimiters rather than the arm owning them alone.
   assert.doesNotMatch(stripGmTags(offSaved.content), /\[branch:|\[on\s|\[\/branch\]/i);
 } finally {
-  ClaudeSubscriptionProvider.prototype.chat = original;
+  GrokSubscriptionProvider.prototype.chat = original;
   removeSpatial();
   await app.close();
   await closeDB();
