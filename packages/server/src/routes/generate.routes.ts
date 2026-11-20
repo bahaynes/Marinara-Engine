@@ -10747,6 +10747,11 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
               let narration = "";
               const followup = provider.chat(continuationMessages, {
                 ...textChatOptions,
+                // custom-mods: Claude (Subscription) puts the tool list ahead of the prompt, so the
+                // rewrite sends the draft's tools to read the draft's cache instead of rewriting it all.
+                ...(conn.provider === "claude_subscription" && responderToolsAttached && !gameToolConnection
+                  ? { tools: responderToolDefs }
+                  : {}),
                 maxTokens: effectiveMaxTokensForSend,
                 maxContext: maxContextForSend,
                 encryptedReasoningItems: undefined,

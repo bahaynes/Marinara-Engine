@@ -142,5 +142,26 @@ await assert.rejects(
 );
 assert.equal(options.mcpServers, undefined);
 
+// 5. A bare chat() given tools registers the same server, so a follow-up sent through it (the ruleset
+// dice rewrite) opens like the draft and reads its cache. A tool call there is dropped, not thrown.
+script = async function* () {
+  yield marinaraInit;
+  yield {
+    type: "assistant",
+    message: { content: [{ type: "tool_use", id: "toolu_2", name: "mcp__marinara__roll_dice", input: {} }] },
+  };
+  yield { type: "result", subtype: "error_max_turns", is_error: true, usage, errors: [] };
+  throw new Error("Claude Code returned an error result: Reached maximum number of turns (1)");
+};
+let streamed = "";
+for await (const chunk of provider.chat([{ role: "user", content: "Rewrite" }], {
+  model: "claude-opus-5",
+  stream: false,
+  tools: [rollDice],
+}))
+  streamed += chunk;
+assert.equal(streamed, "");
+assert.ok((options.mcpServers as Record<string, unknown>).marinara, "a bare chat() with tools registers them");
+
 __setSdkForTesting(null);
 console.log("claude-subscription tools regression passed");

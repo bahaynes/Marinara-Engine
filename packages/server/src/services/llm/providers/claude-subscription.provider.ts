@@ -434,9 +434,11 @@ export class ClaudeSubscriptionProvider extends BaseLLMProvider {
 
   async *chat(messages: ChatMessage[], options: ChatOptions): AsyncGenerator<string, LLMUsage | void, unknown> {
     assertChatContextPlugin();
-    // Native tools run only through chatComplete, which collects the calls; a bare chat() stays text-only.
-    const toolCallSink = (options as { [TOOL_CALL_SINK]?: LLMToolCall[] })[TOOL_CALL_SINK];
-    const toolsOffered = !!toolCallSink && !!options.tools?.length;
+    // chatComplete collects the calls for the tool loop. A bare chat() given tools still registers them,
+    // so its prompt opens like the call it follows and reads that call's cache; it drops any call it gets.
+    const returnedCalls = (options as { [TOOL_CALL_SINK]?: LLMToolCall[] })[TOOL_CALL_SINK];
+    const toolsOffered = !!options.tools?.length;
+    const toolCallSink = returnedCalls ?? (toolsOffered ? [] : undefined);
     const suppressModelParameters = this.shouldSuppressModelParameters(options);
     const configuredMaxTokens = this.applyMaxTokensCap(options.maxTokens ?? 4096);
     const contextFit = this.fitMessagesToContext(continueAfterToolResults(messages), {
@@ -892,6 +894,14 @@ export class ClaudeSubscriptionProvider extends BaseLLMProvider {
       );
     }
 
+    if (toolCallSink?.length && !returnedCalls) {
+      logger.warn(
+        "[claude-subscription] %s asked for %d tool call(s) on a text-only request; dropped (session=%s)",
+        options.model,
+        toolCallSink.length,
+        resumeSessionId ?? "fold-path",
+      );
+    }
     if (!emittedText && !toolCallSink?.length) {
       const diagnostic = [
         `model=${options.model}`,
