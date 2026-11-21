@@ -42,6 +42,12 @@ When implementing changes or fixing issues in this repository:
 - **Never run destructive git operations** (such as `git reset --hard` or `git checkout -- .`) without explicit user instruction.
 - Check `git status` and `git diff` to ensure you only stage and touch files relevant to your task.
 
+### D. Fork Engineering Rules
+
+- **Impersonated turns are first-class turns.** Impersonate writes the user's message with the model, so the last message in history can be a user message written as the persona. Some players play almost entirely this way, so code that runs only on a typed message never runs for them. Check every change that touches the prompt cache, state commits, trackers, agents or message history against an impersonated turn as well as a typed one.
+- **Prefer Engine-owned logic over prompt text.** Enforce gating, state and ordering in code rather than asking the model nicely. Propose a prompt-only fix only when code isn't viable, and say so.
+- **Prompt prefix order decides caching.** Stable content goes first, volatile content last.
+
 ---
 
 ## 3. Remote Setup & Branching Model

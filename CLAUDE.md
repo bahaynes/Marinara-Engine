@@ -4,9 +4,7 @@ Fork-only file. `AGENTS.md` is upstream's agent guide, kept byte-identical to up
 
 ## Fork engineering rules
 
-- Impersonate turns are the recurring edge case (the last message may be a user message written as the character). Check every change that touches cache, state commits, trackers, or message history against an impersonate turn.
-- Prefer Engine-owned logic (code-enforced gating, state, ordering) over prompt text that asks the model nicely. Propose a prompt-only fix only when code isn't viable, and say so.
-- Prompt prefix order decides caching: stable content first, volatile content last.
+Read `CUSTOM_MODS.md` § 2.D (impersonated turns, Engine-owned logic, prompt prefix order) before changing generation, cache, state, tracker or prompt code.
 
 ## Custom-Mods Fork Guidelines (Local Fork & Rebase Discipline)
 
