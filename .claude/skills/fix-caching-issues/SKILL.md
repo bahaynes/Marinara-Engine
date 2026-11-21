@@ -63,8 +63,8 @@ cache doc applies to the Claude CLI passthrough only.)
 
 | Breaker | Where | Fix (config first) |
 |---|---|---|
-| Plain **memory recall** (`The following are recalled fragments...`, `--- Memory N ---`) | `injectMemoryRecallContext` (`services/generation/memory-recall-context.ts`) splices it **before the first history message**, i.e. at the end of the system prefix. Query = latest user message, so it changes every turn and kills caching of all history. **On by default for scene chats and conversation mode** (`generate.routes.ts`, `memoryRecallDefault`). | Chat setting: turn memory recall off (`metadata.enableMemoryRecall: false`), or use Advanced Memory (plain recall is skipped when it's on) with a preset whose Recalled Scenes marker sits after Chat History; verify with a diff that AM's block lands there. Conversation mode: place the `{{memories}}` slot in the preset. |
-| Cross-chat awareness block | Same splice point (`convoAwarenessBlock`, `generate.routes.ts`) | Usually stable; check if diff lands there. |
+| Plain **memory recall** (`--- Memory N ---`) | Fixed in the engine 2026-11-06: it follows the history. If a diff lands on it ahead of the history, the instance is on an older build. | Deploy. |
+| Cross-chat awareness block | Fixed in the engine 2026-11-06: it follows the history. | Deploy. |
 | Author's note / post-history sections at depth > 0 | Merged into the message N from the end, moves every turn | Depth 0. |
 | Lorebook / volatile preset markers before Chat History | Preset section order | Move after Chat History. |
 | Sliding context window (`contextMessageLimit` at cap, AM `open-scene-prefix-excerpts`) | Oldest message drops every turn | Cut in chunks (grow-then-trim), not per turn. |

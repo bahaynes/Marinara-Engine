@@ -544,6 +544,12 @@ import {
   comfyLayoutLookSourcesFromContext,
   finishComfyLayoutBoxes,
 } from "../services/image/comfyui-layout-placeholders.js";
+import {
+  buildIllustratorCastLookLines,
+  ensureIllustratorNpcPortraits,
+  isIllustratorNpcCastId,
+  loadIllustratorNpcCast,
+} from "../services/image/illustrator-npc-cast.js";
 import { resolveCustomAgentStyleProfileId } from "../services/generation/custom-agent-image-settings.js";
 import { buildSpotifyDjConstraints } from "../services/spotify/spotify-dj-constraints.js";
 import {
@@ -684,7 +690,7 @@ import {
   selectRollingSummaryMessages,
   injectIntoOutputFormatOrLastUser,
   placeGameWorldInfo,
-  selectGameWindow,
+  applyContextWindow,
   getMessageConversationStartCharacterIds,
   getMessageHiddenFromAICharacterIds,
   isMessageHiddenFromAI,
@@ -721,11 +727,24 @@ import {
   shouldEnableAgentsForGeneration,
   shouldInjectIdentityFallback,
   shouldRestoreRegenerationCharacterTarget,
+  isManualTrackerCharacterId,
   stripSpeakerTagsExceptLastAssistant,
   type PromptAttachment,
   type SimpleMessage,
 } from "./generate/generate-route-utils.js";
 import { commitStateBeforeImpersonatedMessage } from "./generate/commit-impersonated-turn.js";
+import {
+  PICTURE_DUE_INSTRUCTION,
+  replyAskedForPicture,
+  resolvePresentForTurn,
+  writePresentForTurn,
+} from "./generate/present-command.js";
+import {
+  questBoardOn,
+  taskCommandsFrom,
+  taskShortlistForPrompt,
+  writeTaskBoardForTurn,
+} from "./generate/task-board.js";
 import {
   customAgentCanApplyResult,
   customAgentCanEmitResult,
@@ -793,6 +812,7 @@ import {
 import { generateMissingCharacterSprites } from "../services/image/ephemeral-sprite.service.js";
 import { logger, logDebugOverride } from "../lib/logger.js";
 import { writePromptSidecar } from "../services/storage/prompt-sidecar.js";
+import { cacheBreakForReply } from "../services/prompt/cache-break.js";
 import {
   buildHistoricalLorebookKeeperContext,
   customAgentUsesLorebookReadBehind,
@@ -879,7 +899,7 @@ import {
   resolveGenerationProviderRuntime,
   resolveReasoningMacroValue,
 } from "../services/generation/provider-generation-runtime.js";
-import { applyContextMessageLimitWithPins, supportsNativeToolCalls } from "@marinara-engine/shared";
+import { supportsNativeToolCalls } from "@marinara-engine/shared";
 import { planGameToolCalls } from "../services/generation/game-tool-planning.js";
 import { extractLeadingGmPlanning, stripStrayRuleLines } from "../services/game/gm-planning.js";
 import {
@@ -2529,22 +2549,16 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
         contextMessageLimit > 0 &&
         chatMessages.length > contextMessageLimit
       ) {
-        if (chatMeta.gameLoreInTail !== false) {
-          // Game prompt caching: hold the window head steady until the cache has lapsed anyway.
-          const lastReply = [...chatMessages].reverse().find((m) => m.role === "assistant");
-          const ttlMs = (conn.anthropicExtendedCacheTtl === "true" ? 60 : 5) * 60_000;
-          const windowed = selectGameWindow(chatMessages, {
-            limit: contextMessageLimit,
-            slack: typeof chatMeta.gameWindowSlack === "number" ? chatMeta.gameWindowSlack : 30,
-            headId: typeof chatMeta.gameWindowHeadId === "string" ? chatMeta.gameWindowHeadId : null,
-            cacheCold: !lastReply?.createdAt || Date.now() - new Date(lastReply.createdAt).getTime() > ttlMs,
-          });
-          chatMessages = windowed.messages;
-          if (windowed.headId && windowed.headId !== chatMeta.gameWindowHeadId) {
-            await chats.patchMetadata(input.chatId, { gameWindowHeadId: windowed.headId });
-          }
-        } else {
-          chatMessages = applyContextMessageLimitWithPins(chatMessages, contextMessageLimit);
+        // Prompt caching: hold the window head steady until the cache has lapsed anyway.
+        const windowed = applyContextWindow(chatMessages, {
+          chatMode,
+          limit: contextMessageLimit,
+          chatMeta,
+          cacheTtlMs: (conn.anthropicExtendedCacheTtl === "true" ? 60 : 5) * 60_000,
+        });
+        chatMessages = windowed.messages;
+        if (windowed.headId && windowed.headId !== chatMeta.gameWindowHeadId) {
+          await chats.patchMetadata(input.chatId, { gameWindowHeadId: windowed.headId });
         }
       }
       const pastReasoning = collectPastReasoningMetadata(
@@ -5193,40 +5207,13 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
         }
 
         const charInfo = await loadCharacterPromptInfo({ chars, characterIds, chatMode, chatId: input.chatId });
-        const npcRegistryNpcs: Array<{
-          id: string;
-          name: string;
-          avatarPath: string | null;
-          appearance: string | null;
-          appearanceOverride: null;
-        }> = [];
-        try {
-          const registryService = getCapabilityService<{
-            current: (
-              chatId: string,
-            ) => Promise<{ npcs: Map<string, { id: string; name: string; avatar?: string; aliases?: string[] }> }>;
-          }>("npc-registry");
-          if (registryService && input.chatId) {
-            const resolved = await registryService.current(input.chatId);
-            if (resolved?.npcs) {
-              for (const entry of resolved.npcs.values()) {
-                if (
-                  entry.name &&
-                  entry.avatar &&
-                  !charInfo.some((c) => c.name.toLowerCase() === entry.name.toLowerCase())
-                ) {
-                  npcRegistryNpcs.push({
-                    id: `npc-registry:${entry.id}`,
-                    name: entry.name,
-                    avatarPath: entry.avatar,
-                    appearance: null,
-                    appearanceOverride: null,
-                  });
-                }
-              }
-            }
-          }
-        } catch {}
+        // custom-mods: card-less people (tracker portraits, NPC Registry); refreshed with this turn's tracker rows
+        // before a picture is drawn.
+        const illustratorCastCards = charInfo.map((character) => ({
+          name: character.name,
+          appearance: character.imageAppearanceOverride || character.appearance,
+        }));
+        let illustratorNpcCast = await loadIllustratorNpcCast({ chatId: input.chatId, cards: illustratorCastCards });
         // Who Illustrator can show: the chat's characters (and a character used as the user's identity)
         // and the user's persona, with their appearance and avatars. Pictures and clips match names against it.
         const illustratorCast = () => ({
@@ -5252,7 +5239,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                   },
                 ]
               : []),
-            ...npcRegistryNpcs,
+            ...illustratorNpcCast,
           ],
           persona:
             identity?.source === "persona" && persona
@@ -6948,6 +6935,17 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
         }
 
         const illustratorAgentForInterval = resolvedAgents.find((a) => a.type === "illustrator");
+        // custom-mods: the chat's switch turns on the same setting Illustrator 2 uses.
+        if (
+          illustratorAgentForInterval &&
+          chatMode === "roleplay" &&
+          chatMeta.illustratorPresentCharactersOnly === true
+        ) {
+          illustratorAgentForInterval.settings = {
+            ...illustratorAgentForInterval.settings,
+            presentCharactersOnly: true,
+          };
+        }
         const storyboardAgentConfig = pipelineConfiguredPromptAgents.find(
           (agent) => agent.type === STORYBOARD_AGENT_ID,
         );
@@ -7831,6 +7829,9 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
             },
           });
         };
+        // custom-mods: this reply's roster, set once the reply is saved so image agents read presentCharacters current.
+        let turnPresentRows: Array<Record<string, unknown>> | null = null;
+        const presentCommandOn = chatMode === "roleplay" && isRoleplayCommandEnabled(chatMeta, "present");
         const resolveAgentContext = async (agent: AgentExecConfig, context: AgentContext): Promise<AgentContext> => {
           const resolvedContext = customLorebookReadBehindTargets.get(agent.id)?.context ?? context;
           const trackerContext = applyTrackerLorebookContextPolicy({
@@ -7876,9 +7877,16 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
             if (writerReferences) memory[WRITER_REFERENCE_MEMORY_KEY] = writerReferences;
           }
           return applyImageAgentContextExtensions(
-            { ...trackerContext, memory },
+            {
+              ...trackerContext,
+              memory,
+              ...(turnPresentRows && trackerContext.gameState
+                ? { gameState: { ...trackerContext.gameState, presentCharacters: turnPresentRows as any[] } }
+                : {}),
+            },
             agent.settings,
             imageConnection?.comfyuiWorkflow,
+            presentCommandOn,
           );
         };
         // Decision statements in agent prompt templates (#6569), planned from the agents
@@ -8493,6 +8501,19 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
         // Tool definitions (toolDefs) and custom tool metadata (customToolDefs)
         // were already resolved earlier for the agent pipeline and are reused here.
 
+        // custom-mods: when a picture is due, the narrator names the moment. Depth 0 keeps the cached history intact.
+        if (
+          followUpIteration === 0 &&
+          chatMode === "roleplay" &&
+          createsAssistantMessage &&
+          !skipAutomaticIllustrator &&
+          isRoleplayCommandAllowed(chatMeta, "illustrate", null)
+        ) {
+          finalMessages = injectAtDepth(finalMessages, [
+            { content: PICTURE_DUE_INSTRUCTION, role: "system", depth: 0 },
+          ]);
+        }
+
         // ── Impersonate: inject instruction to respond as the user's character ──
         // Only on the user's actual turn (iteration 0). A Mari follow-up pass
         // is a continuation of the assistant's prior message, not a new user
@@ -8536,6 +8557,24 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
         let turnShownScenes: readonly string[] = [];
         // The earlier parts of the last reply, when it was split at scene breaks; its last part is the last response.
         let lastReplyEarlierParts: Array<{ message: any; content: string }> = [];
+        // custom-mods: the last reply's commands and full text as saved, for the [present] write after the agents.
+        let lastReplyRoleplayActivity: RoleplayCommandActivity[] = [];
+        let lastReplyFullContent = "";
+        const presentWriteApplies = () =>
+          presentCommandOn &&
+          !input.impersonate &&
+          lastSavedMsg?.role === "assistant" &&
+          typeof lastSavedSwipeIndex === "number";
+        const resolveTurnPresent = (currentCharacters?: unknown) =>
+          resolvePresentForTurn({
+            // Captured when the reply was saved: re-reading the message could see a swipe the user picked since.
+            activity: lastReplyRoleplayActivity,
+            content: lastReplyFullContent,
+            previous: currentCharacters ?? baseGameStateSnapshot?.presentCharacters,
+            fallbackPrevious: baseGameStateSnapshot?.presentCharacters,
+            personaName,
+            cards: charInfo,
+          });
         const allResponseSegments: NonNullable<AgentContext["mainResponseSegments"]> = [];
         const roleplayResponseIndexes = new Map<string, number>();
         let continuedMessageRewriteSource: string | null = null;
@@ -9111,6 +9150,8 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
           commandCharacterIds: (string | null)[] | null;
           oocMessages: string[];
           characterId: string | null;
+          /** custom-mods: the reply's accepted roleplay commands, captured at save time ([present]). */
+          roleplayActivity: RoleplayCommandActivity[];
         } | null> => {
           if (
             chatMode === "conversation" &&
@@ -9626,6 +9667,13 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                 buildRoleplayCommandsReminder({
                   metadata: chatMeta,
                   sceneTitle: latestRoleplaySceneTitle(roleplayTimeline),
+                  taskShortlist: questBoardOn(
+                    chatMode,
+                    chatMeta,
+                    resolvedAgents.map((agent) => agent.type),
+                  )
+                    ? taskShortlistForPrompt(latestGameState, chatMeta)
+                    : undefined,
                   privateAvailable: roleplayPrivateAvailable,
                   availableAgentIds: new Set(resolvedAgents.map((agent) => agent.type)),
                   format: wrapFormat,
@@ -9633,14 +9681,6 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                   characterId: roleplayCallerId,
                   interruptAvailable: Boolean(roleplayInterruptionTarget),
                   video: roleplayVideoOffer,
-                  activeSkills: getActiveGameSkills({
-                    enabledSystemIds: Array.isArray(chatMeta.gameSkillSystems)
-                      ? (chatMeta.gameSkillSystems as string[])
-                      : null,
-                    disabledSkillIds: Array.isArray(chatMeta.gameDisabledSkills)
-                      ? (chatMeta.gameDisabledSkills as string[])
-                      : null,
-                  }),
                 }),
                 roleplayRulesetReminder,
               ]
@@ -11491,6 +11531,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                 commandCharacterIds: parsedCommandCharacterIds,
                 oocMessages,
                 characterId: targetCharId,
+                roleplayActivity,
               };
             }
             logger.warn(
@@ -12287,6 +12328,27 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                 extraUpdate.cachedPromptStored = null;
               }
             }
+            // custom-mods: name what changed ahead of the tail since the last reply, so a cache miss has a cause.
+            // An impersonated turn builds a different window, and a continuation extends its own prompt.
+            if (!input.impersonate && !input.continueMessageId) {
+              try {
+                const cacheBreak = await cacheBreakForReply({
+                  messages: (await chats.listMessages(input.chatId)) as never,
+                  savedMessageId: savedMsg.id,
+                  savedCreatedAt: String(savedMsg.createdAt),
+                  next: finalPromptSent,
+                  scan: lorebookScanSnapshot,
+                  provider: generationProviderOrigin.provider,
+                  ttlMs:
+                    conn?.provider === "claude_subscription" || conn?.provider === "anthropic"
+                      ? (conn.anthropicExtendedCacheTtl === "true" ? 60 : 5) * 60_000
+                      : null,
+                });
+                (extraUpdate.generationInfo as Record<string, unknown>).cacheBreak = cacheBreak;
+              } catch (err) {
+                logger.warn(err, "[cache-break] Could not compare this prompt with the last reply's");
+              }
+            }
             // Cache the lorebook scan that produced the prompt so Active Context
             // reflects the last generation instead of a best-effort rescan.
             extraUpdate.lorebookScan = lorebookScanSnapshot;
@@ -12532,6 +12594,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
             commandCharacterIds: recoveredAlreadyAppliedSpatialTurn ? [] : parsedCommandCharacterIds,
             oocMessages: recoveredAlreadyAppliedSpatialTurn ? [] : oocMessages,
             characterId: targetCharId,
+            roleplayActivity,
           };
         };
 
@@ -12716,6 +12779,10 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                   data: { messageId: part.message.id, editedText: part.content, changes: [], rewriteApplied: false },
                 });
             lastReplyEarlierParts = genResult.earlierParts ?? [];
+            lastReplyRoleplayActivity = genResult.roleplayActivity;
+            lastReplyFullContent = [...lastReplyEarlierParts.map((part) => part.content), genResult.response].join(
+              "\n\n",
+            );
             currentIterationSavedMsg = genResult.savedMsg;
             for (const part of replyParts) {
               if (typeof part.message?.id === "string") {
@@ -12897,6 +12964,10 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
               });
             }
             lastReplyEarlierParts = genResult.earlierParts ?? [];
+            lastReplyRoleplayActivity = genResult.roleplayActivity;
+            lastReplyFullContent = [...lastReplyEarlierParts.map((part) => part.content), genResult.response].join(
+              "\n\n",
+            );
             firstSavedMsg ??= genResult.savedMsg;
             lastSavedMsg = genResult.savedMsg;
             lastSavedSwipeIndex = genResult.savedSwipeIndex;
@@ -13531,6 +13602,14 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
           const postReplySpatialProjection = hierarchicalMapsEnabledForChat
             ? await resolveOwnerSpatialProjection(input.chatId, {}, chatMeta)
             : ownerSpatialProjection;
+          // custom-mods: image agents and the picture filter use this reply's roster. The saved write stays after the agents.
+          if (presentWriteApplies()) {
+            try {
+              turnPresentRows = resolveTurnPresent().rows;
+            } catch (err) {
+              logger.warn(err, "[present] Could not resolve this reply's roster for image agents");
+            }
+          }
           const postAgentContext: AgentContext = {
             ...agentContext,
             ...postReplyDecisionContext,
@@ -13593,6 +13672,12 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
 
             return { ...result, data: spriteData };
           };
+
+          // custom-mods: the narrator asked for this reply's picture, so the automatic writer must not draw another.
+          if (replyAskedForPicture(lastReplyRoleplayActivity)) {
+            const automaticIllustrator = pipelineAgents.findIndex((agent) => agent.type === "illustrator");
+            if (automaticIllustrator >= 0) pipelineAgents.splice(automaticIllustrator, 1);
+          }
 
           let postResults = hasPostProcessingAgents
             ? [
@@ -14140,6 +14225,11 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
               db: app.db,
               canEditTrackers: (trackerResult) =>
                 customAgentCanApplyResult(trackerResult, resolvedAgents, builtInAgentTypes, "edit_trackers"),
+              autoRemoveCompletedQuests: !questBoardOn(
+                chatMode,
+                chatMeta,
+                resolvedAgents.map((agent) => agent.type),
+              ),
               // A world-state run may not have made this swipe's snapshot; clone the generation baseline into one
               // so the tracker never writes onto an older message's row.
               loadSnapshot: async () => {
@@ -15087,9 +15177,41 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                       // custom-mods: on a layout workflow the engine, not the writer, supplies each boxed character's looks.
                       const comfyLayoutActive =
                         !supportsNovelAiCharacterPrompts(imgConnFull) && characterPromptLimit > 0;
+                      // custom-mods (Illustrator 2): opt-in present-character gating and request-ordered refs.
+                      const requestOrderedReferences = imagePromptAgent?.settings?.referenceOrder === "requested";
+                      let requestedReferenceNames = illCharacters.filter(
+                        (name): name is string => typeof name === "string",
+                      );
+                      // custom-mods: this turn's tracker rows, for presence, card-less people and layout looks.
+                      const turnTrackerRows =
+                        turnPresentRows ??
+                        (await gameStateStore
+                          .getByChatAndMessage(input.chatId, messageId, targetSwipeIndex)
+                          .then((row) =>
+                            row ? parseGameStateRow(row as Record<string, unknown>).presentCharacters : null,
+                          )
+                          .catch(() => null));
+                      illustratorNpcCast = await loadIllustratorNpcCast({
+                        chatId: input.chatId,
+                        cards: illustratorCastCards,
+                        presentCharacters: turnTrackerRows,
+                      });
+                      if (imagePromptAgent?.settings?.presentCharactersOnly === true) {
+                        const presence = filterToPresentCharacters(
+                          requestedReferenceNames,
+                          turnTrackerRows,
+                          identity?.source === "persona" ? personaName : null,
+                          // The [present] roster is current, so a name the reply merely mentions stays out.
+                          presentCommandOn ? null : completedResponse,
+                        );
+                        if (presence.dropped.length > 0) {
+                          logger.info("[illustrator] Dropped absent characters: %s", presence.dropped.join(", "));
+                        }
+                        requestedReferenceNames = presence.kept;
+                      }
                       const writerCharacterPrompts = readCharacterPrompts(
                         illData,
-                        illCharacters.filter((name): name is string => typeof name === "string"),
+                        requestedReferenceNames,
                         characterPromptLimit,
                       );
                       // custom-mods: layout boxes are composed once the reference slots are known (below).
@@ -15187,27 +15309,24 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                           postReplySpatialProjection?.ownerMode === "roleplay" ? postReplySpatialProjection : null,
                       });
                       let illustratorRefImages: string[] | undefined;
-                      // custom-mods (Illustrator 2): opt-in present-character gating and request-ordered refs.
-                      const requestOrderedReferences = imagePromptAgent?.settings?.referenceOrder === "requested";
-                      let requestedReferenceNames = illCharacters.filter(
-                        (name): name is string => typeof name === "string",
-                      );
-                      if (imagePromptAgent?.settings?.presentCharactersOnly === true) {
-                        const turnSnapshot = await gameStateStore
-                          .getByChatAndMessage(input.chatId, messageId, targetSwipeIndex)
-                          .catch(() => null);
-                        const presence = filterToPresentCharacters(
-                          requestedReferenceNames,
-                          turnSnapshot
-                            ? parseGameStateRow(turnSnapshot as Record<string, unknown>).presentCharacters
-                            : null,
-                          identity?.source === "persona" ? personaName : null,
-                          completedResponse,
-                        );
-                        if (presence.dropped.length > 0) {
-                          logger.debug("[illustrator] Dropped absent characters: %s", presence.dropped.join(", "));
-                        }
-                        requestedReferenceNames = presence.kept;
+                      if (useAvatarRefs) {
+                        // custom-mods: card-less people with known looks get a portrait before their first picture.
+                        illustratorNpcCast = await ensureIllustratorNpcPortraits({
+                          chatId: input.chatId,
+                          requestedNames: requestedReferenceNames,
+                          cards: personaName ? [...illustratorCastCards, { name: personaName }] : illustratorCastCards,
+                          cast: illustratorNpcCast,
+                          generate: (character) =>
+                            generateTrackerPortrait({
+                              db: app.db,
+                              connectionId: imgConnFull.id,
+                              chatId: input.chatId,
+                              styleProfileId: trackerPortraitStyleProfileId(chatMeta),
+                              character,
+                              includeOutfit: false,
+                              debugMode: input.debugMode,
+                            }),
+                        });
                       }
                       const referenceResolution = await resolveIllustratorCharacterReferences({
                         charactersStore: chars,
@@ -15272,6 +15391,18 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                           logger.debug("[illustrator] Added appearance for characters without native captions");
                         }
                       }
+                      if (!comfyLayoutActive) {
+                        // custom-mods: ensemble-card members and this turn's outfits.
+                        const castLines = buildIllustratorCastLookLines({
+                          sources: comfyLayoutLookSourcesFromContext(agentContext).cards,
+                          visibleNames: requestedReferenceNames,
+                          coveredNames: referenceResolution.appearanceNames,
+                          trackerRows: turnTrackerRows,
+                          includeLooks: includeCharacterAppearance && illustratorCharacterPrompts.length === 0,
+                          includeOutfits: includeCharacterAppearance || useAvatarRefs,
+                        });
+                        if (castLines) fullPrompt += `\n\n${castLines}`;
+                      }
                       if (useAvatarRefs && referenceResolution.referenceImages.length > 0) {
                         // custom-mods: on a layout workflow each box is paired with its own slot instead.
                         if (referenceResolution.referenceLine && !suppressReferencePromptLine && !comfyLayoutActive)
@@ -15304,15 +15435,13 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                           referenceNames: useAvatarRefs ? referenceResolution.referenceNames : [],
                           locationImage: spatialLocationReferenceImage,
                           source: imgSource,
-                          lookSources: comfyLayoutLookSourcesFromContext(
-                            agentContext,
-                            await gameStateStore
-                              .getByChatAndMessage(input.chatId, messageId, targetSwipeIndex)
-                              .then((row) =>
-                                row ? parseGameStateRow(row as Record<string, unknown>).presentCharacters : null,
-                              )
-                              .catch(() => null),
-                          ),
+                          lookSources: {
+                            ...comfyLayoutLookSourcesFromContext(
+                              agentContext,
+                              turnTrackerRows as Parameters<typeof comfyLayoutLookSourcesFromContext>[1],
+                            ),
+                            npcs: illustratorNpcCast,
+                          },
                           logPrefix: "[illustrator] layout box",
                           bindPlainNames: requestOrderedReferences,
                         });
@@ -15911,6 +16040,54 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
           }
         }
 
+        // custom-mods: the narrator's [present] line owns the scene roster (generate/present-command.ts). It runs after
+        // the agents so a world-state snapshot rebuild or a character-tracker merge this turn cannot overwrite it.
+        if (
+          presentWriteApplies() &&
+          lastSavedMsg &&
+          typeof lastSavedSwipeIndex === "number" &&
+          !generationSignal.aborted
+        ) {
+          await writePresentForTurn({
+            store: gameStateStore,
+            chatId: input.chatId,
+            messageId: lastSavedMsg.id,
+            swipeIndex: lastSavedSwipeIndex,
+            baseSnapshot: baseGameStateSnapshot,
+            resolve: resolveTurnPresent,
+            onPersisted: (rows) => {
+              sendSseEvent(reply, { type: "game_state_patch", data: { presentCharacters: rows } });
+            },
+          });
+        }
+
+        // custom-mods: the narrator's [task] commands move quest board cards (generate/task-board.ts). After the
+        // agents, so cards the Quest Tracker made this turn get a column. Impersonate turns have no narrator reply.
+        if (
+          questBoardOn(
+            chatMode,
+            chatMeta,
+            resolvedAgents.map((agent) => agent.type),
+          ) &&
+          !input.impersonate &&
+          lastSavedMsg?.role === "assistant" &&
+          typeof lastSavedSwipeIndex === "number" &&
+          !generationSignal.aborted
+        ) {
+          await writeTaskBoardForTurn({
+            store: gameStateStore,
+            chatId: input.chatId,
+            messageId: lastSavedMsg.id,
+            swipeIndex: lastSavedSwipeIndex,
+            baseSnapshot: baseGameStateSnapshot,
+            commands: taskCommandsFrom(lastReplyRoleplayActivity),
+            metadata: chatMeta,
+            onPersisted: (activeQuests) => {
+              sendSseEvent(reply, { type: "game_state_patch", data: { playerStats: { activeQuests } } });
+            },
+          });
+        }
+
         // Rewriting agents own the final spoken text, so wait for their
         // persisted edit (or no-op result) before releasing TTS.
         if (activatedTextRewriteRunAgents.length > 0) {
@@ -16063,7 +16240,9 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                         return (
                           cast.persona ??
                           cast.chatCharacters.find(
-                            (entry) => !charInfo.some((character) => character.id === entry.id),
+                            (entry) =>
+                              !isIllustratorNpcCastId(entry.id) &&
+                              !charInfo.some((character) => character.id === entry.id),
                           ) ??
                           null
                         );
