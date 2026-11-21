@@ -382,7 +382,7 @@ import {
 import {
   isRoleplayRollEnabled,
   prepareRoleplayRoll,
-  withRoleplayRollSchema,
+  roleplayResponderToolDefs,
 } from "../services/generation/roleplay-rolls.js";
 import { applyInspirationAward } from "../services/game/inspiration.service.js";
 import {
@@ -9544,8 +9544,15 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
           let roleplayParsedLength = 0;
           const responderToolDefs =
             chatMode === "roleplay"
-              ? withRoleplayRollSchema(
-                  toolDefs?.filter((tool) => tool.function.name !== "roll_dice" || roleplayRollEnabled),
+              ? roleplayResponderToolDefs(
+                  toolDefs,
+                  {
+                    chatMode,
+                    impersonate: input.impersonate,
+                    chatMeta,
+                    callerId: roleplayCallerId,
+                    resolvedToolNames: chatResolvedToolNames,
+                  },
                   roleplayRollParticipants,
                 )
               : toolDefs;
