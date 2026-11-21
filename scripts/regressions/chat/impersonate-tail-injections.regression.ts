@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { injectAtDepth } from "../../packages/server/src/services/lorebook/prompt-injector.js";
-import { pullHistoryInjectionsIntoInstruction } from "../../packages/server/src/services/prompt/impersonate-tail.js";
+import { injectAtDepth } from "../../../packages/server/src/services/lorebook/prompt-injector.js";
+import { pullHistoryInjectionsIntoInstruction } from "../../../packages/server/src/services/prompt/impersonate-tail.js";
 
 // An impersonate built without the chat's prompt put a depth-4 Author's Note inside the history. It moved two
 // messages forward each turn, so the Claude cache (marker on the last history message) missed every impersonate.
