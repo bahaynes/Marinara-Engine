@@ -1003,6 +1003,8 @@ import {
   playerSubmittedD20Faces,
   resolveSkillCheckTagsInContent,
 } from "../services/game/skill-check-resolution.service.js";
+import { createAttackTagRegex } from "@marinara-engine/shared";
+import { resolveRoleplayAttackTags, woundedFoeLines } from "../services/game/roleplay-attack.service.js";
 import {
   loadRulesetRegistry,
   resolveGameRuleset,
@@ -5505,6 +5507,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                 sheetBlocks,
                 clocks,
                 playerAsksRest: rulesetRestAskedFor(definition, String(latestUserText).trimStart()),
+                woundedFoes: woundedFoeLines(parseStoredRulesetLive(startSnapshot?.rulesetLive)),
               });
             } catch (err) {
               logger.warn(err, "[generate/roleplay] Could not build the ruleset reminder for chat %s", input.chatId);
@@ -10672,6 +10675,26 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
             // the two are the same bytes, so the distinction is carried out of band rather
             // than by a marker in the text that would change how an older turn reads.
             const dicePoolSession = await ensureGameDicePoolSession();
+            // custom-mods: a Roleplay reply's [attack:] tags, settled by Game Mode's combat resolver.
+            // ponytail: the checks below read the turn's starting sheets, so a check that buys
+            // something for a character the attacks hurt keeps the purchase and loses the damage.
+            // 5e checks buy nothing. Upgrade path: hand the attacks' live state to the check context.
+            const attacked =
+              roleplayRulesetTurn && turnGameRuleset?.status === "ok"
+                ? await resolveRoleplayAttackTags(fullResponse, {
+                    definition: turnGameRuleset.definition,
+                    packageId: turnGameRuleset.packageId,
+                    cards: chatMeta.gameCharacterCards,
+                    playerName: personaName || null,
+                    live: await turnStartRulesetLive(),
+                    partyCatalogs: turnRulesetCatalogs ?? {},
+                  })
+                : null;
+            if (attacked && attacked.content !== fullResponse) {
+              fullResponse = attacked.content;
+              contentReplaced = true;
+            }
+            if (attacked?.live) checkSpendLive = attacked.live;
             const rolled = await resolveSkillCheckTagsInContent(fullResponse, {
               loadContext: async () =>
                 loadSkillCheckModifierContext(
@@ -10721,7 +10744,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
             // A check that BOUGHT something (a point of will for an automatic success) paid for it
             // before the dice were thrown, so the points are already gone. That state is what the
             // sheet-command pass below has to start from, or its own writes would put them back.
-            if (rolled.live) checkSpendLive = rolled.live;
+            if (rolled.live) checkSpendLive = { ...(attacked?.live ?? {}), ...rolled.live };
             const generalRolls = resolveGameDiceRequests(
               rolled.content,
               toolDiceRollResults,
@@ -10758,7 +10781,8 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                     rolled.untrained ||
                     rolled.unknownRoller ||
                     rolled.notPushable ||
-                    generalRolls.rolled,
+                    generalRolls.rolled ||
+                    attacked?.summary.length,
                   )
                 : shouldNarrateGameDiceOutcome(
                     chatMeta,
@@ -10773,7 +10797,10 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
             ) {
               // The first draft predates these results. Rewrite it with the real
               // outcomes in context, including on providers without a tools API.
-              const records = [...fullResponse.matchAll(createGameRollTagRegex())].map((match) => match[0]);
+              const records = [
+                ...fullResponse.matchAll(createGameRollTagRegex()),
+                ...fullResponse.matchAll(createAttackTagRegex()),
+              ].map((match) => match[0]);
               // The draft as it stands now, its chance branches already picked: a cost in the half the
               // dice threw away was never spent.
               const draftForCosts = fullResponse;
@@ -10784,6 +10811,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
               const resolvedSummary = [
                 // Each line names its roller, so the sheet commands asked for below land on the right member.
                 ...checks.map((check) => `${check.who ? `${check.who}: ` : ""}${formatSkillCheckResultSummary(check)}`),
+                ...(attacked?.summary ?? []),
                 ...toolDiceRollResults.map(
                   (result) => `🎲 ${result.label ? `${result.label}: ` : ""}${result.notation} = ${result.total}`,
                 ),
@@ -10869,7 +10897,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
               // Keep the engine's records exactly once, even if the rewrite
               // echoed or changed them. On failure, save the real results rather
               // than the first draft's guessed outcome or a partial replacement.
-              narration = narration.replace(createGameRollTagRegex(), "").trim();
+              narration = narration.replace(createGameRollTagRegex(), "").replace(createAttackTagRegex(), "").trim();
               if (!narration) {
                 gameOutcomeNarrationFailed = true;
                 sendSseEvent(reply, { type: "game_outcome_narration_failed", data: { chatId: input.chatId } });

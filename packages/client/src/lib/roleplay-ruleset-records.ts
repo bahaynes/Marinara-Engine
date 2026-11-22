@@ -9,8 +9,11 @@
 // place in what is left, so the message can show it as a dice card where it happened.
 // ──────────────────────────────────────────────
 import {
+  attackTagCardResult,
+  createAttackTagRegex,
   createSkillCheckTagRegex,
   parseSkillCheckTagBody,
+  readAttackTagAttributes,
   stripClockCommandTags,
   stripSheetCommandTags,
   type SkillCheckResult,
@@ -35,12 +38,23 @@ export function extractRoleplayRulesetRecords(content: string): RoleplayRulesetR
   const checks: RoleplayRulesetCheck[] = [];
   let text = "";
   let last = 0;
-  for (const match of stripped.matchAll(createSkillCheckTagRegex())) {
+  // custom-mods: a settled [attack:] shows as the same dice card, in reply order with the checks.
+  const records = [
+    ...[...stripped.matchAll(createSkillCheckTagRegex())].map((match) => ({
+      match,
+      read: () => parseSkillCheckTagBody(match[1] ?? "")?.resolvedResult,
+    })),
+    ...[...stripped.matchAll(createAttackTagRegex())].map((match) => ({
+      match,
+      read: () => attackTagCardResult(readAttackTagAttributes(match[1] ?? "")) ?? undefined,
+    })),
+  ].sort((a, b) => (a.match.index ?? 0) - (b.match.index ?? 0));
+  for (const { match, read } of records) {
     const start = match.index ?? 0;
     text += stripped.slice(last, start);
     last = start + match[0].length;
     // A sparse request the Engine never settled says nothing worth showing, so it simply goes.
-    const result = parseSkillCheckTagBody(match[1] ?? "")?.resolvedResult;
+    const result = read();
     if (result) checks.push({ offset: text.length, result });
   }
   text += stripped.slice(last);

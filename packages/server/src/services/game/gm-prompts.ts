@@ -1937,6 +1937,8 @@ export function buildRulesetRoleplayReminder(args: {
   clocks?: RulesetClocks;
   /** A rest the player asked for by name in this turn. */
   playerAsksRest?: string;
+  /** custom-mods: foes wounded by earlier [attack:] tags, one line each. */
+  woundedFoes?: string[];
 }): string {
   const { ruleset } = args;
   const lines = [
@@ -1945,6 +1947,14 @@ export function buildRulesetRoleplayReminder(args: {
     `This roleplay plays by a tabletop ruleset, and the Engine keeps its dice and character sheets. When a character tries something uncertain whose outcome matters, do not decide it yourself: write the check tag where the attempt happens. The Engine rolls it from the character's sheet, and you are then given the result to narrate. Ordinary actions that cannot really fail need no check.`,
     `CHECKS:`,
     renderRulesetSkillCheckLine(ruleset, false, false, false),
+    // custom-mods: weapon attacks are settled by the combat resolver, never as a skill check.
+    ...(ruleset.combat
+      ? [
+          `ATTACKS:`,
+          `- [attack: who="Attacker" weapon="Attack name" target="Target"] - Every weapon or natural attack is an attack tag, never a skill check: a swing, a shot, a bite, an opportunity attack or any other reaction strike. who and target are a party member's name or a creature's bestiary name; number several of one kind ("Goblin 2"). weapon is an attack on the attacker's sheet or in its bestiary entry. Add mode="advantage" or mode="disadvantage" when the situation grants it. The Engine rolls the hit against the target's defense and the damage, and records the damage on the sheet or the foe: never write a sheet command for an attack's damage, and never decide a hit yourself.`,
+          `Wounded foes: ${args.woundedFoes?.length ? args.woundedFoes.join("; ") : "none"}.`,
+        ]
+      : []),
     ...renderRulesetSheetSection(ruleset, args.sheetBlocks, false),
   ];
   if (args.playerAsksRest) {

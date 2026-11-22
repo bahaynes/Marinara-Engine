@@ -77,6 +77,8 @@ export const GM_VERB_TABLE_MAX_BYTES = 64 * 1024;
 export const RESERVED_GM_TAG_NAMES = Object.freeze([
   "action",
   "ambient",
+  // custom-mods: a Roleplay reply's weapon attack (roleplay-attack.service.ts).
+  "attack",
   "bg",
   "book",
   "branch",
