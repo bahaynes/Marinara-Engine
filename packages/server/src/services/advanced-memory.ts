@@ -5871,7 +5871,9 @@ export function createAdvancedMemoryService(db: DB, { includeExcerptsInStatus = 
         // Fork: the minimal cut moves every turn, which rewrites the whole history in the
         // provider's prompt cache. Hold the cut while the cache is warm and it still fits;
         // otherwise re-cut with room to grow, so the next turns stay append-only.
-        const holdKey = input.audienceMode ?? audience.join(",");
+        // One head per chat: a head per audience made impersonate turns and each cast combination re-cut the
+        // window on their own schedule, so every re-cut broke the prompt cache for all of them.
+        const holdKey = "chat";
         const heldId = object(ctx.metadata.advancedMemoryWindowHeads)[holdKey];
         const held = typeof heldId === "string" ? live.findIndex((message) => message.id === heldId) : -1;
         const lastReplyAt = [...sources].reverse().find((message) => message.role === "assistant")?.createdAt;
