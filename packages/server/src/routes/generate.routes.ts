@@ -369,6 +369,7 @@ import {
   gameInventoryBagKey,
   rulesetStartingGearTakenBy,
   normalizeGameInventoryStacks,
+  rulesetCardItems,
   normalizeCharacterLookupName,
   rulesetLayerOptionKey,
   rulesetLayeredCurrencies,
@@ -998,11 +999,7 @@ import {
 } from "../services/game/skill-check-resolution.service.js";
 import { createAttackTagRegex } from "@marinara-engine/shared";
 import { gmInventoryPromptParts } from "../services/game/gm-inventory-prompt.js";
-import {
-  equippedTrackerWeapons,
-  resolveRoleplayAttackTags,
-  woundedFoeLines,
-} from "../services/game/roleplay-attack.service.js";
+import { cardNames, resolveRoleplayAttackTags, woundedFoeLines } from "../services/game/roleplay-attack.service.js";
 import {
   loadRulesetRegistry,
   resolveGameRuleset,
@@ -10617,14 +10614,21 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                     playerName: personaName || null,
                     live: await turnStartRulesetLive(),
                     partyCatalogs: turnRulesetCatalogs ?? {},
-                    // What the Inventory Tracker holds equipped going into this turn.
-                    playerWeapons: async () => {
+                    // What each member carries in Game Mode's bags going into this turn.
+                    partyItems: async () => {
                       const book = await loadGameInventoryItemBook(
                         app.db,
                         { metadata: chatMeta, resolved: turnGameRuleset, playerName: personaName || null },
                         "player",
                       );
-                      return book ? equippedTrackerWeapons(book, gameState?.playerStats?.inventoryTrackerEquipped) : [];
+                      return book
+                        ? rulesetCardItems(
+                            book,
+                            normalizeGameInventoryStacks(chatMeta.gameInventory),
+                            cardNames(chatMeta.gameCharacterCards),
+                            personaName || null,
+                          )
+                        : undefined;
                     },
                   })
                 : null;

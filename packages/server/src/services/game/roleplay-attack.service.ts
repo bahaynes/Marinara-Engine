@@ -20,11 +20,9 @@ import {
   rulesetCombatOptions,
   rulesetCombatRoller,
   writeAttackTag,
-  type InventoryTrackerRow,
   type RulesetCatalogEntriesById,
   type RulesetCombatEvent,
   type RulesetDefinition,
-  type RulesetItemBook,
   type RulesetLiveStates,
   type RulesetSheetItem,
 } from "@marinara-engine/shared";
@@ -54,22 +52,6 @@ export function woundedFoeLines(live: RulesetLiveStates | null | undefined): str
   });
 }
 
-/**
- * The player's equipped weapons from the Inventory Tracker that the ruleset's items know, as sheet items
- * a fight offers beside the sheet's own attacks (a quarterstaff picked up in the story).
- * Weapons only: an equipped item's worn effects (armour, a ring) would change a sheet the card already sets.
- */
-export function equippedTrackerWeapons(
-  book: Pick<RulesetItemBook, "itemNamed">,
-  rows: readonly InventoryTrackerRow[] | null | undefined,
-): RulesetSheetItem[] {
-  return (rows ?? []).flatMap((row) => {
-    const name = typeof row?.name === "string" ? row.name.trim() : "";
-    const item = name ? book.itemNamed(name)?.entry.item : undefined;
-    return item?.attack ? [{ item, quantity: 1, worn: true, name }] : [];
-  });
-}
-
 export interface RoleplayAttackInput {
   definition: RulesetDefinition;
   packageId: string | null;
@@ -81,8 +63,9 @@ export interface RoleplayAttackInput {
   partyCatalogs: RulesetCatalogEntriesById;
   /** The ruleset's creature catalogs; read from the package when left out. */
   bestiary?: RulesetCatalogEntriesById;
-  /** The player's equipped weapons (`equippedTrackerWeapons`), read only when the player attacks. */
-  playerWeapons?: () => Promise<RulesetSheetItem[]>;
+  /** What each party member carries in Game Mode's bags (`rulesetCardItems`), as a fight reads it: a weapon
+   *  picked up in the story fights from there. Read once, on the first attack. */
+  partyItems?: () => Promise<((name: string) => RulesetSheetItem[]) | undefined>;
 }
 
 export interface RoleplayAttackOutcome {
@@ -94,7 +77,8 @@ export interface RoleplayAttackOutcome {
   resolved: number;
 }
 
-function cardNames(cards: unknown): string[] {
+/** The names on a chat's `gameCharacterCards`: a Roleplay chat's party. */
+export function cardNames(cards: unknown): string[] {
   return (Array.isArray(cards) ? cards : [])
     .map((card) => (typeof card?.name === "string" ? card.name.trim() : ""))
     .filter(Boolean);
@@ -135,8 +119,7 @@ export async function resolveRoleplayAttackTags(
   if (!hasAttackTags(content) || !input.definition.combat) return none;
   const names = cardNames(input.cards);
   let bestiary: RulesetCatalogEntriesById | null = input.bestiary ?? null;
-  const playerKey = normalizeCharacterLookupName(input.playerName ?? "");
-  let playerWeapons: RulesetSheetItem[] | null = null;
+  let partyItems: ((name: string) => RulesetSheetItem[]) | undefined | null = null;
   const live: RulesetLiveStates = { ...(input.live ?? {}) };
   const changed: RulesetLiveStates = {};
   const summary: string[] = [];
@@ -160,9 +143,7 @@ export async function resolveRoleplayAttackTags(
     if (!findRulesetCreature(bestiary, creatureName(foeName)))
       return refuse(`"${creatureName(foeName)}" is not in the bestiary; name the creature as the bestiary does.`);
 
-    const playerAttacks = !!whoMember && !!playerKey && normalizeCharacterLookupName(member) === playerKey;
-    if (playerAttacks && input.playerWeapons) playerWeapons ??= await input.playerWeapons();
-    const held = playerAttacks && playerWeapons?.length ? playerWeapons : null;
+    if (partyItems === null) partyItems = input.partyItems ? await input.partyItems() : undefined;
     const foeKey = `${FOE_PREFIX}${normalizeCharacterLookupName(foeName)}`;
     const stored = live[foeKey]?.tracks;
     const seeded = createRulesetFight({
@@ -183,7 +164,7 @@ export async function resolveRoleplayAttackTags(
       live,
       partyCatalogs: input.partyCatalogs,
       bestiary,
-      ...(held ? { items: () => held } : {}),
+      ...(partyItems ? { items: partyItems } : {}),
     });
     if (!seeded.ok) return refuse(seeded.error);
     const encounter = structuredClone(seeded.fight.encounter);

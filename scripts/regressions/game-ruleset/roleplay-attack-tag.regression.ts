@@ -10,13 +10,10 @@ import {
   rulesetSheetBuildSchema,
   type RulesetCatalogEntriesById,
   type RulesetCatalogEntry,
-  type RulesetItemBook,
+  type RulesetSheetItem,
   type RulesetLiveStates,
 } from "../../../packages/shared/src/index.js";
-import {
-  equippedTrackerWeapons,
-  resolveRoleplayAttackTags,
-} from "../../../packages/server/src/services/game/roleplay-attack.service.js";
+import { resolveRoleplayAttackTags } from "../../../packages/server/src/services/game/roleplay-attack.service.js";
 import { buildRulesetRoleplayReminder } from "../../../packages/server/src/services/game/gm-prompts.js";
 
 const parsed = parseRulesetDefinition(
@@ -122,7 +119,8 @@ const record = (content: string) => readAttackTagAttributes(/\[attack:\s*([^\]]+
   assert.match(out.content, /result="hit" total="20"\]$/);
 }
 
-// A weapon the player has equipped in the Inventory Tracker, not on her sheet, is rolled from the ruleset's item.
+// A weapon a party member carries in Game Mode's bags, not on her sheet, fights from the ruleset's item;
+// each member reads only their own bag.
 {
   const staff = {
     category: "weapon",
@@ -134,25 +132,10 @@ const record = (content: string) => readAttackTagAttributes(/\[attack:\s*([^\]]+
       reach: 5,
     },
   };
-  const book = {
-    itemNamed: (name: string) =>
-      /quarterstaff/i.test(name)
-        ? { entry: { item: staff } }
-        : /cloak/i.test(name)
-          ? { entry: { item: { category: "gear" } } }
-          : undefined,
-  } as unknown as Pick<RulesetItemBook, "itemNamed">;
-  const weapons = equippedTrackerWeapons(book, [
-    { name: "Worn quarterstaff" },
-    { name: "Traveling cloak" },
-    { name: "Mystery thing" },
-  ]);
-  assert.deepEqual(
-    weapons.map((one) => one.name),
-    ["Worn quarterstaff"],
-    "only equipped items the ruleset knows as weapons",
-  );
-  const asked: string[] = [];
+  const bags: Record<string, RulesetSheetItem[]> = {
+    "brenna holt": [{ item: staff, quantity: 1, worn: true, name: "Quarterstaff" } as unknown as RulesetSheetItem],
+  };
+  let reads = 0;
   const swing = (who: string) =>
     resolveRoleplayAttackTags(`[attack: who="${who}" weapon="quarterstaff" target="Thorn Lurker"]`, {
       definition,
@@ -162,18 +145,18 @@ const record = (content: string) => readAttackTagAttributes(/\[attack:\s*([^\]]+
       live: {},
       partyCatalogs: {},
       bestiary,
-      playerWeapons: async () => {
-        asked.push(who);
-        return weapons;
+      partyItems: async () => {
+        reads++;
+        return (name) => bags[name.toLowerCase()] ?? [];
       },
     });
   const out = await swing("Brenna");
   assert.equal(out.resolved, 1, out.summary.join("\n"));
   assert.match(record(out.content).weapon ?? "", /quarterstaff/i);
   const other = await swing("Tamsin");
-  assert.equal(other.resolved, 0, "a companion does not wield the player's inventory");
+  assert.equal(other.resolved, 0, "Tamsin's bag holds no staff");
   assert.match(other.summary[0]!, /no attack named "quarterstaff"/);
-  assert.deepEqual(asked, ["Brenna"], "the inventory is read only when the player attacks");
+  assert.equal(reads, 2, "the bags are read once per reply");
 }
 
 // The narrator is taught the tag, with the foes still standing, wherever the ruleset fights.
@@ -185,7 +168,7 @@ const record = (content: string) => readAttackTagAttributes(/\[attack:\s*([^\]]+
   });
   assert.match(reminder, /ATTACKS:\n- \[attack: who=/);
   assert.match(reminder, /never a skill check/);
-  assert.match(reminder, /equipped in the Inventory Tracker/);
+  assert.match(reminder, /a weapon they wear from their inventory/);
   assert.match(reminder, /Wounded foes: Thorn Lurker 2: 4\/16 health\./);
 }
 
