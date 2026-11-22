@@ -140,15 +140,42 @@ export function parseChatSummaryResult(rawContent: string): ParsedChatSummaryRes
   const last = cleaned.lastIndexOf("}");
   if (first >= 0) {
     const candidate = cleaned.slice(first, last > first ? last + 1 : undefined);
-    const parsed = tryParseJsonRecord(candidate);
-    if (typeof parsed?.summary === "string") {
-      return {
-        summary: parsed.summary.trim(),
-        title: normalizeChatSummaryTitle(parsed.name ?? parsed.title),
-      };
+    // A model that answers twice ({...}{...}) makes the whole slice invalid; fall back to each top-level object, first wins.
+    for (const text of [candidate, ...topLevelObjects(cleaned)]) {
+      let parsed: Record<string, unknown> | null = null;
+      try {
+        parsed = tryParseJsonRecord(text);
+      } catch {
+        continue;
+      }
+      if (typeof parsed?.summary === "string") {
+        return {
+          summary: parsed.summary.trim(),
+          title: normalizeChatSummaryTitle(parsed.name ?? parsed.title),
+        };
+      }
     }
   }
   return { summary: cleaned.trim(), title: "" };
+}
+
+/** Balanced `{...}` spans in order, string-aware. ponytail: no repair of unbalanced text; those fall through to raw. */
+export function topLevelObjects(text: string): string[] {
+  const spans: string[] = [];
+  let depth = 0;
+  let start = -1;
+  let inString = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]!;
+    if (inString) {
+      if (ch === "\\") i++;
+      else if (ch === '"') inString = false;
+    } else if (ch === '"') inString = depth > 0;
+    else if (ch === "{") {
+      if (depth++ === 0) start = i;
+    } else if (ch === "}" && depth > 0 && --depth === 0) spans.push(text.slice(start, i + 1));
+  }
+  return spans;
 }
 
 function resolvePromptFromTemplates(templates: unknown[], selectedId: string): string | null {

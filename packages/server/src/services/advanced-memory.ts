@@ -66,6 +66,7 @@ import { parseRoleplayUserCommands, roleplayWhisperOnlyMessageIds } from "./gene
 import { applyAllSegmentEdits, stripGmCommandTags } from "./game/segment-edits.js";
 import {
   parseChatSummaryResult,
+  topLevelObjects,
   resolveChatSummaryPrompt,
   resolveChatSummaryCombinePrompt,
   clampRoleplaySummaryMaxTokens,
@@ -202,6 +203,9 @@ export interface PrepareAdvancedMemoryInput extends AdvancedMemoryOperationOptio
 }
 
 /** Fork: share of the live budget a re-cut open-scene window leaves free to grow into before it must move again. */
+// Tries after a summary reply holding two JSON objects before the first object is kept. Chosen here, not tuned.
+const DOUBLED_SUMMARY_RETRIES = 2;
+
 const CACHE_WINDOW_REGROW_SHARE = 0.25;
 // Fork: rolling scenes keep the last finished scene in live history at rollover. A chat's
 // advancedMemoryRollingScenes wins; otherwise MARINARA_AM_ROLLING_SCENES=true makes it the instance default.
@@ -2381,20 +2385,43 @@ export function createAdvancedMemoryService(db: DB, { includeExcerptsInStatus = 
         )
           text = undefined;
         if (!text) {
-          const result = await completeAgentCall(
-            { signal: options.signal, agentProgress: options.agentProgress },
-            [{ id: "advanced-recall", type: "advanced-recall", name: "Advanced Recall", phase: "post_processing" }],
-            resolved.provider,
-            [
-              { role: "system", content: instruction },
-              { role: "user", content: batchText },
-            ],
-            { ...completionOptions, stream: false },
-          );
-          const helperContent = normalizeGemma4Delimiters(extractLeadingThinkingBlocks(result.content ?? "").content)
-            .trim()
-            .replace(/^```(?:json)?\s*|\s*```$/gu, "");
-          const decision = assignAudience || recollectOnly ? tryParseJsonRecord(helperContent) : null;
+          let result!: Awaited<ReturnType<typeof completeAgentCall>>;
+          let helperContent = "";
+          // A reply that answers twice ({...}{...}) is rejected and asked again; if every try doubles, the tolerant
+          // parsing below keeps the first object.
+          for (let attempt = 0; ; attempt++) {
+            result = await completeAgentCall(
+              { signal: options.signal, agentProgress: options.agentProgress },
+              [{ id: "advanced-recall", type: "advanced-recall", name: "Advanced Recall", phase: "post_processing" }],
+              resolved.provider,
+              [
+                { role: "system", content: instruction },
+                { role: "user", content: batchText },
+              ],
+              { ...completionOptions, stream: false },
+            );
+            helperContent = normalizeGemma4Delimiters(extractLeadingThinkingBlocks(result.content ?? "").content)
+              .trim()
+              .replace(/^```(?:json)?\s*|\s*```$/gu, "");
+            if (attempt >= DOUBLED_SUMMARY_RETRIES || topLevelObjects(helperContent).length < 2) break;
+            logger.warn(
+              "[advanced-memory] Scene %s: summary reply held %d JSON objects; asking again (%d/%d)",
+              cacheOwner.sceneId,
+              topLevelObjects(helperContent).length,
+              attempt + 1,
+              DOUBLED_SUMMARY_RETRIES,
+            );
+            abortIfNeeded(options.signal);
+          }
+          const decision =
+            assignAudience || recollectOnly
+              ? // A doubled reply ({...}{...}) reads as no JSON at all; use the first object that carries the answer.
+                (tryParseJsonRecord(helperContent) ??
+                topLevelObjects(helperContent)
+                  .map((text) => tryParseJsonRecord(text))
+                  .find((object) => object && ("audience" in object || "recollections" in object)) ??
+                null)
+              : null;
           const summary = audienceOnly
             ? "Audience classification"
             : recollectOnly
