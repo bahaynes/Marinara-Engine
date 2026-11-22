@@ -107,7 +107,10 @@ const names = (items: ReturnType<ReturnType<typeof rulesetCardItems>>) => items.
 {
   const generate = readSource("packages/server/src/routes/generate.routes.ts");
   assert.match(generate, /const party = \{ player: gameStandIn \?\? \(personaName \|\| undefined\)/u);
-  assert.match(generate, /gameInventoryFoldStandIn\(promptInventoryStacks, gameStandIn\)/u);
+  // custom-mods: the prompt's bags are built by gmInventoryPromptParts, moved out of the route.
+  assert.match(generate, /gmInventoryPromptParts\(promptInventoryStacks, promptItemBook, gameStandIn\)/u);
+  const parts = readSource("packages/server/src/services/game/gm-inventory-prompt.ts");
+  assert.match(parts, /gameInventoryFoldStandIn\(promptInventoryStacks, gameStandIn\)/u);
   const prompts = readSource("packages/server/src/services/game/gm-prompts.ts");
   assert.match(prompts, /ctx\.playerBagName \?\? ctx\.playerName/u);
   // Kits are taken one at a time, which the picker says.

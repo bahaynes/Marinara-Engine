@@ -11213,11 +11213,10 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
             (tellsInventory || retellsInventoryTurn || turnRests.length > 0 || turnMaterials.length > 0)
           ) {
             try {
-              const party = {
-                player: gameStandIn ?? (personaName || undefined),
-                // custom-mods: Roleplay has no Game Master's party list; its party is the ruleset cards.
-                members: chatMode === "game" ? canonicalGamePartyNames : cardNames(chatMeta.gameCharacterCards),
-              };
+              // custom-mods: Roleplay has no Game Master's party list; its party is the ruleset cards.
+              const partyMembers =
+                chatMode === "game" ? canonicalGamePartyNames : cardNames(chatMeta.gameCharacterCards);
+              const party = { player: gameStandIn ?? (personaName || undefined), members: partyMembers };
               const retoldId = input.regenerateMessageId ?? input.continueMessageId ?? null;
               const retold = retoldId ? await chats.getMessage(retoldId) : null;
               const telling = retold
