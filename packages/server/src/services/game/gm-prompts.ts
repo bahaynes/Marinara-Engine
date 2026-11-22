@@ -1939,6 +1939,8 @@ export function buildRulesetRoleplayReminder(args: {
   playerAsksRest?: string;
   /** custom-mods: false leaves skill checks out; the narrator decides uncertain outcomes itself. */
   checks?: boolean;
+  /** custom-mods: foes wounded by earlier [attack:] tags, one line each. */
+  woundedFoes?: string[];
 }): string {
   const { ruleset } = args;
   const lines = [
@@ -1953,6 +1955,14 @@ export function buildRulesetRoleplayReminder(args: {
           `CHECKS:`,
           renderRulesetSkillCheckLine(ruleset, false, false, false),
         ]),
+    // custom-mods: weapon attacks are settled by the combat resolver, never as a skill check.
+    ...(ruleset.combat
+      ? [
+          `ATTACKS:`,
+          `- [attack: who="Attacker" weapon="Attack name" target="Target"] - Every weapon or natural attack is an attack tag, never a skill check: a swing, a shot, a bite, an opportunity attack or any other reaction strike. who and target are a party member's name or a creature's bestiary name; number several of one kind ("Goblin 2"). weapon is an attack on the attacker's sheet or in its bestiary entry, or a weapon they wear from their inventory. Add mode="advantage" or mode="disadvantage" when the situation grants it. The Engine rolls the hit against the target's defense and the damage, and records the damage on the sheet or the foe: never write a sheet command for an attack's damage, and never decide a hit yourself.`,
+          `Wounded foes: ${args.woundedFoes?.length ? args.woundedFoes.join("; ") : "none"}.`,
+        ]
+      : []),
     ...renderRulesetSheetSection(ruleset, args.sheetBlocks, false),
   ];
   if (args.playerAsksRest) {
