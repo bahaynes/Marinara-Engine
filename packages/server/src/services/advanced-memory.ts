@@ -66,6 +66,7 @@ import { parseRoleplayUserCommands, roleplayWhisperOnlyMessageIds } from "./gene
 import { applyAllSegmentEdits, stripGmCommandTags } from "./game/segment-edits.js";
 import {
   parseChatSummaryResult,
+  topLevelObjects,
   resolveChatSummaryPrompt,
   resolveChatSummaryCombinePrompt,
   clampRoleplaySummaryMaxTokens,
@@ -2394,7 +2395,15 @@ export function createAdvancedMemoryService(db: DB, { includeExcerptsInStatus = 
           const helperContent = normalizeGemma4Delimiters(extractLeadingThinkingBlocks(result.content ?? "").content)
             .trim()
             .replace(/^```(?:json)?\s*|\s*```$/gu, "");
-          const decision = assignAudience || recollectOnly ? tryParseJsonRecord(helperContent) : null;
+          const decision =
+            assignAudience || recollectOnly
+              ? // A doubled reply ({...}{...}) reads as no JSON at all; use the first object that carries the answer.
+                (tryParseJsonRecord(helperContent) ??
+                topLevelObjects(helperContent)
+                  .map((text) => tryParseJsonRecord(text))
+                  .find((object) => object && ("audience" in object || "recollections" in object)) ??
+                null)
+              : null;
           const summary = audienceOnly
             ? "Audience classification"
             : recollectOnly

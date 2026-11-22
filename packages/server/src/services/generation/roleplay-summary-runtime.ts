@@ -160,7 +160,7 @@ export function parseChatSummaryResult(rawContent: string): ParsedChatSummaryRes
 }
 
 /** Balanced `{...}` spans in order, string-aware. ponytail: no repair of unbalanced text; those fall through to raw. */
-function topLevelObjects(text: string): string[] {
+export function topLevelObjects(text: string): string[] {
   const spans: string[] = [];
   let depth = 0;
   let start = -1;
