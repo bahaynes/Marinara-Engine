@@ -1,4 +1,4 @@
-import { Component, useCallback, useState, type CSSProperties, type ErrorInfo, type ReactNode } from "react";
+import { Component, useCallback, useMemo, useState, type CSSProperties, type ErrorInfo, type ReactNode } from "react";
 import type { PresentCharacter } from "@marinara-engine/shared";
 import {
   normalizeTrackerFieldLocksForState,
@@ -38,6 +38,7 @@ import { roleplaySheetNames } from "../../../components/chat/RoleplayRuleset";
 import { parseChatMetadata } from "../../../lib/chat-display";
 import { useRoleplaySheetStore } from "../../../stores/roleplay-sheet.store";
 import { useRoleplayInventoryStore } from "../../../stores/roleplay-inventory.store";
+import { useGameRuleset } from "../../../hooks/use-game-ruleset";
 import { Backpack, ScrollText } from "lucide-react";
 
 const TRACKER_PANEL_NEUTRAL_VARS =
@@ -96,6 +97,14 @@ export function TrackerDataSidebar({
     const metadata = parseChatMetadata(s.activeChat?.metadata);
     return metadata.gameRuleset != null ? (roleplaySheetNames(metadata)[0] ?? null) : null;
   });
+  // custom-mods: the party's bags only where the pinned ruleset has items.
+  const rulesetChatMetadata = useChatStore((s) =>
+    s.activeChat?.id === activeChatId && s.activeChat?.mode === "roleplay" ? s.activeChat.metadata : null,
+  );
+  const sheetRuleset = useGameRuleset(
+    useMemo(() => (rulesetChatMetadata ? parseChatMetadata(rulesetChatMetadata) : null), [rulesetChatMetadata]),
+  );
+  const rulesetHasItems = sheetRuleset.status === "ok" && !!sheetRuleset.definition.items;
   const { patchField, patchPlayerStats, patchPlayerStatsMany, flushPatch } = useGameStatePatcher(
     activeChatId,
     "tracker-data-sidebar",
@@ -297,7 +306,7 @@ export function TrackerDataSidebar({
                   </Translation>
                 )}
                 {/* custom-mods: the party's bags, Game Mode's inventory. */}
-                {firstSheet && (
+                {firstSheet && rulesetHasItems && (
                   <Translation>
                     {(localizeUi) => (
                       <button
