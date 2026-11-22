@@ -11,6 +11,8 @@
 import {
   attackTagCardResult,
   createAttackTagRegex,
+  createInventoryTagRegex,
+  createLootTagRegex,
   createSkillCheckTagRegex,
   parseSkillCheckTagBody,
   readAttackTagAttributes,
@@ -30,11 +32,27 @@ export interface RoleplayRulesetRecords {
   checks: RoleplayRulesetCheck[];
 }
 
+/** custom-mods: Game Mode's `[inventory:]` and `[loot:]` records, dropped like sheet commands: the
+ *  inventory shows what they did. */
+function stripInventoryRecords(text: string): string {
+  return [createInventoryTagRegex(), createLootTagRegex()].reduce(
+    (out, tag) =>
+      out.replace(
+        new RegExp(`([^\\S\\r\\n]?)${tag.source}([^\\S\\r\\n]?)`, "gi"),
+        (_match, before: string, _body: string, after: string) => (before && after ? " " : ""),
+      ),
+    text,
+  );
+}
+
 /** The reply's prose with the Engine's records taken out, and the settled checks with their places. */
 export function extractRoleplayRulesetRecords(content: string): RoleplayRulesetRecords {
   if (!content.includes("[")) return { text: content, checks: [] };
   // A command on a line of its own leaves an empty line behind; a paragraph break is all that stays.
-  const stripped = stripClockCommandTags(stripSheetCommandTags(content)).replace(/\n{3,}/g, "\n\n");
+  const stripped = stripInventoryRecords(stripClockCommandTags(stripSheetCommandTags(content))).replace(
+    /\n{3,}/g,
+    "\n\n",
+  );
   const checks: RoleplayRulesetCheck[] = [];
   let text = "";
   let last = 0;

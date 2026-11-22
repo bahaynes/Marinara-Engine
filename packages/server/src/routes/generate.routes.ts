@@ -5497,12 +5497,46 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                 personaName || null,
               );
               const clocks = definition.clocks ? parseStoredRulesetClocks(startSnapshot?.rulesetClocks) : undefined;
+              // custom-mods: Game Mode's inventory. A regenerated reply starts from the bags its turn began with.
+              const inventoryStacks =
+                input.regenerateMessageId && regenMsg
+                  ? gameInventoryTellingStart(
+                      readGameInventoryTurn(chatMeta.gameInventoryTurn),
+                      normalizeGameInventoryStacks(chatMeta.gameInventory),
+                      {
+                        kind: "regenerate",
+                        messageId: input.regenerateMessageId,
+                        replaced: typeof regenMsg.activeSwipeIndex === "number" ? regenMsg.activeSwipeIndex : 0,
+                        replacedContent: typeof regenMsg.content === "string" ? regenMsg.content : "",
+                      },
+                    ).start
+                  : normalizeGameInventoryStacks(chatMeta.gameInventory);
+              const inventoryBook = definition.items
+                ? await loadGameInventoryItemBook(
+                    app.db,
+                    { metadata: chatMeta, resolved: pinned, playerName: personaName || null },
+                    "game-master",
+                  )
+                : undefined;
               roleplayRulesetReminder = buildRulesetRoleplayReminder({
                 ruleset: definition,
                 sheetBlocks,
                 clocks,
                 playerAsksRest: rulesetRestAskedFor(definition, String(latestUserText).trimStart()),
                 woundedFoes: woundedFoeLines(parseStoredRulesetLive(startSnapshot?.rulesetLive)),
+                ...(definition.items
+                  ? {
+                      inventory: {
+                        // ponytail: no shops in Roleplay ([place:] and the market day are Game Mode's world).
+                        // Upgrade path: port the market with its place tracking.
+                        ruleset: { ...definition, items: { ...definition.items, market: undefined } },
+                        rulesetLayerOptions: gameRulesetLayerOptions(pinned),
+                        rulesetSheetBlocks: sheetBlocks,
+                        playerName: personaName || "Player",
+                        ...gmInventoryPromptParts(inventoryStacks, inventoryBook, undefined),
+                      },
+                    }
+                  : {}),
               });
             } catch (err) {
               logger.warn(err, "[generate/roleplay] Could not build the ruleset reminder for chat %s", input.chatId);
@@ -11173,12 +11207,17 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
             !!input.regenerateMessageId &&
             readGameInventoryTurn(chatMeta.gameInventoryTurn)?.messageId === input.regenerateMessageId;
           if (
-            chatMode === "game" &&
+            // custom-mods: a Roleplay chat pinned to a ruleset carries Game Mode's bags too.
+            (chatMode === "game" || roleplayRulesetTurn) &&
             !input.impersonate &&
             (tellsInventory || retellsInventoryTurn || turnRests.length > 0 || turnMaterials.length > 0)
           ) {
             try {
-              const party = { player: gameStandIn ?? (personaName || undefined), members: canonicalGamePartyNames };
+              const party = {
+                player: gameStandIn ?? (personaName || undefined),
+                // custom-mods: Roleplay has no Game Master's party list; its party is the ruleset cards.
+                members: chatMode === "game" ? canonicalGamePartyNames : cardNames(chatMeta.gameCharacterCards),
+              };
               const retoldId = input.regenerateMessageId ?? input.continueMessageId ?? null;
               const retold = retoldId ? await chats.getMessage(retoldId) : null;
               const telling = retold

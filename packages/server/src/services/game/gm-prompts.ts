@@ -1939,6 +1939,8 @@ export function buildRulesetRoleplayReminder(args: {
   playerAsksRest?: string;
   /** custom-mods: foes wounded by earlier [attack:] tags, one line each. */
   woundedFoes?: string[];
+  /** custom-mods: Game Mode's inventory, told as the Game Master is told it. */
+  inventory?: GmInventoryPromptContext;
 }): string {
   const { ruleset } = args;
   const lines = [
@@ -1956,6 +1958,10 @@ export function buildRulesetRoleplayReminder(args: {
         ]
       : []),
     ...renderRulesetSheetSection(ruleset, args.sheetBlocks, false),
+    // custom-mods: every character carries their own bag, as in Game Mode.
+    ...(args.inventory
+      ? [``, `INVENTORY:`, ...gmInventoryTagLines(args.inventory), ...gmInventoryListLines(args.inventory, true, false)]
+      : []),
   ];
   if (args.playerAsksRest) {
     lines.push(
