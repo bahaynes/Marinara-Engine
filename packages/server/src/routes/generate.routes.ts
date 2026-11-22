@@ -1004,7 +1004,11 @@ import {
   resolveSkillCheckTagsInContent,
 } from "../services/game/skill-check-resolution.service.js";
 import { createAttackTagRegex } from "@marinara-engine/shared";
-import { resolveRoleplayAttackTags, woundedFoeLines } from "../services/game/roleplay-attack.service.js";
+import {
+  equippedTrackerWeapons,
+  resolveRoleplayAttackTags,
+  woundedFoeLines,
+} from "../services/game/roleplay-attack.service.js";
 import {
   loadRulesetRegistry,
   resolveGameRuleset,
@@ -10688,6 +10692,15 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                     playerName: personaName || null,
                     live: await turnStartRulesetLive(),
                     partyCatalogs: turnRulesetCatalogs ?? {},
+                    // What the Inventory Tracker holds equipped going into this turn.
+                    playerWeapons: async () => {
+                      const book = await loadGameInventoryItemBook(
+                        app.db,
+                        { metadata: chatMeta, resolved: turnGameRuleset, playerName: personaName || null },
+                        "player",
+                      );
+                      return book ? equippedTrackerWeapons(book, gameState?.playerStats?.inventoryTrackerEquipped) : [];
+                    },
                   })
                 : null;
             if (attacked && attacked.content !== fullResponse) {

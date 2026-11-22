@@ -1951,7 +1951,7 @@ export function buildRulesetRoleplayReminder(args: {
     ...(ruleset.combat
       ? [
           `ATTACKS:`,
-          `- [attack: who="Attacker" weapon="Attack name" target="Target"] - Every weapon or natural attack is an attack tag, never a skill check: a swing, a shot, a bite, an opportunity attack or any other reaction strike. who and target are a party member's name or a creature's bestiary name; number several of one kind ("Goblin 2"). weapon is an attack on the attacker's sheet or in its bestiary entry. Add mode="advantage" or mode="disadvantage" when the situation grants it. The Engine rolls the hit against the target's defense and the damage, and records the damage on the sheet or the foe: never write a sheet command for an attack's damage, and never decide a hit yourself.`,
+          `- [attack: who="Attacker" weapon="Attack name" target="Target"] - Every weapon or natural attack is an attack tag, never a skill check: a swing, a shot, a bite, an opportunity attack or any other reaction strike. who and target are a party member's name or a creature's bestiary name; number several of one kind ("Goblin 2"). weapon is an attack on the attacker's sheet or in its bestiary entry, or a weapon the player has equipped in the Inventory Tracker. Add mode="advantage" or mode="disadvantage" when the situation grants it. The Engine rolls the hit against the target's defense and the damage, and records the damage on the sheet or the foe: never write a sheet command for an attack's damage, and never decide a hit yourself.`,
           `Wounded foes: ${args.woundedFoes?.length ? args.woundedFoes.join("; ") : "none"}.`,
         ]
       : []),

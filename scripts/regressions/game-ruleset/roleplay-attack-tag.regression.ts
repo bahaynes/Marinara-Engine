@@ -10,9 +10,13 @@ import {
   rulesetSheetBuildSchema,
   type RulesetCatalogEntriesById,
   type RulesetCatalogEntry,
+  type RulesetItemBook,
   type RulesetLiveStates,
 } from "../../../packages/shared/src/index.js";
-import { resolveRoleplayAttackTags } from "../../../packages/server/src/services/game/roleplay-attack.service.js";
+import {
+  equippedTrackerWeapons,
+  resolveRoleplayAttackTags,
+} from "../../../packages/server/src/services/game/roleplay-attack.service.js";
 import { buildRulesetRoleplayReminder } from "../../../packages/server/src/services/game/gm-prompts.js";
 
 const parsed = parseRulesetDefinition(
@@ -118,6 +122,60 @@ const record = (content: string) => readAttackTagAttributes(/\[attack:\s*([^\]]+
   assert.match(out.content, /result="hit" total="20"\]$/);
 }
 
+// A weapon the player has equipped in the Inventory Tracker, not on her sheet, is rolled from the ruleset's item.
+{
+  const staff = {
+    category: "weapon",
+    slots: { hands: 1 },
+    attack: {
+      budget: "action",
+      toHit: { abilities: ["str"] },
+      damage: { dice: "1d6", abilities: ["str"], type: "bludgeoning" },
+      reach: 5,
+    },
+  };
+  const book = {
+    itemNamed: (name: string) =>
+      /quarterstaff/i.test(name)
+        ? { entry: { item: staff } }
+        : /cloak/i.test(name)
+          ? { entry: { item: { category: "gear" } } }
+          : undefined,
+  } as unknown as Pick<RulesetItemBook, "itemNamed">;
+  const weapons = equippedTrackerWeapons(book, [
+    { name: "Worn quarterstaff" },
+    { name: "Traveling cloak" },
+    { name: "Mystery thing" },
+  ]);
+  assert.deepEqual(
+    weapons.map((one) => one.name),
+    ["Worn quarterstaff"],
+    "only equipped items the ruleset knows as weapons",
+  );
+  const asked: string[] = [];
+  const swing = (who: string) =>
+    resolveRoleplayAttackTags(`[attack: who="${who}" weapon="quarterstaff" target="Thorn Lurker"]`, {
+      definition,
+      packageId: null,
+      cards: [...cards, { name: "Tamsin Reed", rulesetSheet: { v: 1, build: fighter } }],
+      playerName: "Brenna Holt",
+      live: {},
+      partyCatalogs: {},
+      bestiary,
+      playerWeapons: async () => {
+        asked.push(who);
+        return weapons;
+      },
+    });
+  const out = await swing("Brenna");
+  assert.equal(out.resolved, 1, out.summary.join("\n"));
+  assert.match(record(out.content).weapon ?? "", /quarterstaff/i);
+  const other = await swing("Tamsin");
+  assert.equal(other.resolved, 0, "a companion does not wield the player's inventory");
+  assert.match(other.summary[0]!, /no attack named "quarterstaff"/);
+  assert.deepEqual(asked, ["Brenna"], "the inventory is read only when the player attacks");
+}
+
 // The narrator is taught the tag, with the foes still standing, wherever the ruleset fights.
 {
   const reminder = buildRulesetRoleplayReminder({
@@ -127,6 +185,7 @@ const record = (content: string) => readAttackTagAttributes(/\[attack:\s*([^\]]+
   });
   assert.match(reminder, /ATTACKS:\n- \[attack: who=/);
   assert.match(reminder, /never a skill check/);
+  assert.match(reminder, /equipped in the Inventory Tracker/);
   assert.match(reminder, /Wounded foes: Thorn Lurker 2: 4\/16 health\./);
 }
 
