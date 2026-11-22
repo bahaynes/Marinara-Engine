@@ -33,6 +33,7 @@ import { AgentActivitySection } from "../agents/AgentActivitySection";
 import { withAgentActivityStatus } from "../agents/AgentActivityIcon";
 import { TrackerLockProvider } from "../../features/tracker-panel/components/TrackerLockContext";
 import { TrackerStateEditorButton } from "../../features/tracker-panel/components/TrackerStateEditorButton";
+import { RoleplayRulesetLauncherButtons, useRoleplayRulesetLaunch } from "./RoleplayRulesetLaunchers";
 import { TrackerWindowCharacters } from "../../features/tracker-panel/components/TrackerWindowCharacters";
 import type { GameStateEditorSectionId } from "../../lib/state-editor/game-state-editor-source";
 import {
@@ -303,6 +304,8 @@ function TrackerWindow({
   const gameStateRefreshing = useGameStateStore((s) => s.isRefreshing);
   const busy = isAgentProcessing || isStreaming || gameStateRefreshing;
   const { patchField, patchPlayerStats, editInventoryTracker } = tracker;
+  // custom-mods: the ruleset's sheet and inventory buttons, as the docked tracker panel has them.
+  const rulesetLaunch = useRoleplayRulesetLaunch(chatId);
   const world = {
     location: tracker.location ?? "",
     date: tracker.date ?? "",
@@ -350,7 +353,17 @@ function TrackerWindow({
         </>
       }
       closeLabel={t("chat.trackerWindow.close")}
-      headerControls={<TrackerStateEditorButton chatId={chatId} />}
+      headerControls={
+        <>
+          <RoleplayRulesetLauncherButtons
+            chatId={chatId}
+            firstSheet={rulesetLaunch.firstSheet}
+            hasItems={rulesetLaunch.hasItems}
+            buttonClassName="mari-window__control"
+          />
+          <TrackerStateEditorButton chatId={chatId} />
+        </>
+      }
       minimizable={{
         icon: <TrackerPanelIcon size="0.875rem" />,
         label: t("chat.trackerWindow.title"),

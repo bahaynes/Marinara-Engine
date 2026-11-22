@@ -13,7 +13,6 @@ import {
 import {
   applyClockCommandTags,
   findImageStyleProfile,
-  rulesetChargesStart,
   normalizeVideoGenerationUserSettings,
   TTS_SETTINGS_KEY,
   isStockMarinaraUniversalPreset,
@@ -372,25 +371,19 @@ import {
   rulesetMarketPromptText,
   type GameInventoryMarket,
   createInventoryTagRegex,
-  gameInventoryBags,
-  gameInventoryFoldStandIn,
   gameInventoryTellingStart,
   readGameInventoryTurn,
   rulesetInventedItemsHeld,
   recordGameInventoryTelling,
   refuseGameInventoryTags,
   replaceTrailingInventoryTags,
-  gameInventoryTotals,
   gameInventoryBagKey,
   rulesetStartingGearTakenBy,
-  gameInventoryBearerStatus,
   normalizeGameInventoryStacks,
   rulesetCardItems,
   normalizeCharacterLookupName,
-  rulesetItemPromptFacts,
   rulesetLayerOptionKey,
   rulesetLayeredCurrencies,
-  rulesetPurseText,
   leadingSceneBreak,
   splitAtSceneBreaks,
   type RoleplayCommandActivity,
@@ -1024,6 +1017,7 @@ import {
   resolveSkillCheckTagsInContent,
 } from "../services/game/skill-check-resolution.service.js";
 import { createAttackTagRegex } from "@marinara-engine/shared";
+import { gmInventoryPromptParts } from "../services/game/gm-inventory-prompt.js";
 import { cardNames, resolveRoleplayAttackTags, woundedFoeLines } from "../services/game/roleplay-attack.service.js";
 import {
   loadRulesetRegistry,
@@ -5541,6 +5535,27 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                 personaName || null,
               );
               const clocks = definition.clocks ? parseStoredRulesetClocks(startSnapshot?.rulesetClocks) : undefined;
+              // custom-mods: Game Mode's inventory. A regenerated reply starts from the bags its turn began with.
+              const inventoryStacks =
+                input.regenerateMessageId && regenMsg
+                  ? gameInventoryTellingStart(
+                      readGameInventoryTurn(chatMeta.gameInventoryTurn),
+                      normalizeGameInventoryStacks(chatMeta.gameInventory),
+                      {
+                        kind: "regenerate",
+                        messageId: input.regenerateMessageId,
+                        replaced: typeof regenMsg.activeSwipeIndex === "number" ? regenMsg.activeSwipeIndex : 0,
+                        replacedContent: typeof regenMsg.content === "string" ? regenMsg.content : "",
+                      },
+                    ).start
+                  : normalizeGameInventoryStacks(chatMeta.gameInventory);
+              const inventoryBook = definition.items
+                ? await loadGameInventoryItemBook(
+                    app.db,
+                    { metadata: chatMeta, resolved: pinned, playerName: personaName || null },
+                    "game-master",
+                  )
+                : undefined;
               roleplayRulesetReminder = buildRulesetRoleplayReminder({
                 ruleset: definition,
                 sheetBlocks,
@@ -5548,6 +5563,19 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                 playerAsksRest: rulesetRestAskedFor(definition, String(latestUserText).trimStart()),
                 checks: chatMeta.roleplayRulesetChecks !== false,
                 woundedFoes: woundedFoeLines(parseStoredRulesetLive(startSnapshot?.rulesetLive)),
+                ...(definition.items
+                  ? {
+                      inventory: {
+                        // ponytail: no shops in Roleplay ([place:] and the market day are Game Mode's world).
+                        // Upgrade path: port the market with its place tracking.
+                        ruleset: { ...definition, items: { ...definition.items, market: undefined } },
+                        rulesetLayerOptions: gameRulesetLayerOptions(pinned),
+                        rulesetSheetBlocks: sheetBlocks,
+                        playerName: personaName || "Player",
+                        ...gmInventoryPromptParts(inventoryStacks, inventoryBook, undefined),
+                      },
+                    }
+                  : {}),
               });
             } catch (err) {
               logger.warn(err, "[generate/roleplay] Could not build the ruleset reminder for chat %s", input.chatId);
@@ -6047,60 +6075,6 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                     await promptPlace(),
                   )
                 : undefined;
-          // What each character carries, binds and wears against what they can, when the ruleset says.
-          const promptBearers =
-            promptItemBook?.bearer || promptItemBook?.slots
-              ? Object.fromEntries(
-                  [
-                    undefined,
-                    ...new Set(promptInventoryStacks.flatMap((stack) => (stack.holder ? [stack.holder] : []))),
-                  ].map((holder) => [
-                    gameInventoryBagKey(holder),
-                    gameInventoryBearerStatus(promptInventoryStacks, holder, promptItemBook),
-                  ]),
-                )
-              : undefined;
-          // What each bag's coins are worth, family by family, where the ruleset has coins.
-          const promptPurses = promptItemBook?.coins.length
-            ? Object.fromEntries(
-                [
-                  undefined,
-                  ...new Set(promptInventoryStacks.flatMap((stack) => (stack.holder ? [stack.holder] : []))),
-                ].map((holder) => [
-                  gameInventoryBagKey(holder),
-                  rulesetPurseText(promptItemBook, promptInventoryStacks, holder),
-                ]),
-              )
-            : undefined;
-          // A fake's facts are what it truly is, which only the Game Master reads (1.79).
-          const promptItemFacts = promptItemBook
-            ? Object.fromEntries(
-                promptInventoryStacks.flatMap((stack) =>
-                  [stack.item, stack.truly].flatMap((ref) => {
-                    const known = ref ? promptItemBook.itemOf(ref) : undefined;
-                    return known ? [[known.item, rulesetItemPromptFacts(known.facts, known.summary)]] : [];
-                  }),
-                ),
-              )
-            : undefined;
-          const promptFakeNames = promptItemBook
-            ? Object.fromEntries(
-                promptInventoryStacks.flatMap((stack) => {
-                  const known = stack.truly ? promptItemBook.itemOf(stack.truly) : undefined;
-                  return known ? [[known.item, known.name]] : [];
-                }),
-              )
-            : undefined;
-          // What each stack of an item that holds charges has left: its kept count, or all of them.
-          const promptCharges = promptItemBook
-            ? (stack: (typeof promptInventoryStacks)[number]) => {
-                const held = stack.item ? promptItemBook.itemOf(stack.item)?.facts.use?.charges : undefined;
-                const max = held?.max;
-                // Found with rolled charges (1.573) until something changed them.
-                const now = stack.charges ?? (held ? rulesetChargesStart(held, held.max, stack.id) : 0);
-                return max === undefined ? undefined : { now: Math.min(max, now), max };
-              }
-            : undefined;
           const gmReminderArgs: Parameters<typeof buildGmFormatReminder>[0] = {
             sceneState: buildGmSceneState(gmCtx),
             // A Claude model that thinks natively is not asked for a written <think> plan (#9092).
@@ -6209,17 +6183,8 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
             // these turns; the gate declines to widen that wart rather than matching it.
             experienceGmVerbs:
               gmVerbTableForPrompt && !input.impersonate ? renderGmVerbInstructions(gmVerbTableForPrompt) : undefined,
-            // One line per item with its total, so a stack the player split reads as one thing,
-            // and the same per bag once anybody else in the party carries something.
-            playerInventory: (() => {
-              const inv = gameInventoryTotals(promptInventoryStacks, promptCharges);
-              return inv.length > 0 ? inv : undefined;
-            })(),
-            partyInventory: gameInventoryBags(
-              gameInventoryFoldStandIn(promptInventoryStacks, gameStandIn),
-              promptCharges,
-            ),
-            ...(gameStandIn ? { playerBagName: gameStandIn } : {}),
+            // custom-mods: the bags and what is in them, as `gmInventoryPromptParts` builds them for both modes.
+            ...gmInventoryPromptParts(promptInventoryStacks, promptItemBook, gameStandIn),
             // Who has not taken the ruleset's starting gear yet, the player's own bag keyed "" (laptop v3
             // 2026-10-26: the opening handed out class gear, then the kit doubled it).
             ...(() => {
@@ -6233,12 +6198,6 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
               });
               return waiting.length > 0 ? { startingGearWaiting: waiting } : {};
             })(),
-            ...(promptItemFacts ? { inventoryItemFacts: promptItemFacts } : {}),
-            ...(promptFakeNames && Object.keys(promptFakeNames).length > 0
-              ? { inventoryFakeNames: promptFakeNames }
-              : {}),
-            ...(promptBearers ? { inventoryBearers: promptBearers } : {}),
-            ...(promptPurses ? { inventoryPurses: promptPurses } : {}),
             ...(promptWhereYouAre
               ? { whereYouAre: [promptWhereYouAre, promptHistoryAsked].filter(Boolean).join("\n\n") }
               : {}),
@@ -11377,12 +11336,16 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
             !!input.regenerateMessageId &&
             readGameInventoryTurn(chatMeta.gameInventoryTurn)?.messageId === input.regenerateMessageId;
           if (
-            chatMode === "game" &&
+            // custom-mods: a Roleplay chat pinned to a ruleset carries Game Mode's bags too.
+            (chatMode === "game" || roleplayRulesetTurn) &&
             !input.impersonate &&
             (tellsInventory || retellsInventoryTurn || turnRests.length > 0 || turnMaterials.length > 0)
           ) {
             try {
-              const party = { player: gameStandIn ?? (personaName || undefined), members: canonicalGamePartyNames };
+              // custom-mods: Roleplay has no Game Master's party list; its party is the ruleset cards.
+              const partyMembers =
+                chatMode === "game" ? canonicalGamePartyNames : cardNames(chatMeta.gameCharacterCards);
+              const party = { player: gameStandIn ?? (personaName || undefined), members: partyMembers };
               const retoldId = input.regenerateMessageId ?? input.continueMessageId ?? null;
               const retold = retoldId ? await chats.getMessage(retoldId) : null;
               const telling = retold

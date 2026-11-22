@@ -170,6 +170,27 @@ const record = (content: string) => readAttackTagAttributes(/\[attack:\s*([^\]]+
   assert.match(reminder, /never a skill check/);
   assert.match(reminder, /a weapon they wear from their inventory/);
   assert.match(reminder, /Wounded foes: Thorn Lurker 2: 4\/16 health\./);
+  assert.doesNotMatch(reminder, /INVENTORY:/, "no inventory without one");
+}
+
+// Game Mode's inventory is taught to a Roleplay narrator: the tags, and every member's own bag.
+{
+  const reminder = buildRulesetRoleplayReminder({
+    ruleset: definition,
+    sheetBlocks: [],
+    inventory: {
+      ruleset: definition,
+      playerName: "Brenna Holt",
+      playerInventory: [{ name: "Rope", quantity: 1 }],
+      partyInventory: [
+        { holder: "", items: [{ name: "Rope", quantity: 1 }] },
+        { holder: "Tamsin Reed", items: [{ name: "Quarterstaff", quantity: 1, equipped: 1 }] },
+      ],
+    },
+  });
+  assert.match(reminder, /INVENTORY:\n- \[inventory: action="add\|remove\|give"/);
+  assert.match(reminder, /PARTY INVENTORY:\n- Brenna Holt: .*Rope/);
+  assert.match(reminder, /- Tamsin Reed: .*Quarterstaff.*1 worn/);
 }
 
 // Lazy partyCatalogs loader runs once per reply with [attack:] tags and is skipped without them.
