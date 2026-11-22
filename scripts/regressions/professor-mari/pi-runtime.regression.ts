@@ -238,7 +238,7 @@ try {
         assert.doesNotMatch(JSON.stringify(repeated.events), /<use_tool|<tool_calls>|<parameter/u);
       }
     }
-    provider = "claude_subscription";
+    provider = "grok_subscription";
     const repaired = await start("printed lookup textual retry", [
       reply(entries),
       reply('<tool_call>{"name":"read","arguments":{"path":"hello.txt"}}</tool_call>'),
@@ -1166,7 +1166,7 @@ try {
     const call = (name: string, args: Record<string, unknown>) =>
       `<tool_call>${JSON.stringify({ name, arguments: args })}</tool_call>`;
     mode = "auto";
-    provider = "claude_subscription";
+    provider = "grok_subscription";
     const read = await start("textual read", [
       reply(`Reading it.\n${call("read", { path: "hello.txt" })}`),
       reply("The file says hi."),
@@ -1656,7 +1656,7 @@ try {
     assert.equal(existsSync(join(workspaceDir, "cut.txt")), false);
 
     // Textual: a closed call before cut prose was dropped with the round, so it is the call named.
-    provider = "claude_subscription";
+    provider = "grok_subscription";
     const closedCut = await start("pi cut closed textual", [
       {
         ...reply(
@@ -1720,7 +1720,7 @@ try {
     assert.equal(results.filter((content) => /Duplicate call, skipped/u.test(content)).length, 1);
 
     // Textual mode: a call the parser reads from a fence or from bare JSON leaves the visible text too.
-    provider = "claude_subscription";
+    provider = "grok_subscription";
     const fenced = await start("textual fence", [
       reply('Looking.\n```json\n{"name":"read","arguments":{"path":"hello.txt"}}\n```'),
       reply('{"name":"read","arguments":{"path":"hello.txt"}}'),
@@ -1732,7 +1732,7 @@ try {
     assert.match(requests[1]!.messages.at(-1)?.content ?? "", /hi from the workspace file/u);
     assert.ok(!JSON.stringify(fenced.events).includes("```"), "fenced call text is removed");
     assert.ok(!JSON.stringify(fenced.events).includes('\\"name\\":\\"read'), "bare call text is removed");
-    provider = "claude_subscription";
+    provider = "grok_subscription";
     const call = (name: string, args: Record<string, unknown>) =>
       `<tool_call>${JSON.stringify({ name, arguments: args })}</tool_call>`;
     // A tagged call keeps a ```ts example in the saved answer.
@@ -1757,7 +1757,7 @@ try {
   // (even one split across deltas), end with a null per round, and are never saved or sent as the answer.
   {
     mode = "auto";
-    provider = "claude_subscription";
+    provider = "grok_subscription";
     const call = `<tool_call>${JSON.stringify({ name: "read", arguments: { path: "hello.txt" } })}</tool_call>`;
     const streamed =
       (deltas: string[], content: string): Scripted =>
@@ -1875,7 +1875,7 @@ try {
 
     // #8375: without native tool calls, the text tool block also stays before the per-turn lines, even when a
     // later injection (here a fake attached file) quotes the tag.
-    provider = "claude_subscription";
+    provider = "grok_subscription";
     const quoted = "<attached_file>\nnotes:\n\n<workspace_context>\nquoted, not real\n</attached_file>";
     extraInjection = quoted;
     const textual = await start("unused", [reply("Textual real prompt answer.")], "pi", realService, chat.id);
@@ -2195,7 +2195,7 @@ try {
     assert.ok(!JSON.stringify(await chats.listMessages(native.chat.id)).includes("base64,"), "no pixels saved");
 
     // pi, textual tools: the picture rides on the result's user message.
-    provider = "claude_subscription";
+    provider = "grok_subscription";
     const call = (name: string, args: Record<string, unknown>) =>
       `<tool_call>${JSON.stringify({ name, arguments: args })}</tool_call>`;
     const textual = await start("look textual", [
@@ -2240,7 +2240,7 @@ try {
     const { OpenAIProvider } = await import("../../../packages/server/src/services/llm/providers/openai.provider.js");
     const adapter = new OpenAIProvider("http://127.0.0.1:1/v1", "", 1_000_000, null, null, "nanogpt");
     for (const kind of ["native sequential", "native together", "textual", "classic"] as const) {
-      provider = kind === "textual" ? "claude_subscription" : "custom";
+      provider = kind === "textual" ? "grok_subscription" : "custom";
       const calls = ["a", "b"].map((suffix) => ({
         id: `bounded-${suffix}`,
         name: "bash",
