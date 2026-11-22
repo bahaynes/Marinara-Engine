@@ -683,6 +683,9 @@ export class ClaudeSubscriptionProvider extends BaseLLMProvider {
     // An API error Claude Code turned into a reply (its synthetic "API Error: …" assistant message, and a
     // result with `is_error`). It is the error's text, never the model's, so it must not reach the chat.
     let apiErrorText: string | null = null;
+    // Tools the model called that this request did not register (or registered nowhere): the SDK answers
+    // "no such tool", takes a second turn and reports error_max_turns. The reply ended there, not failed.
+    const strayToolNames: string[] = [];
 
     try {
       // Cast on `prompt` is needed because we type `promptArg` locally as
@@ -761,7 +764,16 @@ export class ClaudeSubscriptionProvider extends BaseLLMProvider {
                 .trim() || "unknown API error";
             continue;
           }
-          if (toolCallSink) toolCallSink.push(...marinaraToolCalls(message.message?.content));
+          const calls = marinaraToolCalls(message.message?.content);
+          if (toolCallSink) toolCallSink.push(...calls);
+          const content = message.message?.content;
+          if (Array.isArray(content)) {
+            for (const block of content as Array<{ type?: string; name?: string }>) {
+              if (block?.type === "tool_use" && typeof block.name === "string" && !(toolCallSink && calls.length)) {
+                strayToolNames.push(block.name);
+              }
+            }
+          }
           if (options.stream ?? true) continue;
           // Non-streaming path: the SDK still yields the full assistant
           // message at the end; emit the text blocks once.
@@ -779,7 +791,9 @@ export class ClaudeSubscriptionProvider extends BaseLLMProvider {
           if (typeof resultStop === "string") stopReason = resultStop;
           // A tool call ends the turn at maxTurns: the SDK reports error_max_turns and, if iteration
           // went on, throws. Marinara runs the calls, so that is this reply's normal end.
-          const stoppedForTools = message.subtype === "error_max_turns" && !!toolCallSink?.length;
+          const stoppedForTools =
+            message.subtype === "error_max_turns" &&
+            (!!toolCallSink?.length || strayToolNames.length > 0 || emittedText);
           if (message.subtype === "success" || stoppedForTools) {
             sawSuccessResult = true;
             const usage = message.usage ?? null;
@@ -933,6 +947,7 @@ export class ClaudeSubscriptionProvider extends BaseLLMProvider {
         `successResult=${sawSuccessResult}`,
         `inputTokens=${inputTokens}`,
         `outputTokens=${outputTokens}`,
+        `strayTools=${strayToolNames.length ? strayToolNames.join(",") : "none"}`,
         `fast_mode_state=${finalFastModeState ?? "unknown"}`,
         `billedModels=${finalUsedModels.length ? finalUsedModels.join(",") : "none"}`,
         `HOME=${process.env.HOME ?? "unset"}`,
