@@ -2011,6 +2011,240 @@ export function rulesetRestAskedFor(
 /** What a party member's sheet block says when they are dead on it (see `renderGameRulesetSheetBlocks`). */
 export const RULESET_SHEET_DEAD_MARK = "\nDEAD: healing, rest and potions do nothing for them";
 
+/** custom-mods: the inventory fields of the Game Master's context. A Roleplay chat pinned to a ruleset
+ *  reads them too, so Game Mode's bags and [inventory:] tags are told the same way in both modes. */
+export type GmInventoryPromptContext = Pick<
+  GmPromptContext,
+  | "rulesetLayerOptions"
+  | "playerName"
+  | "playerBagName"
+  | "playerInventory"
+  | "partyInventory"
+  | "inventoryItemFacts"
+  | "inventoryFakeNames"
+  | "inventoryBearers"
+  | "inventoryPurses"
+> & {
+  ruleset?: import("@marinara-engine/shared").RulesetDefinition;
+  kitItems?: import("@marinara-engine/shared").RulesetDefinition;
+  rulesetSheetBlocks?: string[];
+};
+
+/** custom-mods: what each bag holds, for the prompt (moved out of `buildGmFormatReminder`). */
+export function gmInventoryListLines(
+  ctx: GmInventoryPromptContext,
+  hasParty: boolean,
+  partyDirected: boolean,
+): string[] {
+  const lines: string[] = [];
+  // A nicknamed item is shown with its own name too, which is how the Game Master can also name it.
+  // A fake is named as the party sees it, with the truth beside it for the Game Master alone.
+  const inventoryName = (item: { name?: unknown; ownName?: unknown; truly?: unknown } | undefined) => {
+    const name = normalizePromptText(item?.name);
+    const own = normalizePromptText(item?.ownName);
+    const shown = name && own && own.toLowerCase() !== name.toLowerCase() ? `${name} (${own})` : name;
+    if (!shown || typeof item?.truly !== "string") return shown;
+    const truly = normalizePromptText(ctx.inventoryFakeNames?.[item.truly]) || item.truly;
+    return `${shown} (FAKE: really ${truly})`;
+  };
+  // A ruleset item also says what it is, from its ruleset: category, rarity, tags and visible stats;
+  // a fake says what it truly is.
+  const itemFacts = (item: { item?: unknown; truly?: unknown } | undefined) => {
+    const ref = typeof item?.truly === "string" ? item.truly : item?.item;
+    const facts = typeof ref === "string" ? ctx.inventoryItemFacts?.[ref] : undefined;
+    const text = normalizePromptText(facts);
+    return text ? { facts: text } : {};
+  };
+  // How many of an item are worn and bound, in the ruleset's own word for bound.
+  const bindingName = normalizePromptText(ctx.ruleset?.items?.binding?.label);
+  const bindingLabel = bindingName.toLowerCase();
+  const itemWorn = (
+    item: { equipped?: unknown; bound?: unknown; charges?: Array<{ now: number; max: number }> } | undefined,
+  ) => {
+    const count = (value: unknown) => (typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0);
+    // What an item that holds charges has left, each stack's: "2 of 3 charges left".
+    const charges = Array.isArray(item?.charges)
+      ? item.charges.filter((entry) => Number.isFinite(entry?.now) && Number.isFinite(entry?.max))
+      : [];
+    const worn = [
+      ...(count(item?.equipped) ? [`${count(item?.equipped)} worn`] : []),
+      ...(count(item?.bound) ? [`${count(item?.bound)} ${bindingLabel || "bound"}`] : []),
+      ...(charges.length ? [`${charges.map((entry) => `${entry.now} of ${entry.max}`).join(", ")} charges left`] : []),
+    ].join(", ");
+    return worn ? { worn } : {};
+  };
+  const bearerFor = (holder: string | undefined) =>
+    [
+      bearerNote(ctx.inventoryBearers?.[gameInventoryBagKey(holder)], bindingName),
+      normalizePromptText(ctx.inventoryPurses?.[gameInventoryBagKey(holder)]),
+    ]
+      .filter(Boolean)
+      .join("; ");
+  const playerInventory = Array.isArray(ctx.playerInventory)
+    ? ctx.playerInventory.flatMap((item) => {
+        const name = inventoryName(item);
+        if (!name) return [];
+        const quantity =
+          typeof item?.quantity === "number" && Number.isFinite(item.quantity) ? Math.max(1, item.quantity) : 1;
+        return [{ name, quantity, ...itemWorn(item), ...itemFacts(item) }];
+      })
+    : [];
+  // Bags other than the player's, each with a name to show; only these make the block per member.
+  const partyBags = (Array.isArray(ctx.partyInventory) ? ctx.partyInventory : []).flatMap((bag) => {
+    const holder = bag.holder ? normalizePromptText(bag.holder) : "";
+    const items = (Array.isArray(bag.items) ? bag.items : []).flatMap((item) => {
+      const name = inventoryName(item);
+      if (!name) return [];
+      const quantity =
+        typeof item?.quantity === "number" && Number.isFinite(item.quantity) ? Math.max(1, item.quantity) : 1;
+      return [{ name, quantity, ...itemWorn(item), ...itemFacts(item) }];
+    });
+    return items.length > 0 ? [{ holder, items, note: bearerFor(bag.holder) }] : [];
+  });
+  const carriedByOthers = partyBags.some((bag) => bag.holder);
+  // In a game with money every purse is said, an empty one too, so the player's bag is listed even with
+  // nothing in it: a Game Master never told a purse is empty narrates a buy the Engine then refuses.
+  const withMoney = Boolean(normalizePromptText(ctx.inventoryPurses?.[gameInventoryBagKey(undefined)]));
+  const nobodyElse = withMoney ? [`Party members not listed carry nothing, coins included.`] : [];
+  // Told an item is not there, a model makes it, or the light or fire it was for, with an ability
+  // no sheet lists.
+  const sheetAbilitiesOnly =
+    ctx.ruleset && (ctx.rulesetSheetBlocks ?? []).some((block) => block.trim())
+      ? [
+          `Nor can anyone do what their sheet doesn't list: no spell, breath or trick makes light, fire or an item unless the sheet has it, and a limited one (a power with uses per day) is spent with its [sheet:] tag.`,
+        ]
+      : [];
+
+  // Inventory context. Skipped when an experience owns items: an older save can still carry a stale
+  // built-in list, which would contradict the inventory the player has on screen.
+  if (carriedByOthers) {
+    const playerLabel = normalizePromptText(ctx.playerBagName ?? ctx.playerName) || "Player";
+    const bags =
+      withMoney && !partyBags.some((bag) => !bag.holder)
+        ? [{ holder: "", items: [], note: bearerFor(undefined) }, ...partyBags]
+        : partyBags;
+    lines.push(
+      ``,
+      `PARTY INVENTORY:`,
+      ...bags.map(
+        (bag) =>
+          `- ${bag.holder || playerLabel}${bag.note ? ` (${bag.note})` : ""}: ${buildCompactInventoryLine(bag.items) || "nothing"}`,
+      ),
+      ...nobodyElse,
+      ...sheetAbilitiesOnly,
+    );
+  } else if (hasParty && (playerInventory.length > 0 || withMoney)) {
+    // The one bag is the whole party's: a member said to have a pack of their own made up what was in it.
+    const note = bearerFor(undefined);
+    const owner = partyDirected
+      ? { name: `PARTY PACK`, about: `the party's one shared pack`, others: `No member has` }
+      : {
+          name: `${normalizePromptText(ctx.playerName) || "Player"}'s PACK`,
+          about: `the only bag in the party`,
+          others: `Nobody else in the party has`,
+        };
+    lines.push(
+      ``,
+      `${owner.name}${note ? ` (${note})` : ""} - ${owner.about}, everything the party carries: ${buildCompactInventoryLine(playerInventory) || "nothing"}`,
+      `${owner.others} a bag, pouch or gear of their own beyond this pack and what their sheet says they wear.${withMoney ? ` Its purse is the party's only money.` : ""} An item the pack does not list does not exist: if the player reaches for one, say in the story that it isn't there, and write no tag for it.`,
+      ...sheetAbilitiesOnly,
+    );
+  } else if (playerInventory.length > 0 || withMoney) {
+    const note = bearerFor(undefined);
+    lines.push(
+      ``,
+      `PLAYER INVENTORY${note ? ` (${note})` : ""}: ${buildCompactInventoryLine(playerInventory) || "nothing"}`,
+      ...nobodyElse,
+    );
+  }
+  return lines;
+}
+
+/** custom-mods: the [inventory:] tag grammar (moved out of `buildGmFormatReminder`). */
+export function gmInventoryTagLines(ctx: GmInventoryPromptContext): string[] {
+  const coins = ctx.ruleset
+    ? rulesetLayeredCurrencies(ctx.ruleset, ctx.rulesetLayerOptions)
+    : ctx.kitItems
+      ? rulesetLayeredCurrencies(ctx.kitItems, undefined)
+      : [];
+  // The market the Game Master buys at: its ruleset's, or a game without one its setting kit's.
+  const market = ctx.ruleset ? ctx.ruleset.items?.market : ctx.kitItems?.items?.market;
+  return [
+    `- [inventory: action="add|remove|give" item="Item A, Item B" count="3" who="Name" to="Name"] - every real item gain or loss, keep names short and use count/quantity for stacked items. An add is only for what the story puts in their hands in this reply: found, looted, bought, made, or given by someone there (something made or gathered on a check is added in the reply that tells it succeeded, finished); never to hand a character something they need right now that the story never gave them. Everyone in the party carries their own things: who is whose bag an item goes into or comes out of, and leaving it out means the player (a remove without who then takes from the rest of the party once the player has none). A give hands items from who to to. An item listed as "Nickname (Name)" is one item: write either name in item, never both. An item that comes in kinds is written by the full name of the kind the story gives (an arrow of undead slaying, never the family's bare name), or it does nothing of that kind. Never write result, reason or now yourself: the Engine adds them, and a refused one did not happen.`,
+    // Things made to last only so long (1.760), counted on the game's clock: Creation's.
+    ...(ctx.ruleset
+      ? [
+          `  Something made to last only so long (a conjured or created object): add lasts="10 minutes", "12 hours" or "1 day" to the add, and it vanishes from the bag once that much game time has passed.`,
+        ]
+      : []),
+    ...(ctx.ruleset?.catalogs?.some((catalog) => catalog.holds === "items")
+      ? [
+          `  This game's ruleset has its own items: an item named exactly as one of them becomes that item, and what an item of the ruleset is shows in [brackets] after it in the inventory below (never write the brackets in item).`,
+          // The book refuses an add of one a use spends where it can check another source.
+          ...(ctx.ruleset.items?.market || ctx.ruleset.items?.lootTables?.length
+            ? [
+                `  One of its items that a use spends (a potion, a scroll) is never added: it comes by buying or looting it.`,
+              ]
+            : []),
+        ]
+      : []),
+    ...(ctx.ruleset?.items?.native === false
+      ? [
+          `  This ruleset has no untyped items: an add must name one of its items${ctx.ruleset.items.propose !== false ? " or invent one of its items as below" : ""}, and any other name is refused as not-ruleset-item. More of something already held can still be added.`,
+        ]
+      : []),
+    ...(ctx.ruleset?.items && ctx.ruleset.items.propose !== false
+      ? inventGrammarLines(
+          ctx.ruleset.items,
+          ctx.ruleset.sheet,
+          ctx.ruleset.combat
+            ? {
+                defense: rulesetDefenseLabel(ctx.ruleset),
+                // Only a stat the Game Master is shown is named.
+                counted: rulesetItemStatsRead(ctx.ruleset, ctx.ruleset.combat.defense).filter(
+                  (id) => ctx.ruleset!.items?.stats?.find((stat) => stat.id === id)?.promptVisible !== false,
+                ),
+              }
+            : undefined,
+        )
+      : []),
+    ...(ctx.ruleset?.items?.carry
+      ? [
+          `  Everyone carries only so much: an add with who left out goes to whoever can carry it (the player first), and the answer says who got it; what nobody can carry is refused as too-heavy and stays behind.`,
+        ]
+      : []),
+    ...(ctx.ruleset?.items?.slots?.length || ctx.ruleset?.items?.binding
+      ? [wearGrammarLine(Boolean(ctx.ruleset.items.slots?.length), ctx.ruleset.items.binding?.label)]
+      : []),
+    ...(ctx.ruleset?.catalogs?.some((catalog) => catalog.holds === "items")
+      ? [
+          `- [inventory: action="use" item="Name" who="Name"] - when a character uses one of the ruleset's items whose [brackets] say "use (...)". The Engine rolls what it does to whoever uses it, writes that on their sheet and spends the item, and the answer says what happened: narrate that, and what it does to anybody else. Every such item drunk, eaten or used takes this tag, and the tag alone: never also a [sheet:] restore for what it heals. A player's message may end with an [item_used] block: the Engine already used that item the same way, so narrate it and never use or remove it again.`,
+        ]
+      : []),
+    ...(coins.length
+      ? [
+          `- [inventory: action="pay" amount="5 ${coins[0]!.units.at(-1)!.label}" who="Name"] and [inventory: action="earn" amount="12 ${coins[0]!.units[0]!.label}" who="Name"] - when a character pays for something or is paid, in the ${ctx.ruleset ? "ruleset's coins" : "setting's money"} (${promptCoins(coins)}). Coins are items in each character's purse: a payment comes out of that character's purse (the player's with who left out, everyone's together with who="party"), inside the coin's own family, with change in its smaller coins, and one they cannot afford is refused; an earning goes into the bags as an add does. The answer says what was paid and what is left: narrate exactly that. ${market ? "Buying is a buy (below)" : "Buying is a payment and then an add"}; never add or remove coins any other way.`,
+        ]
+      : []),
+    ...(market
+      ? [
+          `- [place: name="Name" size="${market.places.at(-1)!.label}"] - whenever the scene moves to a new place, with its size, one of: ${market.places.map((place) => place.label).join(", ")} (smallest first). Leave size out for somewhere with no market (a road, the wilds). The Engine keeps the last place said until you say another, and the MARKET block below shows what it sells. Describe only the sellers and wares it lists: a shop, a stall or a shelf of goods it does not list is nothing anyone can buy there, so never narrate one as for sale. Say the place before the first buy or sell there: with no place said, every buy and sell is refused. When a new day begins where the party is staying, say the place again with day="new": what the sellers have in stock and what they will pay out start over.`,
+          `- [inventory: action="buy" item="Name" count="1" level="${market.prices.find((level) => level.default)!.label}" seller="Seller" who="Name"] - when a character buys something, instead of paying and adding it yourself. Levels: ${market.prices.map((level) => `${level.label} ×${level.times}${level.default ? " (the default)" : ""}`).join(", ")}; haggling or a seller's mood moves the level, never the price. The Engine checks the place and the seller sell it, prices it, takes the price from the buyer's purse (the player's with who left out) and puts it in their bag (a service only pays), and the answer says what it cost or why not: narrate exactly that. The answer comes only after your reply, so narrate the asking and the reaching for coin, never the coins changing hands or the item in hand: a buy the purse cannot cover is refused, and a refusal you see on an earlier buy means it never happened, so the story says so. who="party" pays out of everyone's purse together, the player's first.`,
+          ...(market.buyBack !== undefined
+            ? [
+                `- [inventory: action="sell" item="Name" count="1" seller="Seller" who="Name"] - when a character sells something here, instead of removing it and earning coins yourself. The Engine checks someone here buys that kind of thing and still has money today, takes it out of the seller's bag (the player's with who left out) and pays its coins in, and the answer says what it fetched or why not: narrate exactly that.`,
+              ]
+            : []),
+        ]
+      : []),
+    ...(ctx.ruleset?.items?.lootTables?.length
+      ? [
+          `- [loot: table="id" who="Name"] - when the party finds a hoard, searches the fallen or is rewarded, instead of adding the items yourself. The Engine rolls the ruleset's table and puts what it drops into the bags as an add would (who="..." for one character's), and the answer says what dropped: narrate exactly that. Tables: ${promptLootTables(ctx.ruleset.items.lootTables)}. A won fight already dropped its own loot, which the combat result lists: never roll a table for it again.`,
+        ]
+      : []),
+  ];
+}
+
 export function buildGmFormatReminder(
   ctx: Pick<
     GmPromptContext,
@@ -2200,90 +2434,6 @@ export function buildGmFormatReminder(
   // An experience that tracks items itself owns the whole loop, so asking the GM for [inventory:] here
   // would only produce commands nothing consumes.
   const experienceOwnsInventory = ctx.experienceProvidedSystems?.inventory === true;
-  // A nicknamed item is shown with its own name too, which is how the Game Master can also name it.
-  // A fake is named as the party sees it, with the truth beside it for the Game Master alone.
-  const inventoryName = (item: { name?: unknown; ownName?: unknown; truly?: unknown } | undefined) => {
-    const name = normalizePromptText(item?.name);
-    const own = normalizePromptText(item?.ownName);
-    const shown = name && own && own.toLowerCase() !== name.toLowerCase() ? `${name} (${own})` : name;
-    if (!shown || typeof item?.truly !== "string") return shown;
-    const truly = normalizePromptText(ctx.inventoryFakeNames?.[item.truly]) || item.truly;
-    return `${shown} (FAKE: really ${truly})`;
-  };
-  // A ruleset item also says what it is, from its ruleset: category, rarity, tags and visible stats;
-  // a fake says what it truly is.
-  const itemFacts = (item: { item?: unknown; truly?: unknown } | undefined) => {
-    const ref = typeof item?.truly === "string" ? item.truly : item?.item;
-    const facts = typeof ref === "string" ? ctx.inventoryItemFacts?.[ref] : undefined;
-    const text = normalizePromptText(facts);
-    return text ? { facts: text } : {};
-  };
-  // How many of an item are worn and bound, in the ruleset's own word for bound.
-  const bindingName = normalizePromptText(ctx.ruleset?.items?.binding?.label);
-  const bindingLabel = bindingName.toLowerCase();
-  const itemWorn = (
-    item: { equipped?: unknown; bound?: unknown; charges?: Array<{ now: number; max: number }> } | undefined,
-  ) => {
-    const count = (value: unknown) => (typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0);
-    // What an item that holds charges has left, each stack's: "2 of 3 charges left".
-    const charges = Array.isArray(item?.charges)
-      ? item.charges.filter((entry) => Number.isFinite(entry?.now) && Number.isFinite(entry?.max))
-      : [];
-    const worn = [
-      ...(count(item?.equipped) ? [`${count(item?.equipped)} worn`] : []),
-      ...(count(item?.bound) ? [`${count(item?.bound)} ${bindingLabel || "bound"}`] : []),
-      ...(charges.length ? [`${charges.map((entry) => `${entry.now} of ${entry.max}`).join(", ")} charges left`] : []),
-    ].join(", ");
-    return worn ? { worn } : {};
-  };
-  const coins = ctx.ruleset
-    ? rulesetLayeredCurrencies(ctx.ruleset, ctx.rulesetLayerOptions)
-    : ctx.kitItems
-      ? rulesetLayeredCurrencies(ctx.kitItems, undefined)
-      : [];
-  // The market the Game Master buys at: its ruleset's, or a game without one its setting kit's.
-  const market = ctx.ruleset ? ctx.ruleset.items?.market : ctx.kitItems?.items?.market;
-  const bearerFor = (holder: string | undefined) =>
-    [
-      bearerNote(ctx.inventoryBearers?.[gameInventoryBagKey(holder)], bindingName),
-      normalizePromptText(ctx.inventoryPurses?.[gameInventoryBagKey(holder)]),
-    ]
-      .filter(Boolean)
-      .join("; ");
-  const playerInventory = Array.isArray(ctx.playerInventory)
-    ? ctx.playerInventory.flatMap((item) => {
-        const name = inventoryName(item);
-        if (!name) return [];
-        const quantity =
-          typeof item?.quantity === "number" && Number.isFinite(item.quantity) ? Math.max(1, item.quantity) : 1;
-        return [{ name, quantity, ...itemWorn(item), ...itemFacts(item) }];
-      })
-    : [];
-  // Bags other than the player's, each with a name to show; only these make the block per member.
-  const partyBags = (Array.isArray(ctx.partyInventory) ? ctx.partyInventory : []).flatMap((bag) => {
-    const holder = bag.holder ? normalizePromptText(bag.holder) : "";
-    const items = (Array.isArray(bag.items) ? bag.items : []).flatMap((item) => {
-      const name = inventoryName(item);
-      if (!name) return [];
-      const quantity =
-        typeof item?.quantity === "number" && Number.isFinite(item.quantity) ? Math.max(1, item.quantity) : 1;
-      return [{ name, quantity, ...itemWorn(item), ...itemFacts(item) }];
-    });
-    return items.length > 0 ? [{ holder, items, note: bearerFor(bag.holder) }] : [];
-  });
-  const carriedByOthers = partyBags.some((bag) => bag.holder);
-  // In a game with money every purse is said, an empty one too, so the player's bag is listed even with
-  // nothing in it: a Game Master never told a purse is empty narrates a buy the Engine then refuses.
-  const withMoney = Boolean(normalizePromptText(ctx.inventoryPurses?.[gameInventoryBagKey(undefined)]));
-  const nobodyElse = withMoney ? [`Party members not listed carry nothing, coins included.`] : [];
-  // Told an item is not there, a model makes it, or the light or fire it was for, with an ability
-  // no sheet lists.
-  const sheetAbilitiesOnly =
-    ctx.ruleset && (ctx.rulesetSheetBlocks ?? []).some((block) => block.trim())
-      ? [
-          `Nor can anyone do what their sheet doesn't list: no spell, breath or trick makes light, fire or an item unless the sheet has it, and a limited one (a power with uses per day) is spent with its [sheet:] tag.`,
-        ]
-      : [];
 
   // ── Current State (closest to generation) ──
   if (T) {
@@ -2496,82 +2646,7 @@ export function buildGmFormatReminder(
             `- [map_update: new_location="Location Name" connected_to="Previous Location Name" node_emoji="emoji"] - only when the party arrives at an entirely new location on the current node map.`,
           ]
         : []),
-      ...(experienceOwnsInventory
-        ? []
-        : [
-            `- [inventory: action="add|remove|give" item="Item A, Item B" count="3" who="Name" to="Name"] - every real item gain or loss, keep names short and use count/quantity for stacked items. An add is only for what the story puts in their hands in this reply: found, looted, bought, made, or given by someone there (something made or gathered on a check is added in the reply that tells it succeeded, finished); never to hand a character something they need right now that the story never gave them. Everyone in the party carries their own things: who is whose bag an item goes into or comes out of, and leaving it out means the player (a remove without who then takes from the rest of the party once the player has none). A give hands items from who to to. An item listed as "Nickname (Name)" is one item: write either name in item, never both. An item that comes in kinds is written by the full name of the kind the story gives (an arrow of undead slaying, never the family's bare name), or it does nothing of that kind. Never write result, reason or now yourself: the Engine adds them, and a refused one did not happen.`,
-            // Things made to last only so long (1.760), counted on the game's clock: Creation's.
-            ...(ctx.ruleset
-              ? [
-                  `  Something made to last only so long (a conjured or created object): add lasts="10 minutes", "12 hours" or "1 day" to the add, and it vanishes from the bag once that much game time has passed.`,
-                ]
-              : []),
-            ...(ctx.ruleset?.catalogs?.some((catalog) => catalog.holds === "items")
-              ? [
-                  `  This game's ruleset has its own items: an item named exactly as one of them becomes that item, and what an item of the ruleset is shows in [brackets] after it in the inventory below (never write the brackets in item).`,
-                  // The book refuses an add of one a use spends where it can check another source.
-                  ...(ctx.ruleset.items?.market || ctx.ruleset.items?.lootTables?.length
-                    ? [
-                        `  One of its items that a use spends (a potion, a scroll) is never added: it comes by buying or looting it.`,
-                      ]
-                    : []),
-                ]
-              : []),
-            ...(ctx.ruleset?.items?.native === false
-              ? [
-                  `  This ruleset has no untyped items: an add must name one of its items${ctx.ruleset.items.propose !== false ? " or invent one of its items as below" : ""}, and any other name is refused as not-ruleset-item. More of something already held can still be added.`,
-                ]
-              : []),
-            ...(ctx.ruleset?.items && ctx.ruleset.items.propose !== false
-              ? inventGrammarLines(
-                  ctx.ruleset.items,
-                  ctx.ruleset.sheet,
-                  ctx.ruleset.combat
-                    ? {
-                        defense: rulesetDefenseLabel(ctx.ruleset),
-                        // Only a stat the Game Master is shown is named.
-                        counted: rulesetItemStatsRead(ctx.ruleset, ctx.ruleset.combat.defense).filter(
-                          (id) => ctx.ruleset!.items?.stats?.find((stat) => stat.id === id)?.promptVisible !== false,
-                        ),
-                      }
-                    : undefined,
-                )
-              : []),
-            ...(ctx.ruleset?.items?.carry
-              ? [
-                  `  Everyone carries only so much: an add with who left out goes to whoever can carry it (the player first), and the answer says who got it; what nobody can carry is refused as too-heavy and stays behind.`,
-                ]
-              : []),
-            ...(ctx.ruleset?.items?.slots?.length || ctx.ruleset?.items?.binding
-              ? [wearGrammarLine(Boolean(ctx.ruleset.items.slots?.length), ctx.ruleset.items.binding?.label)]
-              : []),
-            ...(ctx.ruleset?.catalogs?.some((catalog) => catalog.holds === "items")
-              ? [
-                  `- [inventory: action="use" item="Name" who="Name"] - when a character uses one of the ruleset's items whose [brackets] say "use (...)". The Engine rolls what it does to whoever uses it, writes that on their sheet and spends the item, and the answer says what happened: narrate that, and what it does to anybody else. Every such item drunk, eaten or used takes this tag, and the tag alone: never also a [sheet:] restore for what it heals. A player's message may end with an [item_used] block: the Engine already used that item the same way, so narrate it and never use or remove it again.`,
-                ]
-              : []),
-            ...(coins.length
-              ? [
-                  `- [inventory: action="pay" amount="5 ${coins[0]!.units.at(-1)!.label}" who="Name"] and [inventory: action="earn" amount="12 ${coins[0]!.units[0]!.label}" who="Name"] - when a character pays for something or is paid, in the ${ctx.ruleset ? "ruleset's coins" : "setting's money"} (${promptCoins(coins)}). Coins are items in each character's purse: a payment comes out of that character's purse (the player's with who left out, everyone's together with who="party"), inside the coin's own family, with change in its smaller coins, and one they cannot afford is refused; an earning goes into the bags as an add does. The answer says what was paid and what is left: narrate exactly that. ${market ? "Buying is a buy (below)" : "Buying is a payment and then an add"}; never add or remove coins any other way.`,
-                ]
-              : []),
-            ...(market
-              ? [
-                  `- [place: name="Name" size="${market.places.at(-1)!.label}"] - whenever the scene moves to a new place, with its size, one of: ${market.places.map((place) => place.label).join(", ")} (smallest first). Leave size out for somewhere with no market (a road, the wilds). The Engine keeps the last place said until you say another, and the MARKET block below shows what it sells. Describe only the sellers and wares it lists: a shop, a stall or a shelf of goods it does not list is nothing anyone can buy there, so never narrate one as for sale. Say the place before the first buy or sell there: with no place said, every buy and sell is refused. When a new day begins where the party is staying, say the place again with day="new": what the sellers have in stock and what they will pay out start over.`,
-                  `- [inventory: action="buy" item="Name" count="1" level="${market.prices.find((level) => level.default)!.label}" seller="Seller" who="Name"] - when a character buys something, instead of paying and adding it yourself. Levels: ${market.prices.map((level) => `${level.label} ×${level.times}${level.default ? " (the default)" : ""}`).join(", ")}; haggling or a seller's mood moves the level, never the price. The Engine checks the place and the seller sell it, prices it, takes the price from the buyer's purse (the player's with who left out) and puts it in their bag (a service only pays), and the answer says what it cost or why not: narrate exactly that. The answer comes only after your reply, so narrate the asking and the reaching for coin, never the coins changing hands or the item in hand: a buy the purse cannot cover is refused, and a refusal you see on an earlier buy means it never happened, so the story says so. who="party" pays out of everyone's purse together, the player's first.`,
-                  ...(market.buyBack !== undefined
-                    ? [
-                        `- [inventory: action="sell" item="Name" count="1" seller="Seller" who="Name"] - when a character sells something here, instead of removing it and earning coins yourself. The Engine checks someone here buys that kind of thing and still has money today, takes it out of the seller's bag (the player's with who left out) and pays its coins in, and the answer says what it fetched or why not: narrate exactly that.`,
-                      ]
-                    : []),
-                ]
-              : []),
-            ...(ctx.ruleset?.items?.lootTables?.length
-              ? [
-                  `- [loot: table="id" who="Name"] - when the party finds a hoard, searches the fallen or is rewarded, instead of adding the items yourself. The Engine rolls the ruleset's table and puts what it drops into the bags as an add would (who="..." for one character's), and the answer says what dropped: narrate exactly that. Tables: ${promptLootTables(ctx.ruleset.items.lootTables)}. A won fight already dropped its own loot, which the combat result lists: never roll a table for it again.`,
-                ]
-              : []),
-          ]),
+      ...(experienceOwnsInventory ? [] : gmInventoryTagLines(ctx)),
       `- [Note: contents] or [Book: contents] - when a new readable note or book is acquired and should be tracked in the journal.`,
       ...(ctx.overworld
         ? [
@@ -2768,48 +2843,7 @@ export function buildGmFormatReminder(
       );
   }
 
-  // Inventory context. Skipped when an experience owns items: an older save can still carry a stale
-  // built-in list, which would contradict the inventory the player has on screen.
-  if (T && !experienceOwnsInventory && carriedByOthers) {
-    const playerLabel = normalizePromptText(ctx.playerBagName ?? ctx.playerName) || "Player";
-    const bags =
-      withMoney && !partyBags.some((bag) => !bag.holder)
-        ? [{ holder: "", items: [], note: bearerFor(undefined) }, ...partyBags]
-        : partyBags;
-    lines.push(
-      ``,
-      `PARTY INVENTORY:`,
-      ...bags.map(
-        (bag) =>
-          `- ${bag.holder || playerLabel}${bag.note ? ` (${bag.note})` : ""}: ${buildCompactInventoryLine(bag.items) || "nothing"}`,
-      ),
-      ...nobodyElse,
-      ...sheetAbilitiesOnly,
-    );
-  } else if (T && !experienceOwnsInventory && hasParty && (playerInventory.length > 0 || withMoney)) {
-    // The one bag is the whole party's: a member said to have a pack of their own made up what was in it.
-    const note = bearerFor(undefined);
-    const owner = partyDirected
-      ? { name: `PARTY PACK`, about: `the party's one shared pack`, others: `No member has` }
-      : {
-          name: `${normalizePromptText(ctx.playerName) || "Player"}'s PACK`,
-          about: `the only bag in the party`,
-          others: `Nobody else in the party has`,
-        };
-    lines.push(
-      ``,
-      `${owner.name}${note ? ` (${note})` : ""} - ${owner.about}, everything the party carries: ${buildCompactInventoryLine(playerInventory) || "nothing"}`,
-      `${owner.others} a bag, pouch or gear of their own beyond this pack and what their sheet says they wear.${withMoney ? ` Its purse is the party's only money.` : ""} An item the pack does not list does not exist: if the player reaches for one, say in the story that it isn't there, and write no tag for it.`,
-      ...sheetAbilitiesOnly,
-    );
-  } else if (T && !experienceOwnsInventory && (playerInventory.length > 0 || withMoney)) {
-    const note = bearerFor(undefined);
-    lines.push(
-      ``,
-      `PLAYER INVENTORY${note ? ` (${note})` : ""}: ${buildCompactInventoryLine(playerInventory) || "nothing"}`,
-      ...nobodyElse,
-    );
-  }
+  if (T && !experienceOwnsInventory) lines.push(...gmInventoryListLines(ctx, hasParty, partyDirected));
 
   // Starting gear the player has not taken yet is theirs to take, never the Game Master's to hand out.
   const gearWaiting = (ctx.startingGearWaiting ?? []).map((name) => normalizePromptText(name)).filter(Boolean);
