@@ -23,6 +23,7 @@ import { ChatBranchGraphWindow } from "./ChatBranchGraphWindow";
 import { parseChatMetadata } from "../../lib/chat-display";
 import { useHostHasDetachedDrawers } from "../ui/drawer-host";
 import { useRoleplaySheetStore } from "../../stores/roleplay-sheet.store";
+import { useRoleplayInventoryStore } from "../../stores/roleplay-inventory.store";
 import { Spinner } from "../ui/Spinner";
 
 // Renders straight away once its code is in. A plain lazy component suspends on its first render even
@@ -99,6 +100,12 @@ const PeekPromptModal = lazy(async () => {
 const RoleplayRulesetSheet = lazy(async () => {
   const module = await import("./RoleplayRulesetSheet");
   return { default: module.RoleplayRulesetSheet };
+});
+
+// custom-mods: Game Mode's inventory screen, loaded once a Roleplay ruleset chat opens its bags.
+const RoleplayInventory = lazy(async () => {
+  const module = await import("./RoleplayInventory");
+  return { default: module.RoleplayInventory };
 });
 
 type ChatData = ComponentProps<typeof ChatSettingsDrawer>["chat"];
@@ -414,6 +421,7 @@ export function ChatCommonOverlays({
   // The setup wizard sits below floating windows, so they wait until it closes; their layout is kept.
   const settingsSectionsPoppedOut = useHostHasDetachedDrawers(CHAT_SETTINGS_WINDOW_ID) && !wizardOpen;
   const roleplaySheetChatId = useRoleplaySheetStore((state) => state.open?.chatId);
+  const roleplayInventoryChatId = useRoleplayInventoryStore((state) => state.chatId);
   const chatOpen = !!chat;
   useEffect(() => (chatOpen ? preloadChatSettingsDrawerWhenIdle() : undefined), [chatOpen]);
   return (
@@ -449,6 +457,15 @@ export function ChatCommonOverlays({
       {chat?.mode === "roleplay" && roleplaySheetChatId === chat.id && (
         <Suspense fallback={null}>
           <RoleplayRulesetSheet chatId={chat.id} metadata={parseChatMetadata(chat.metadata)} />
+        </Suspense>
+      )}
+      {chat?.mode === "roleplay" && roleplayInventoryChatId === chat.id && (
+        <Suspense fallback={null}>
+          <RoleplayInventory
+            chatId={chat.id}
+            personaId={chat.personaId ?? null}
+            metadata={parseChatMetadata(chat.metadata)}
+          />
         </Suspense>
       )}
       {chat && (

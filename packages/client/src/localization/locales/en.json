@@ -1140,6 +1140,7 @@
   "chat.settings.ruleset.newRuleset": "New ruleset…",
   "chat.settings.ruleset.noMembers": "Nobody here has a sheet yet. Add a persona or characters, then use Add missing sheets.",
   "chat.settings.ruleset.none": "None",
+  "chat.settings.ruleset.openInventory": "Open the party's inventory",
   "chat.settings.ruleset.openSheet": "Open sheet",
   "chat.settings.ruleset.openSheetOf": "Open {{name}}'s sheet",
   "chat.settings.ruleset.pinFailed": "The ruleset could not be set.",
