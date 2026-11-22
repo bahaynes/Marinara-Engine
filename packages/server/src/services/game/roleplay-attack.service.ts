@@ -231,7 +231,7 @@ export async function resolveRoleplayAttackTags(
       const key = normalizeCharacterLookupName(member);
       const written = rulesetFightLiveStates({ encounter: step.state } as RulesetFightState)[key];
       if (written) live[key] = changed[key] = written;
-    } else if (health !== undefined && maxHealth !== undefined) {
+    } else if (hits.length && health !== undefined && maxHealth !== undefined) {
       // ponytail: a felled foe's entry is emptied, so a later one of the same name starts whole.
       // Upgrade path: keep the dead and let the narrator number a new one.
       live[foeKey] = changed[foeKey] =
