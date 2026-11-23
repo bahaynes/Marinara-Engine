@@ -506,13 +506,13 @@ const TOOLS = [
   {
     name: "mari_packages",
     description:
-      "List installed capability packages (id, name, version, kind), or uninstall one by id. Uninstall dry-runs by default: it shows the installed entry. With apply=true it deactivates the package, removes it, drops it from every chat's active agents and deletes its agent configs; packages with server or client code need a container restart (marinara_idle, then marinara_deploy) to unload fully.",
+      "List installed capability packages (id, name, version, kind), install one from the instance's catalog, or uninstall one by id. Install dry-runs by default: it shows the catalog version and artifact hash it would install; with apply=true it installs that exact build (server packages then need a restart: marinara_idle, then marinara_deploy). Uninstall dry-runs by default: it shows the installed entry. With apply=true it deactivates the package, removes it, drops it from every chat's active agents and deletes its agent configs; packages with server or client code need a container restart (marinara_idle, then marinara_deploy) to unload fully.",
     inputSchema: {
       type: "object",
       properties: {
         instance: INSTANCE_PROP,
-        action: { type: "string", enum: ["list", "uninstall"] },
-        id: { type: "string", description: "Package id, e.g. foreshadow-vault (uninstall only)." },
+        action: { type: "string", enum: ["list", "install", "uninstall"] },
+        id: { type: "string", description: "Package id, e.g. foreshadow-vault (install and uninstall)." },
         apply: APPLY_PROP,
         reason: REASON_PROP,
       },
@@ -660,8 +660,31 @@ async function dispatchTool(name, rawArgs) {
           version: pkg?.version ?? pkg?.manifest?.version,
           kind: pkg?.manifest?.kind,
         }));
-      if (rest.action !== "uninstall") throw new Error(`Unknown mari_packages action: ${rest.action}`);
       const id = String(rest.id ?? "").trim();
+      if (rest.action === "install") {
+        if (!id) throw new Error("install needs an id");
+        // The catalog entry carries the version and artifact hash the install route checks the download against.
+        const catalog = await requestInContainer(instance, "GET", "/api/capability-packages/catalog");
+        const packages = Array.isArray(catalog) ? catalog : (catalog?.packages ?? []);
+        const pick = packages.find((pkg) => (pkg?.id ?? pkg?.manifest?.id) === id);
+        if (!pick) throw new Error(`Package ${id} is not in ${instance || "marinara"}'s catalog`);
+        const expectedVersion = pick.version ?? pick.manifest?.version;
+        const expectedArtifactSha256 = pick.artifact?.sha256 ?? pick.artifactSha256;
+        const current = list.find((pkg) => pkg?.id === id || pkg?.manifest?.id === id);
+        const plan = { id, expectedVersion, expectedArtifactSha256, installedVersion: current?.version ?? null };
+        if (rest.apply !== true) return { mode: "dry-run", wouldInstall: plan };
+        const result = await requestInContainer(
+          instance,
+          "POST",
+          `/api/capability-packages/${encodeURIComponent(id)}/install`,
+          {
+            expectedVersion,
+            expectedArtifactSha256,
+          },
+        );
+        return { mode: "applied", installed: plan, reason: rest.reason ?? null, status: result?.status ?? null };
+      }
+      if (rest.action !== "uninstall") throw new Error(`Unknown mari_packages action: ${rest.action}`);
       if (!id) throw new Error("uninstall needs an id");
       const entry = list.find((pkg) => pkg?.id === id || pkg?.manifest?.id === id);
       if (!entry) throw new Error(`Package ${id} is not installed on ${instance || "marinara"}`);
