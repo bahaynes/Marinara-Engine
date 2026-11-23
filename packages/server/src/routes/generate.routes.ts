@@ -10635,6 +10635,19 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
             // the two are the same bytes, so the distinction is carried out of band rather
             // than by a marker in the text that would change how an older turn reads.
             const dicePoolSession = await ensureGameDicePoolSession();
+            // The attack, check and sheet passes share the same catalog entries for this turn.
+            const loadTurnCatalogs = async () => {
+              if (turnRulesetCatalogs) return turnRulesetCatalogs;
+              const context = await loadGameRulesetSheetContext(
+                app.db,
+                input.chatId,
+                turnGameRuleset,
+                input.regenerateMessageId,
+              );
+              return (turnRulesetCatalogs = context
+                ? await loadTurnRulesetCatalogs(context, fullResponse, { force: true })
+                : {});
+            };
             // custom-mods: a Roleplay reply's [attack:] tags, settled by Game Mode's combat resolver.
             // ponytail: the checks below read the turn's starting sheets, so a check that buys
             // something for a character the attacks hurt keeps the purchase and loses the damage.
@@ -10647,7 +10660,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                     cards: chatMeta.gameCharacterCards,
                     playerName: personaName || null,
                     live: await turnStartRulesetLive(),
-                    partyCatalogs: turnRulesetCatalogs ?? {},
+                    partyCatalogs: loadTurnCatalogs,
                     // What each member carries in Game Mode's bags going into this turn.
                     partyItems: async () => {
                       const book = await loadGameInventoryItemBook(
@@ -10704,18 +10717,7 @@ export async function generateRoutes(app: FastifyInstance, options: GenerateRout
                 toolDiceRollResults,
               ),
               // The prompt, check and sheet passes share the same catalog entries for this turn.
-              loadCatalogs: async () => {
-                if (turnRulesetCatalogs) return turnRulesetCatalogs;
-                const context = await loadGameRulesetSheetContext(
-                  app.db,
-                  input.chatId,
-                  turnGameRuleset,
-                  input.regenerateMessageId,
-                );
-                return (turnRulesetCatalogs = context
-                  ? await loadTurnRulesetCatalogs(context, fullResponse, { force: true })
-                  : {});
-              },
+              loadCatalogs: loadTurnCatalogs,
             });
             // A check that BOUGHT something (a point of will for an automatic success) paid for it
             // before the dice were thrown, so the points are already gone. That state is what the

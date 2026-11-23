@@ -193,4 +193,39 @@ const record = (content: string) => readAttackTagAttributes(/\[attack:\s*([^\]]+
   assert.match(reminder, /- Tamsin Reed: .*Quarterstaff.*1 worn/);
 }
 
+// Lazy partyCatalogs loader runs once per reply with [attack:] tags and is skipped without them.
+{
+  let loads = 0;
+  const loader = async () => {
+    loads++;
+    return {};
+  };
+  const none = await resolveRoleplayAttackTags("No attacks here.", {
+    definition,
+    packageId: null,
+    cards,
+    playerName: "Brenna Holt",
+    live: {},
+    partyCatalogs: loader,
+    bestiary,
+  });
+  assert.equal(none.resolved, 0);
+  assert.equal(loads, 0, "no [attack:] tags should not load catalogs");
+
+  const two = await resolveRoleplayAttackTags(
+    '[attack: who="Brenna" weapon="Longsword" target="Thorn Lurker"]\n[attack: who="Brenna" weapon="Longsword" target="Thorn Lurker"]',
+    {
+      definition,
+      packageId: null,
+      cards,
+      playerName: "Brenna Holt",
+      live: {},
+      partyCatalogs: loader,
+      bestiary,
+    },
+  );
+  assert.equal(two.resolved, 2);
+  assert.equal(loads, 1, "multiple [attack:] tags load partyCatalogs once");
+}
+
 console.log("roleplay attack tag regression passed");

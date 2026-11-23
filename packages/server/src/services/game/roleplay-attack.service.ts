@@ -60,7 +60,8 @@ export interface RoleplayAttackInput {
   playerName: string | null;
   /** The turn's live sheet state so far (start of turn plus what checks spent). */
   live: RulesetLiveStates | null;
-  partyCatalogs: RulesetCatalogEntriesById;
+  /** The party's catalog entries (or a loader run once on the first attack). */
+  partyCatalogs: RulesetCatalogEntriesById | (() => Promise<RulesetCatalogEntriesById>);
   /** The ruleset's creature catalogs; read from the package when left out. */
   bestiary?: RulesetCatalogEntriesById;
   /** What each party member carries in Game Mode's bags (`rulesetCardItems`), as a fight reads it: a weapon
@@ -119,6 +120,8 @@ export async function resolveRoleplayAttackTags(
   if (!hasAttackTags(content) || !input.definition.combat) return none;
   const names = cardNames(input.cards);
   let bestiary: RulesetCatalogEntriesById | null = input.bestiary ?? null;
+  let partyCatalogs: RulesetCatalogEntriesById | null =
+    typeof input.partyCatalogs === "function" ? null : input.partyCatalogs;
   let partyItems: ((name: string) => RulesetSheetItem[]) | undefined | null = null;
   const live: RulesetLiveStates = { ...(input.live ?? {}) };
   const changed: RulesetLiveStates = {};
@@ -143,6 +146,9 @@ export async function resolveRoleplayAttackTags(
     if (!findRulesetCreature(bestiary, creatureName(foeName)))
       return refuse(`"${creatureName(foeName)}" is not in the bestiary; name the creature as the bestiary does.`);
 
+    if (partyCatalogs === null) {
+      partyCatalogs = typeof input.partyCatalogs === "function" ? await input.partyCatalogs() : input.partyCatalogs;
+    }
     if (partyItems === null) partyItems = input.partyItems ? await input.partyItems() : undefined;
     const foeKey = `${FOE_PREFIX}${normalizeCharacterLookupName(foeName)}`;
     const stored = live[foeKey]?.tracks;
@@ -162,7 +168,7 @@ export async function resolveRoleplayAttackTags(
       cards: input.cards,
       playerName: input.playerName,
       live,
-      partyCatalogs: input.partyCatalogs,
+      partyCatalogs,
       bestiary,
       ...(partyItems ? { items: partyItems } : {}),
     });
