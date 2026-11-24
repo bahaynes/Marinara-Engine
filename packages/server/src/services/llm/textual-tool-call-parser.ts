@@ -8,7 +8,7 @@ function toolCallId(index: number): string {
 function normalizeArguments(value: unknown): Record<string, unknown> {
   if (isRecord(value)) return value;
   if (typeof value !== "string") return {};
-  return parseJsonishObject(value) ?? {};
+  return parseJsonishObjectWithGemmaDelimiters(value) ?? {};
 }
 
 function parseJsonishObject(value: string): Record<string, unknown> | null {
@@ -214,6 +214,7 @@ const MINIMAX_BLOCK_RE = /<minimax:tool_call>[\s\S]*?(?:<\/minimax:tool_call>|$)
 const MINIMAX_INVOKE_RE = /<invoke name="([^"]*)">/gi;
 const MINIMAX_PARAM_RE = /<parameter name="([^"]*)">/gi;
 const MISTRAL_MARK_RE = /^[ \t]*\[TOOL_CALLS\]/gm;
+const GEMMA4_OPEN_RE = /<\|tool_call>call:([^\s{]+)\s*(?=\{)/gi;
 
 const JSON_CALL_RE = /<tool_call>\s*(\{[\s\S]*?\})\s*<\/tool_call>/gi;
 
@@ -318,6 +319,9 @@ function parseMarkupCalls(content: string): MarkupCall[] {
     for (const m of spans(block[0], MINIMAX_INVOKE_RE, "</invoke>")) {
       calls.push({ raw: { name: m.head[1], arguments: params(m.body, MINIMAX_PARAM_RE, "</parameter>") } });
     }
+  }
+  for (const m of spans(content, GEMMA4_OPEN_RE, "<tool_call|>")) {
+    calls.push({ raw: { name: m.head[1], arguments: m.body.trim() }, range: [m.start, m.end] });
   }
   // Mistral: the marker counts only at the start of a line, and its JSON must follow it directly.
   const marks = [...content.matchAll(MISTRAL_MARK_RE)];

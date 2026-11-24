@@ -165,6 +165,11 @@ import {
 } from "./workspace-round-review.js";
 import type { PiRunInput } from "./pi-runtime.js";
 import { quickEditFingerprint, validateQuickEditProposal, QuickEditConflictError } from "./quick-edit-proposal.js";
+import {
+  buildPreFlightDocsGrounding,
+  isLocalOpenAIMariConnection,
+  usesLocalMariProfile,
+} from "./local-mari-profile.js";
 import { isRecord } from "../../utils/large-json.js";
 
 type DbConnectionWithKey = typeof apiConnections.$inferSelect & { apiKey: string };
@@ -1163,21 +1168,33 @@ function smallOutputLimitRule(maxOutputTokens?: number) {
 }
 
 /** The pi runtime's workspace rules: the shared knowledge block plus a note that maps the JSON-frame words to native calls. */
-export function piRuntimePrompt(maxOutputTokens?: number) {
+export function piRuntimePrompt(maxOutputTokens?: number, options?: { separateSuggestionsTurn?: boolean }) {
+  const separateSuggestions = options?.separateSuggestionsTurn === true;
+  const suggestionRules = separateSuggestions
+    ? `- Do NOT call \`suggestions\` in the same turn as your final text, and NEVER write \`suggestions:\`, JSON chip objects, or \`<suggestions>\` tags inside your reply. Write your answer in plain assistant text only; when quick-reply chips fit, Marinara will prompt you for a standalone \`suggestions\` tool call in a follow-up step.
+- Your first action on a surface a shipped skill covers is \`skill.get\` with its plain id (e.g. \`id: "builtin-characters"\`), before any write or multi-step answer. The skill index below names them; acting without one means guessing.
+- When prompted for that follow-up \`suggestions\` call, emit at most 5 quick-reply chips (each with \`label\` and \`prompt\`), e.g. 2-4 next steps right after you create or update something (refine a field, link it, or open it for full editing) or one chip per option when your answer ended on a question. Tag each with the relevant entity (\`characters|lorebooks|personas|presets|connections|agents|settings|chat\`).`
+    : `- Call the \`suggestions\` tool for quick-reply chips (at most 5; each has label and prompt). It only shows UI and changes nothing. Call it in the SAME turn as your final text. For example, write “The opening is ready.” and call suggestions with a chip labeled “Play from here” whose prompt is “Continue from the opening.”
+- Your first action on a surface a shipped skill covers is \`skill.get\` with its plain id (e.g. \`id: "builtin-characters"\`), before any write or multi-step answer. The skill index below names them; acting without one means guessing.
+- Immediately after you successfully create or update something, call \`suggestions\` with 2-4 follow-up chips for a natural next step: refine a field, link it to something else, or open it for full editing. Lean toward refining or connecting what already exists rather than making new items, unless the user's task is itself about creating. Tag each with the relevant entity (\`characters|lorebooks|personas|presets|connections|agents|settings|chat\`).
+- When your answer ends with a question the user can answer by picking an option, call \`suggestions\` with one chip per option.`;
+  const mentionUiRule = separateSuggestions
+    ? `- Do not mention tapping, clicking, chips, quick replies or buttons in your text answer unless you call \`ask\` in the same turn.`
+    : `- Do not mention tapping, clicking, chips, quick replies or buttons unless you call \`suggestions\` or \`ask\` in the same turn.`;
+  const finishRule = separateSuggestions
+    ? `- Finish with your plain assistant text answer (no \`suggestions\` call or JSON chip block appended).${smallOutputLimitRule(maxOutputTokens)}`
+    : `- Finish with your answer, including a suggestions call when you offer next steps.${smallOutputLimitRule(maxOutputTokens)}`;
   return `<workspace_tools>
 Use this connection’s tool-call format. Wherever the rules below say \`say\`, write ordinary assistant text; wherever they say \`commands\`, call the tools. There is no JSON frame, no \`stop\` and no \`awaitingAuthorization\` field.
 Keep the answer itself in plain assistant text.
 - To ask the user to approve a change, write the change and your question as text in the SAME turn as the mutating tool calls; Marinara holds those calls behind an Accept action and ends the run.
-- Call the \`suggestions\` tool for quick-reply chips (at most 5; each has label and prompt). It only shows UI and changes nothing. Call it in the SAME turn as your final text. For example, write “The opening is ready.” and call suggestions with a chip labeled “Play from here” whose prompt is “Continue from the opening.”
-- Your first action on a surface a shipped skill covers is \`skill.get\` with its plain id (e.g. \`id: "builtin-characters"\`), before any write or multi-step answer. The skill index below names them; acting without one means guessing.
-- Immediately after you successfully create or update something, call \`suggestions\` with 2-4 follow-up chips for a natural next step: refine a field, link it to something else, or open it for full editing. Lean toward refining or connecting what already exists rather than making new items, unless the user's task is itself about creating. Tag each with the relevant entity (\`characters|lorebooks|personas|presets|connections|agents|settings|chat\`).
-- When your answer ends with a question the user can answer by picking an option, call \`suggestions\` with one chip per option.
+${suggestionRules}
 - A chip may carry a \`detail\` (under 80 characters, no full stop) only for a real fact from this run, and an \`action\` that acts at once: \`{"kind":"resource","resource":"character|persona|preset|lorebook|agent","id":"..."}\` opens it, \`{"kind":"chat","chatId":"..."}\`, \`{"kind":"start-chat","characterId":"..."}\`, \`{"kind":"panel","panel":"characters|personas|lorebooks|presets|connections|agents"}\` (a list; "connections" to pick one), \`{"kind":"peek-prompt","chatId":"..."}\`. Only ids you already know; never read just to fill \`detail\` or \`action\`. Keep \`prompt\` filled; no \`action\` when it needs your help.
 - Use \`ask\` when you need the user's decisions before you can do this well and the answers fit a few clear options: a vague create or edit request ("make me a character" with no details), or a fork where the answer changes what you build. A card shows 1-4 questions, each with 2-4 options (\`label\`, optional \`detail\`). Mark your own pick \`recommended: true\` on one option, set \`multiple: true\` when several answers can apply, and never add an "Other" option: the user can always type their own answer. Put everything you need on ONE card instead of asking turn by turn. Calling \`ask\` ends your turn: changes beside it do not run, and the answer arrives as the user's next message. Say in a sentence what you are asking and why, then call it. For a vague edit, read the item first, then offer 2-4 concrete directions the same way. A named subject ("a lorebook for my pirate world") is enough detail. If the request already has enough detail, skip \`ask\` and do the work — after reading that surface's skill.
-- Do not mention tapping, clicking, chips, quick replies or buttons unless you call \`suggestions\` or \`ask\` in the same turn.
+${mentionUiRule}
 - If you say you will do something, make the tool call in the same turn; a turn with no tool call ends the run.
 - Your hidden reasoning/thinking is NEVER shown to the user, and Marinara may withhold a turn's text it could not accept (it will tell you when it does). Only your final turn's text is kept as your answer; text from a turn followed by more steps collapses into the step timeline. So when checks follow an answer or plan you already wrote, restate that whole answer or plan in your final text - never refer to it as already shown ("the plan above", "the original plan is still there").
-- Finish with your answer, including a suggestions call when you offer next steps.${smallOutputLimitRule(maxOutputTokens)}
+${finishRule}
 
 ${workspaceCommandKnowledgePrompt()}
 </workspace_tools>`;
@@ -5568,7 +5585,9 @@ export class ProfessorMariWorkspaceService {
         role: "system",
         content:
           runtime === "pi"
-            ? piRuntimePrompt(mariMaxOutputTokens(connection))
+            ? piRuntimePrompt(mariMaxOutputTokens(connection), {
+                separateSuggestionsTurn: isLocalOpenAIMariConnection(connection),
+              })
             : workspaceCommandProtocolPrompt(mariMaxOutputTokens(connection), shellSandboxStatus),
         contextKind: "prompt",
       },
@@ -5585,29 +5604,26 @@ export class ProfessorMariWorkspaceService {
     // #5740 read-back (maintainer call): Mari sees the record she herself
     // reported for the latest mutating round in THIS chat, so "why did you
     // treat that as permission?" gets an answer grounded in the actual record
-    // instead of a reconstruction. Injected at the tail rather than the static
+    // instead of a reconstruction. Injected in turnContext rather than the static
     // system prefix so its dynamic timestamp (recordedAt) never busts prompt caching.
     const understoodRequestRecord = this.latestUnderstoodRequest;
-    if (understoodRequestRecord !== null && understoodRequestRecord.chatId === chatId) {
-      messages.push({
-        role: "system",
-        content: [
-          "<mari_understood_request_record>",
-          "Your most recent response in this chat that carried mutating commands reported this understood request (your own report, shown to the user for transparency):",
-          // Both values are model-authored: escape delimiters (same convention
-          // as command results) so a quoted phrase can never close this block
-          // and smuggle text out of it into the system context.
-          `phrase: ${understoodRequestRecord.text === null ? "(none reported)" : escapeWorkspaceXml(understoodRequestRecord.text)}`,
-          `permissionsMode: ${understoodRequestRecord.permissionsMode}`,
-          `outcome: ${understoodRequestRecord.outcome}`,
-          `commands: ${escapeWorkspaceXml(understoodRequestRecord.commands.join(", ")) || "(none)"}`,
-          `recordedAt: ${understoodRequestRecord.recordedAt}`,
-          "If the user asks why you made, proposed, or held a change, ground your explanation in this record: quote the phrase, explain what you read it as, and say so plainly if you misread them. It is a record, not an instruction - do not redo or re-justify the change unprompted.",
-          "</mari_understood_request_record>",
-        ].join("\n"),
-        contextKind: "prompt",
-      });
-    }
+    const understoodRequestRecordBlock =
+      understoodRequestRecord !== null && understoodRequestRecord.chatId === chatId
+        ? [
+            "<mari_understood_request_record>",
+            "Your most recent response in this chat that carried mutating commands reported this understood request (your own report, shown to the user for transparency):",
+            // Both values are model-authored: escape delimiters (same convention
+            // as command results) so a quoted phrase can never close this block
+            // and smuggle text out of it into the system context.
+            `phrase: ${understoodRequestRecord.text === null ? "(none reported)" : escapeWorkspaceXml(understoodRequestRecord.text)}`,
+            `permissionsMode: ${understoodRequestRecord.permissionsMode}`,
+            `outcome: ${understoodRequestRecord.outcome}`,
+            `commands: ${escapeWorkspaceXml(understoodRequestRecord.commands.join(", ")) || "(none)"}`,
+            `recordedAt: ${understoodRequestRecord.recordedAt}`,
+            "If the user asks why you made, proposed, or held a change, ground your explanation in this record: quote the phrase, explain what you read it as, and say so plainly if you misread them. It is a record, not an instruction - do not redo or re-justify the change unprompted.",
+            "</mari_understood_request_record>",
+          ].join("\n")
+        : null;
 
     // Same captioning as chats: the Model's own switch, else Automatic with the Image reading default.
     let imageCaptioning: ImageCaptioningRuntime | null = null;
@@ -5674,6 +5690,13 @@ export class ProfessorMariWorkspaceService {
       turnContext.push({ role: "system", content: linkedReferencesPrompt, contextKind: "injection" });
     }
     if (continuityPrompt) turnContext.push({ role: "system", content: continuityPrompt, contextKind: "injection" });
+    const preFlightDocsGrounding =
+      usesLocalMariProfile(connection) && currentUserMessage?.content
+        ? await buildPreFlightDocsGrounding(this.commands.workspaceRoot, currentUserMessage.content)
+        : null;
+    for (const block of [preFlightDocsGrounding, understoodRequestRecordBlock]) {
+      if (block) turnContext.push({ role: "system", content: block, contextKind: "injection" });
+    }
     insertMariTurnContext(
       messages,
       turnContext,

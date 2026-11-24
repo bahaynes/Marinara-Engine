@@ -92,7 +92,7 @@ try {
         name: "Regression",
         provider,
         model: "fake-model",
-        baseUrl: "http://127.0.0.1:1/v1",
+        baseUrl: "https://api.example.invalid/v1",
         apiKey: "",
         maxContext: 32768,
         defaultParameters,
