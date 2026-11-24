@@ -3680,7 +3680,7 @@ export class MariDbService {
           comment === (typeof existing.comment === "string" ? existing.comment : "")
         ) {
           throw new Error(
-            'character.update needs a patch field such as name, summary, description, personality, scenario, firstMes, creatorNotes, backstory, appearance, aboutMe, publicFace, tags, or comment (no known field arrived). Send them top-level or inside "patch" or "data"; unknown keys are dropped.',
+            `character.update needs a patch field such as name, summary, description, personality, scenario, firstMes, creatorNotes, backstory, appearance, aboutMe, publicFace, tags, or comment (no known field arrived; ${describeReceived(args.patch ?? args.data ?? args)}). Send them top-level or inside "patch" or "data"; unknown keys are dropped.`,
           );
         }
         const name =
@@ -4002,7 +4002,7 @@ export class MariDbService {
         assignListField(patch, data, ["nameAliases", "name_aliases"], "nameAliases");
         if (Object.keys(patch).length <= 1) {
           throw new Error(
-            'persona.update needs a patch field such as name, summary, mes_example, description, personality, scenario, backstory, appearance, imageAppearance, imageAppearanceEnabled, tags, nameAliases, comment, creator, or creatorNotes (no known field arrived). Send them top-level or inside "patch" or "data"; unknown keys are dropped.',
+            `persona.update needs a patch field such as name, summary, mes_example, description, personality, scenario, backstory, appearance, imageAppearance, imageAppearanceEnabled, tags, nameAliases, comment, creator, or creatorNotes (no known field arrived; ${describeReceived(args.patch ?? args.data ?? args)}). Send them top-level or inside "patch" or "data"; unknown keys are dropped.`,
           );
         }
         return this.executePersonaMutation(
@@ -5295,7 +5295,7 @@ export class MariDbService {
         this.assignLorebookActionFields(patch, data);
         if (Object.keys(patch).length <= 1) {
           throw new Error(
-            'lorebook.update needs a patch field such as name, description, category, tags, enabled, global, scanDepth, tokenBudget, entryLimit, recursiveScanning, excludeFromVectorization, vectorQueryDepth, vectorIncludeAssistant, vectorScoreThreshold, or vectorMaxResults (no known field arrived). Send them top-level or inside "patch" or "data"; entries change through lorebook.updateEntry.',
+            `lorebook.update needs a patch field such as name, description, category, tags, enabled, global, scanDepth, tokenBudget, entryLimit, recursiveScanning, excludeFromVectorization, vectorQueryDepth, vectorIncludeAssistant, vectorScoreThreshold, or vectorMaxResults (no known field arrived; ${describeReceived(args.patch ?? args.data ?? args)}). Send them top-level or inside "patch" or "data"; entries change through lorebook.updateEntry.`,
           );
         }
         return this.executeMutation(

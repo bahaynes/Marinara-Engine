@@ -73,6 +73,12 @@ import {
   reviewRoundClaim,
   shouldDeferRoundMutations,
 } from "./workspace-round-review.js";
+import {
+  LOCAL_MARI_MAX_TOOL_ROUNDS,
+  RepeatedCallTracker,
+  isLocalMariConnection,
+  needsLookupFirstNudge,
+} from "./local-mari-profile.js";
 
 // ponytail: a generous safety net per run, not a budget. Upgrade path: derive it from the token budget.
 export const MAX_PI_TOOL_ROUNDS = 400;
@@ -434,6 +440,9 @@ export async function runPiLoop(input: PiRunInput & { commands: WorkspaceCommand
   let invalidAsks = 0;
   let heldClaimRepaired = false;
   let chipRepair: "unused" | "pending" | "used" = "unused";
+  const isLocalMari = isLocalMariConnection(input.connection);
+  const repeatedCalls = new RepeatedCallTracker();
+  let lookupNudgeUsed = false;
   let toolRounds = 0;
   let limitReached = false;
   let lookupRetried = false;
@@ -457,7 +466,7 @@ export async function runPiLoop(input: PiRunInput & { commands: WorkspaceCommand
       stream.end();
     }
   };
-  const maxToolRounds = input.maxToolRounds ?? MAX_PI_TOOL_ROUNDS;
+  const maxToolRounds = input.maxToolRounds ?? (isLocalMari ? LOCAL_MARI_MAX_TOOL_ROUNDS : MAX_PI_TOOL_ROUNDS);
   // Replay metadata of each tool turn, by its first tool call id (the id is stable across the transcript).
   const metadataByCallId = new Map<string, Record<string, unknown>>();
   // #9342: `mari images look` pictures by tool call. pi's model is text-only, so they stay out of pi's own messages and
@@ -965,15 +974,37 @@ export async function runPiLoop(input: PiRunInput & { commands: WorkspaceCommand
           "Your answer ends with a question but offers no chips. Call only the `suggestions` tool now: 2-4 chips, each one a possible answer to that question (for a list of proposals: apply all, then the main single ones), label under 40 characters. Write no text.",
       };
     }
-    if (current.calls.length === 0) return "done" as const;
+    if (current.calls.length === 0) {
+      if (isLocalMari && !steerWaiting) {
+        const nudge = needsLookupFirstNudge({
+          userText: last.content,
+          callsCount: current.calls.length,
+          commandResults: input.commandResults,
+          alreadyNudged: lookupNudgeUsed,
+        });
+        if (nudge) {
+          lookupNudgeUsed = true;
+          return { kind: "repair" as const, prompt: nudge };
+        }
+      }
+      return "done" as const;
+    }
     const repeatedFailure = reviewRepeatedFailures(reviewState, current.results);
     if (repeatedFailure !== null) {
       addNote(repeatedFailure, "retry", "warning");
       stopRequested = true;
-    } else if (toolRounds >= maxToolRounds) {
-      // The final summary and the note follow once pi's loop has ended.
-      limitReached = true;
-      stopRequested = true;
+    } else {
+      const repeatCheck = repeatedCalls.recordRound(current.calls);
+      if (repeatCheck.kind === "stop") {
+        addNote(repeatCheck.message, "retry", "warning");
+        stopRequested = true;
+      } else if (repeatCheck.kind === "nudge") {
+        return { kind: "repair" as const, prompt: repeatCheck.prompt };
+      } else if (toolRounds >= maxToolRounds) {
+        // The final summary and the note follow once pi's loop has ended.
+        limitReached = true;
+        stopRequested = true;
+      }
     }
     return "done" as const;
   };

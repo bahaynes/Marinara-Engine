@@ -160,6 +160,7 @@ import {
 } from "./workspace-round-review.js";
 import type { PiRunInput } from "./pi-runtime.js";
 import { quickEditFingerprint, validateQuickEditProposal, QuickEditConflictError } from "./quick-edit-proposal.js";
+import { buildPreFlightDocsGrounding, isLocalMariConnection } from "./local-mari-profile.js";
 import { isRecord } from "../../utils/large-json.js";
 
 type DbConnectionWithKey = typeof apiConnections.$inferSelect & { apiKey: string };
@@ -5546,6 +5547,11 @@ export class ProfessorMariWorkspaceService {
       `</turn_context>`,
     ].join("\n");
 
+    const preFlightDocsGrounding =
+      isLocalMariConnection(connection) && currentUserMessage?.content
+        ? await buildPreFlightDocsGrounding(this.commands.workspaceRoot, currentUserMessage.content)
+        : null;
+
     const tailBlocks = [
       attachedContextPrompt,
       handoffContextPrompt,
@@ -5553,6 +5559,7 @@ export class ProfessorMariWorkspaceService {
       linkedReferencesPrompt,
       understoodRequestRecordBlock,
       continuityPrompt,
+      preFlightDocsGrounding,
       turnContextBlock,
     ].filter((b): b is string => typeof b === "string" && b.trim().length > 0);
 
