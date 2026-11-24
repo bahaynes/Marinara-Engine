@@ -1658,12 +1658,13 @@ export class OpenAIProvider extends BaseLLMProvider {
         body.reasoning_effort = options.reasoningEffort;
       } else if (
         this.isLocalInferenceEndpoint() &&
+        options.enableThinking === true &&
         this.shouldSendParameter(options, "reasoningEffort") &&
         this.hasActiveReasoningEffort(options.reasoningEffort)
       ) {
-        // Local inference servers (llama.cpp, vLLM, Ollama) may launch with thinking off by default
-        // and need both reasoning_effort and chat_template_kwargs.enable_thinking=true to turn it on.
-        body.reasoning_effort = options.reasoningEffort;
+        // Local inference servers (llama.cpp, vLLM, Ollama) may launch with thinking off by default;
+        // when the caller explicitly requests thinking (e.g. Professor Mari pi runtime), forward
+        // chat_template_kwargs.enable_thinking=true without injecting reasoning_effort.
         const templateOptions =
           body.chat_template_kwargs &&
           typeof body.chat_template_kwargs === "object" &&

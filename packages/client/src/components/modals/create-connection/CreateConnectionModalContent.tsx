@@ -654,21 +654,35 @@ export function CreateConnectionModalContent({
           baseUrl: current.accountBaseUrl || selectedMedia.defaultBaseUrl,
           ...(job === "decision"
             ? { provider: JOB_PROVIDER.decision, decisionSource: source as DecisionSource }
-            : job === "voice"
+            : job === "music"
               ? {
-                  provider: JOB_PROVIDER.voice,
-                  audioSource: source,
-                  ...(preset
-                    ? {
-                        model: preset.defaultModel,
-                        ...(preset.defaultVoice ? { audioVoice: preset.defaultVoice } : {}),
-                      }
+                  provider: JOB_PROVIDER.music,
+                  audioGenerationSource: source,
+                  audioMusic: true,
+                  audioSoundEffects: source !== "comfyui",
+                  ...(source === "elevenlabs"
+                    ? { model: "music_v2_5", audioSoundEffectsModel: "eleven_text_to_sound_v2" }
                     : {}),
                 }
-              : selectedMedia.image
-                ? { provider: "image_generation", imageGenerationSource: source, imageService: source }
-                : { provider: "video_generation", videoGenerationSource: source, videoService: source }),
+              : job === "voice"
+                ? {
+                    provider: JOB_PROVIDER.voice,
+                    audioSource: source,
+                    ...(preset
+                      ? {
+                          model: preset.defaultModel,
+                          ...(preset.defaultVoice ? { audioVoice: preset.defaultVoice } : {}),
+                        }
+                      : {}),
+                  }
+                : selectedMedia.image
+                  ? { provider: "image_generation", imageGenerationSource: source, imageService: source }
+                  : { provider: "video_generation", videoGenerationSource: source, videoService: source }),
         });
+        if (job === "music") {
+          await finishAdded(current);
+          return;
+        }
         if (!forJob?.assign && !newChatMode) return openUseFor(current);
         assignJob(current.connectionId, selectedMedia.name);
         await finishAdded(current);

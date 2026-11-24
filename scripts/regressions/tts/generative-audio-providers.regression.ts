@@ -307,6 +307,49 @@ try {
       ),
   );
   await assert.rejects(generateAudioBytes(eleven, "music", "Theme"), /exceeded 62914560 bytes/);
+
+  const comfy = {
+    source: "comfyui" as const,
+    baseUrl: apiBase,
+    apiKey: "",
+    model: "",
+    comfyuiWorkflow: JSON.stringify({
+      "4": {
+        class_type: "MiniMaxMusic3TextEncode",
+        inputs: { caption: "%prompt%", lyrics: "%lyrics%", max_duration: "%duration%", seed: "%seed%" },
+      },
+    }),
+  };
+  await assert.rejects(
+    generateAudioBytes({ ...comfy, comfyuiWorkflow: "" }, "music", "Theme"),
+    /ComfyUI API-format workflow/,
+  );
+  reset((call) => {
+    if (call.method === "POST" && call.url.pathname === "/prompt") {
+      const prompt = (call.body as { prompt: Record<string, { inputs: Record<string, unknown> }> }).prompt;
+      assert.equal(prompt["4"]?.inputs.caption, 'Tavern "Waltz"');
+      assert.equal(prompt["4"]?.inputs.lyrics, "[Instrumental]");
+      assert.equal(prompt["4"]?.inputs.max_duration, 45);
+      assert.equal(typeof prompt["4"]?.inputs.seed, "number");
+      return json({ prompt_id: "comfy-job-1", node_errors: {} });
+    }
+    if (call.method === "GET" && call.url.pathname === "/history/comfy-job-1") {
+      return json({
+        "comfy-job-1": {
+          status: { completed: true, status_str: "success" },
+          outputs: { "9": { audio: [{ filename: "track.mp3", subfolder: "audio", type: "output" }] } },
+        },
+      });
+    }
+    if (call.method === "GET" && call.url.pathname === "/view") {
+      assert.equal(call.url.searchParams.get("filename"), "track.mp3");
+      assert.equal(call.url.searchParams.get("subfolder"), "audio");
+      return audio();
+    }
+    throw new Error(`Unexpected ComfyUI request: ${call.method} ${call.url.pathname}`);
+  });
+  const comfyResult = await generateAudioBytes(comfy, "music", 'Tavern "Waltz"', { lengthMs: 45_000 });
+  assert.deepEqual(comfyResult, bytes);
 } finally {
   globalThis.fetch = originalFetch;
   rmSync(directory, { recursive: true, force: true });

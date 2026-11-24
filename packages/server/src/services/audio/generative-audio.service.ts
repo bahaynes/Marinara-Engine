@@ -53,6 +53,7 @@ function testRequestIdentity(config: ResolvedConfig) {
         config.callbackUrl,
         config.musicEndpoint,
         config.soundEffectsEndpoint,
+        config.comfyuiWorkflow,
         config.requestFormat,
         config.responseFormat,
         config.music,
@@ -154,6 +155,7 @@ export async function resolveGenerativeAudioConfig(db: DB, requestedId?: string 
     callbackUrl: row.audioGenerationCallbackUrl || undefined,
     musicEndpoint: row.audioMusicEndpoint || undefined,
     soundEffectsEndpoint: row.audioSoundEffectsEndpoint || undefined,
+    comfyuiWorkflow: row.comfyuiWorkflow || undefined,
     requestFormat: row.audioGenerationFormat === "chat_completions" ? "chat_completions" : "binary",
     responseFormat: "mp3",
     music: audioConnectionSupportsGeneration(row, "music"),
@@ -168,7 +170,9 @@ const testPublicationTails = new Map<string, Promise<GeneratedAudioAsset>>();
 /** Report each usable capability independently; checking readiness never calls a provider. */
 export async function resolveGenerativeAudioReadiness(db: DB, requestedId?: string | null) {
   const config = await resolveGenerativeAudioConfig(db, requestedId);
-  const authorized = config.source === "custom" || Boolean(config.apiKey);
+  const authorized =
+    config.source === "custom" ||
+    (config.source === "comfyui" ? Boolean(config.comfyuiWorkflow?.trim()) : Boolean(config.apiKey));
   let music = config.music && authorized;
   const soundEffects = config.soundEffects && authorized;
   if (music && config.source === "sunoapi") {
@@ -302,7 +306,7 @@ export async function generateAudioAsset(
       `${request.kind} generation is not enabled for this Music & Sound Effects connection`,
     );
   }
-  if (config.source !== "custom" && !config.apiKey)
+  if (config.source !== "custom" && config.source !== "comfyui" && !config.apiKey)
     throw new AudioGenerationConfigurationError("Audio generation API key is not configured");
   const prompt = request.prompt.trim().replace(/\s+/g, " ");
   logDebugOverride(
