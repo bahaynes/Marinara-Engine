@@ -40,16 +40,18 @@ const GOOD_NEWS = new Set<ServiceId>([
  * The model types a tile offers, in chip and filter order (Text = chat). Decision lists services with decision
  * models of their own (NanoGPT) and decision servers, not every chat service whose models could answer one.
  */
-const TYPES = ["text", "image", "video", "voice", "decision"] as const;
+const TYPES = ["text", "image", "video", "voice", "music", "decision"] as const;
 type ModelType = (typeof TYPES)[number];
 export const typesOf = (key: ServiceId): ModelType[] => {
   const kinds = kindsOf(key);
   return TYPES.filter((type) =>
     type === "text"
       ? kinds.includes("chat") || key === "local_model"
-      : type === "decision"
-        ? !!NATIVE_DECISION_SOURCE[key] || mediaBackendOf(key)?.job === "decision"
-        : kinds.includes(type as never),
+      : type === "music"
+        ? mediaBackendOf(key)?.job === "music"
+        : type === "decision"
+          ? !!NATIVE_DECISION_SOURCE[key] || mediaBackendOf(key)?.job === "decision"
+          : kinds.includes(type as never),
   );
 };
 

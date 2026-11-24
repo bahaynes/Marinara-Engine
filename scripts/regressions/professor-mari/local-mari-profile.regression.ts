@@ -56,6 +56,7 @@ try {
     await provider.chatComplete([{ role: "user", content: "hi" }], {
       model: "local-model",
       reasoningEffort: "high",
+      enableThinking: true,
       temperature: 0.4,
     });
     await provider.chatComplete([{ role: "user", content: "hi" }], {
@@ -68,11 +69,11 @@ try {
   }
   const [highBody, offBody] = capturedBodies;
   assert.ok(highBody && offBody);
-  assert.equal(highBody.reasoning_effort, "high", "custom local endpoint should forward active reasoning_effort");
+  assert.equal("reasoning_effort" in highBody, false, "custom local endpoint must not inject reasoning_effort");
   assert.equal(
     (highBody.chat_template_kwargs as Record<string, unknown> | undefined)?.enable_thinking,
     true,
-    "custom local endpoint should set enable_thinking: true for active reasoningEffort",
+    "custom local endpoint should set enable_thinking: true when enableThinking is requested",
   );
   assert.equal(offBody.reasoning_effort, "none");
   assert.equal((offBody.chat_template_kwargs as Record<string, unknown> | undefined)?.enable_thinking, false);

@@ -43,6 +43,7 @@ const JOB_OF: Partial<Record<UseKind, JobKey>> = {
   image: "images",
   video: "video",
   audio: "voice",
+  music: "music",
   decision: "decision",
 };
 type Use = { kind: UseKind; job: JobKey; model: string; name?: string; rowId?: string; typed?: true };
@@ -200,7 +201,7 @@ export function UseForStep({ target, service, accounts, accountName, job, servic
     }
     const backend = mediaBackendOf(service);
     return mediaRowFor(
-      use.kind,
+      use.kind === "music" ? "audio" : use.kind,
       account,
       use.model,
       use.name,

@@ -2,12 +2,13 @@ import { setTimeout as delay } from "node:timers/promises";
 import { isTtsLocalUrlsEnabled } from "../../config/runtime-config.js";
 import { safeFetch, validateOutboundUrl } from "../../utils/security.js";
 import { generateCompatibleGameAudio } from "../game/compatible-audio.js";
+import { generateComfyUiAudio } from "./comfyui-audio.js";
 import { detectTTSAudioMimeType } from "./audio-content-type.js";
 import { sanitizeApiError } from "../llm/base-provider.js";
 import { privateErrorLogFields } from "../../lib/logger.js";
 
 export interface GenerativeAudioProviderConfig {
-  source: "elevenlabs" | "sunoapi" | "custom";
+  source: "elevenlabs" | "sunoapi" | "custom" | "comfyui";
   baseUrl: string;
   apiKey: string;
   model: string;
@@ -15,6 +16,7 @@ export interface GenerativeAudioProviderConfig {
   callbackUrl?: string | null;
   musicEndpoint?: string | null;
   soundEffectsEndpoint?: string | null;
+  comfyuiWorkflow?: string | null;
   responseFormat?: string | null;
   requestFormat?: "binary" | "chat_completions";
 }
@@ -174,6 +176,21 @@ export async function generateAudioBytes(
       ? config.soundEffectsModel || (config.source === "elevenlabs" ? "eleven_text_to_sound_v2" : config.model)
       : config.model;
   options.debugLog?.("audio/provider-prompt", { source: config.source, kind, model, prompt });
+
+  if (config.source === "comfyui") {
+    return mp3(
+      await generateComfyUiAudio({
+        baseUrl: config.baseUrl,
+        apiKey: config.apiKey,
+        comfyuiWorkflow: config.comfyuiWorkflow,
+        prompt,
+        durationSeconds: (options.lengthMs ?? (kind === "music" ? 30_000 : 5_000)) / 1000,
+        timeoutMs: DEADLINE_MS,
+        maxBytes: MAX_AUDIO_BYTES,
+        signal,
+      }),
+    );
+  }
 
   if (config.source === "custom") {
     const endpoint = kind === "music" ? config.musicEndpoint : config.soundEffectsEndpoint;

@@ -801,31 +801,38 @@ export function ConnectionEditor({
     const isSwarmUiVideoWorkflow =
       (localVideoGenerationSource || localVideoService || inferVideoSource(localModel, localBaseUrl)) === "swarmui";
     const KNOWN_SUBS =
-      localProvider === "video_generation"
+      localProvider === "audio_generation"
         ? [
             { token: "%prompt%", label: "%prompt%", critical: true },
-            { token: "%width%", label: "%width%", critical: false },
-            { token: "%height%", label: "%height%", critical: false },
+            { token: "%lyrics%", label: "%lyrics%", critical: false },
+            { token: "%duration%", label: "%duration%", critical: false },
             { token: "%seed%", label: "%seed%", critical: false },
-            { token: "%length%", label: "%length%", critical: false },
-            { token: "%length_s%", label: "%length_s%", critical: false },
-            { token: "%fps%", label: "%fps%", critical: false },
-            { token: "%duration_seconds%", label: "%duration_seconds%", critical: false },
-            { token: "%reference_image%", label: "%reference_image%", critical: false },
-            ...(!isSwarmUiVideoWorkflow
-              ? [{ token: "%reference_image_name%", label: "%reference_image_name%", critical: false }]
-              : []),
           ]
-        : [
-            { token: "%prompt%", label: "%prompt%", critical: true },
-            { token: "%negative_prompt%", label: "%negative_prompt%", critical: false },
-            { token: "%width%", label: "%width%", critical: false },
-            { token: "%height%", label: "%height%", critical: false },
-            { token: "%seed%", label: "%seed%", critical: false },
-            { token: "%model%", label: "%model%", critical: false },
-            { token: "%reference_image%", label: "%reference_image%", critical: false },
-            { token: "%reference_image_name%", label: "%reference_image_name%", critical: false },
-          ];
+        : localProvider === "video_generation"
+          ? [
+              { token: "%prompt%", label: "%prompt%", critical: true },
+              { token: "%width%", label: "%width%", critical: false },
+              { token: "%height%", label: "%height%", critical: false },
+              { token: "%seed%", label: "%seed%", critical: false },
+              { token: "%length%", label: "%length%", critical: false },
+              { token: "%length_s%", label: "%length_s%", critical: false },
+              { token: "%fps%", label: "%fps%", critical: false },
+              { token: "%duration_seconds%", label: "%duration_seconds%", critical: false },
+              { token: "%reference_image%", label: "%reference_image%", critical: false },
+              ...(!isSwarmUiVideoWorkflow
+                ? [{ token: "%reference_image_name%", label: "%reference_image_name%", critical: false }]
+                : []),
+            ]
+          : [
+              { token: "%prompt%", label: "%prompt%", critical: true },
+              { token: "%negative_prompt%", label: "%negative_prompt%", critical: false },
+              { token: "%width%", label: "%width%", critical: false },
+              { token: "%height%", label: "%height%", critical: false },
+              { token: "%seed%", label: "%seed%", critical: false },
+              { token: "%model%", label: "%model%", critical: false },
+              { token: "%reference_image%", label: "%reference_image%", critical: false },
+              { token: "%reference_image_name%", label: "%reference_image_name%", critical: false },
+            ];
     const hasReferenceImage = /%reference_image(?:_0[1-4])?%/.test(wf);
     const hasReferenceImageName = /%reference_image_name(?:_0[1-4])?%/.test(wf);
     const missing = KNOWN_SUBS.filter(({ token }) => {
@@ -894,7 +901,8 @@ export function ConnectionEditor({
         selectedImageService === "swarmui" ||
         selectedImageService === "runpod_comfyui")) ||
     (localProvider === "video_generation" &&
-      (selectedVideoProvider === "comfyui" || selectedVideoProvider === "swarmui"));
+      (selectedVideoProvider === "comfyui" || selectedVideoProvider === "swarmui")) ||
+    (localProvider === "audio_generation" && localAudioGenerationSource === "comfyui");
   const keyLink = (service: APIProvider) => {
     const url = PROVIDERS[service]?.keyUrl;
     return url ? { label: t("connections.add.getKey", { service: PROVIDERS[service].name }), url } : undefined;
@@ -1103,7 +1111,8 @@ export function ConnectionEditor({
       imageGenerationSource: isImageProvider ? localImageGenerationSource || localImageService || null : null,
       comfyuiWorkflow:
         isImageProvider ||
-        (isVideoProvider && (selectedVideoProvider === "comfyui" || selectedVideoProvider === "swarmui"))
+        (isVideoProvider && (selectedVideoProvider === "comfyui" || selectedVideoProvider === "swarmui")) ||
+        (isGenerativeAudioProvider && localAudioGenerationSource === "comfyui")
           ? localComfyuiWorkflow || null
           : null,
       imageService: isImageProvider ? localImageGenerationSource || localImageService || null : null,
@@ -1501,7 +1510,9 @@ export function ConnectionEditor({
       imageGenerationQuality: isImageProvider ? effectiveImageGenerationQuality : "auto",
       imageTransparency: isImageProvider ? localImageTransparency || null : null,
       comfyuiWorkflow:
-        isImageProvider || (isVideoProvider && (videoProvider === "comfyui" || videoProvider === "swarmui"))
+        isImageProvider ||
+        (isVideoProvider && (videoProvider === "comfyui" || videoProvider === "swarmui")) ||
+        (isGenerativeAudioProvider && localAudioGenerationSource === "comfyui")
           ? localComfyuiWorkflow || null
           : null,
       claudeFastMode: localClaudeFastMode,
@@ -2836,40 +2847,42 @@ export function ConnectionEditor({
             </button>
           </div>
         )}
-        <EditorSection title={t("connections.editor.section.usedFor")}>
-          <div className="flex flex-wrap items-center gap-1.5">
-            {usedFor.map((item) => (
-              <span
-                key={item.label}
-                className="rounded-full bg-[var(--secondary)] px-2.5 py-1 text-[0.6875rem] font-medium"
-              >
-                {item.label}
-              </span>
-            ))}
-            {useFor.length > 0 && (
-              <button
-                type="button"
-                onClick={(event) => setUseForMenu(menuAt(event))}
-                className="mari-chrome-control mari-chrome-control--small text-[0.6875rem]"
-              >
-                {t("connections.row.useFor")}
-              </button>
+        {(usedFor.length > 0 || useFor.length > 0) && (
+          <EditorSection title={t("connections.editor.section.usedFor")}>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {usedFor.map((item) => (
+                <span
+                  key={item.label}
+                  className="rounded-full bg-[var(--secondary)] px-2.5 py-1 text-[0.6875rem] font-medium"
+                >
+                  {item.label}
+                </span>
+              ))}
+              {useFor.length > 0 && (
+                <button
+                  type="button"
+                  onClick={(event) => setUseForMenu(menuAt(event))}
+                  className="mari-chrome-control mari-chrome-control--small text-[0.6875rem]"
+                >
+                  {t("connections.row.useFor")}
+                </button>
+              )}
+            </div>
+            {useForMenu && (
+              <ContextMenu
+                x={useForMenu.x}
+                y={useForMenu.y}
+                // Save pending edits first: the job change reloads the row, which would reset them.
+                items={useFor.map((item) => ({
+                  ...item,
+                  onSelect: () => void (dirty ? save() : Promise.resolve(true)).then((ok) => ok && item.onSelect()),
+                }))}
+                autoFocus={useForMenu.keyboard}
+                onClose={() => setUseForMenu(null)}
+              />
             )}
-          </div>
-          {useForMenu && (
-            <ContextMenu
-              x={useForMenu.x}
-              y={useForMenu.y}
-              // Save pending edits first: the job change reloads the row, which would reset them.
-              items={useFor.map((item) => ({
-                ...item,
-                onSelect: () => void (dirty ? save() : Promise.resolve(true)).then((ok) => ok && item.onSelect()),
-              }))}
-              autoFocus={useForMenu.keyboard}
-              onClose={() => setUseForMenu(null)}
-            />
-          )}
-        </EditorSection>
+          </EditorSection>
+        )}
         <>
           {/* ── Model Name ── */}
 
@@ -3728,7 +3741,9 @@ export function ConnectionEditor({
             <FieldGroup
               label={localizeUi("ui.connections.connectioneditor.comfyuiWorkflowValue1", {
                 value1:
-                  localProvider === "video_generation" || selectedImageService === "runpod_comfyui"
+                  localProvider === "video_generation" ||
+                  localProvider === "audio_generation" ||
+                  selectedImageService === "runpod_comfyui"
                     ? localizeUi("ui.agents.tooleditor.required")
                     : localizeUi("ui.connections.connectioneditor.optional"),
               })}
@@ -4279,106 +4294,116 @@ export function ConnectionEditor({
         {decisionFields}
         {isAudioProvider && voiceFields}
 
-        <EditorSection title={t("connections.editor.section.advanced")} advanced>
-          <div className="grid gap-6 empty:hidden sm:grid-cols-2">
-            {/* ── Agent Parallel Jobs ── */}
-            {!isMediaGenerationProvider && (
-              <FieldGroup label={localizeUi("ui.connections.connectioneditor.maxParallelAgentJobs")}>
-                <div className="flex items-center gap-3">
-                  <DraftNumberInput
-                    value={localMaxParallelJobs}
-                    min={1}
-                    max={MAX_PARALLEL_JOBS}
-                    selectOnFocus
-                    onCommit={(nextValue) => {
-                      setLocalMaxParallelJobs(normalizeMaxParallelJobs(nextValue));
-                      markDirty();
-                    }}
-                    className="mari-chrome-field h-11 w-24 px-3 text-xs md:h-9"
-                  />
-                  <span className="text-xs text-[var(--muted-foreground)]">
-                    {localMaxParallelJobs === 1
-                      ? localizeUi("ui.connections.connectioneditor.oneAgentJobAtATime")
-                      : localizeUi("ui.connections.connectioneditor.value1AgentJobs", {
-                          value1: localMaxParallelJobs,
-                        })}
-                  </span>
-                </div>
-              </FieldGroup>
-            )}
-
-            {/* ── Rate Limit (requests per minute) ── */}
-            {!isMediaGenerationProvider && (
-              <FieldGroup label={localizeUi("ui.connections.connectioneditor.maxRequestsPerMinute")}>
-                <div className="flex items-center gap-3">
-                  <DraftNumberInput
-                    allowEmpty
-                    value={localMaxRequestsPerMinute}
-                    ariaLabel={localizeUi("ui.connections.connectioneditor.maxRequestsPerMinute")}
-                    min={0}
-                    max={600}
-                    selectOnFocus
-                    placeholder={localizeUi("ui.connections.connectioneditor.requestsPerMinuteUnlimited")}
-                    onCommit={(nextValue) => {
-                      setLocalMaxRequestsPerMinute(nextValue && nextValue > 0 ? Math.floor(nextValue) : null);
-                      markDirty();
-                    }}
-                    className="mari-chrome-field h-11 w-32 px-3 text-xs md:h-9"
-                  />
-                  {localMaxRequestsPerMinute !== null && (
+        {(!isMediaGenerationProvider || (canTreatAsLocalEndpoint && !accountLinked)) && (
+          <EditorSection title={t("connections.editor.section.advanced")} advanced>
+            <div className="grid gap-6 empty:hidden sm:grid-cols-2">
+              {/* ── Agent Parallel Jobs ── */}
+              {!isMediaGenerationProvider && (
+                <FieldGroup label={localizeUi("ui.connections.connectioneditor.maxParallelAgentJobs")}>
+                  <div className="flex items-center gap-3">
+                    <DraftNumberInput
+                      value={localMaxParallelJobs}
+                      min={1}
+                      max={MAX_PARALLEL_JOBS}
+                      selectOnFocus
+                      onCommit={(nextValue) => {
+                        setLocalMaxParallelJobs(normalizeMaxParallelJobs(nextValue));
+                        markDirty();
+                      }}
+                      className="mari-chrome-field h-11 w-24 px-3 text-xs md:h-9"
+                    />
                     <span className="text-xs text-[var(--muted-foreground)]">
-                      {localizeUi("ui.connections.connectioneditor.value1RequestsPerMinute", {
-                        value1: localMaxRequestsPerMinute,
-                      })}
+                      {localMaxParallelJobs === 1
+                        ? localizeUi("ui.connections.connectioneditor.oneAgentJobAtATime")
+                        : localizeUi("ui.connections.connectioneditor.value1AgentJobs", {
+                            value1: localMaxParallelJobs,
+                          })}
                     </span>
-                  )}
-                </div>
-              </FieldGroup>
-            )}
-          </div>
-          <button
-            type="button"
-            onClick={() => setMoreOpen((open) => !open)}
-            aria-expanded={moreOpen}
-            className="mari-chrome-control mari-chrome-control--small text-xs self-start"
-          >
-            <ChevronDown size="0.75rem" aria-hidden className={cn("transition-transform", moreOpen && "rotate-180")} />
-            {t("connections.editor.more")}
-          </button>
-          {moreOpen && (
-            <div className="space-y-6">
-              {canTreatAsLocalEndpoint && !accountLinked && (
-                <FieldGroup label={localizeUi("ui.connections.connectioneditor.localCustomEndpoint")}>
-                  <SettingsSwitch
-                    label={localizeUi("ui.connections.connectioneditor.treatAsLocalCustomEndpoint")}
-                    checked={localTreatAsLocalEndpoint}
-                    onChange={(checked) => {
-                      setLocalTreatAsLocalEndpoint(checked);
-                      markDirty();
-                    }}
-                  />
+                  </div>
                 </FieldGroup>
               )}
 
-              {/* ── OpenRouter Provider Preference ── */}
-              {localProvider === "openrouter" && (
-                <FieldGroup label={localizeUi("ui.connections.connectioneditor.preferredProvider")}>
-                  <input
-                    value={localOpenrouterProvider}
-                    onChange={(e) => {
-                      setLocalOpenrouterProvider(e.target.value);
-                      markDirty();
-                    }}
-                    className="mari-chrome-field h-11 w-full px-3 text-xs md:h-9"
-                    placeholder={localizeUi("ui.connections.connectioneditor.eGAnthropicGoogleAmazonBedrock")}
-                  />
+              {/* ── Rate Limit (requests per minute) ── */}
+              {!isMediaGenerationProvider && (
+                <FieldGroup label={localizeUi("ui.connections.connectioneditor.maxRequestsPerMinute")}>
+                  <div className="flex items-center gap-3">
+                    <DraftNumberInput
+                      allowEmpty
+                      value={localMaxRequestsPerMinute}
+                      ariaLabel={localizeUi("ui.connections.connectioneditor.maxRequestsPerMinute")}
+                      min={0}
+                      max={600}
+                      selectOnFocus
+                      placeholder={localizeUi("ui.connections.connectioneditor.requestsPerMinuteUnlimited")}
+                      onCommit={(nextValue) => {
+                        setLocalMaxRequestsPerMinute(nextValue && nextValue > 0 ? Math.floor(nextValue) : null);
+                        markDirty();
+                      }}
+                      className="mari-chrome-field h-11 w-32 px-3 text-xs md:h-9"
+                    />
+                    {localMaxRequestsPerMinute !== null && (
+                      <span className="text-xs text-[var(--muted-foreground)]">
+                        {localizeUi("ui.connections.connectioneditor.value1RequestsPerMinute", {
+                          value1: localMaxRequestsPerMinute,
+                        })}
+                      </span>
+                    )}
+                  </div>
                 </FieldGroup>
               )}
             </div>
-          )}
-          {isChatProvider(localProvider) && captioningFields}
-          {embeddingFields}
-        </EditorSection>
+            {((canTreatAsLocalEndpoint && !accountLinked) || localProvider === "openrouter") && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setMoreOpen((open) => !open)}
+                  aria-expanded={moreOpen}
+                  className="mari-chrome-control mari-chrome-control--small text-xs self-start"
+                >
+                  <ChevronDown
+                    size="0.75rem"
+                    aria-hidden
+                    className={cn("transition-transform", moreOpen && "rotate-180")}
+                  />
+                  {t("connections.editor.more")}
+                </button>
+                {moreOpen && (
+                  <div className="space-y-6">
+                    {canTreatAsLocalEndpoint && !accountLinked && (
+                      <FieldGroup label={localizeUi("ui.connections.connectioneditor.localCustomEndpoint")}>
+                        <SettingsSwitch
+                          label={localizeUi("ui.connections.connectioneditor.treatAsLocalCustomEndpoint")}
+                          checked={localTreatAsLocalEndpoint}
+                          onChange={(checked) => {
+                            setLocalTreatAsLocalEndpoint(checked);
+                            markDirty();
+                          }}
+                        />
+                      </FieldGroup>
+                    )}
+
+                    {/* ── OpenRouter Provider Preference ── */}
+                    {localProvider === "openrouter" && (
+                      <FieldGroup label={localizeUi("ui.connections.connectioneditor.preferredProvider")}>
+                        <input
+                          value={localOpenrouterProvider}
+                          onChange={(e) => {
+                            setLocalOpenrouterProvider(e.target.value);
+                            markDirty();
+                          }}
+                          className="mari-chrome-field h-11 w-full px-3 text-xs md:h-9"
+                          placeholder={localizeUi("ui.connections.connectioneditor.eGAnthropicGoogleAmazonBedrock")}
+                        />
+                      </FieldGroup>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+            {isChatProvider(localProvider) && captioningFields}
+            {embeddingFields}
+          </EditorSection>
+        )}
 
         {testSection}
       </div>

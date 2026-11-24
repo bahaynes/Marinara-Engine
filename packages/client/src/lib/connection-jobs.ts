@@ -13,6 +13,7 @@ import {
   MessageCircleQuestion,
   MessageSquareText,
   Mic,
+  Music,
   Sparkles,
   VenetianMask,
   Volume2,
@@ -128,6 +129,15 @@ const JOB_LIST = [
     fallback: "fallbackForAgents",
     terms: "tts audio music sound effects",
   },
+  {
+    key: "music",
+    icon: Music,
+    group: "media",
+    kind: "music",
+    flag: "defaultForAgents",
+    fallback: "fallbackForAgents",
+    terms: "music sfx sound effects audio generation comfyui",
+  },
   { key: "stt", icon: Mic, group: "media", device: "stt", add: "search", terms: "stt whisper" },
   { key: "decision", icon: BrainCircuit, group: "background", kind: "decision", flag: "defaultForAgents" },
   { key: "embeddings", icon: Database, group: "background", kind: "chat" },
@@ -153,6 +163,7 @@ export const KIND_PROVIDER = {
   image: "image_generation",
   video: "video_generation",
   audio: "audio",
+  music: "audio_generation",
   decision: "decision",
 } as const;
 /** The Add window's filter for a picker kind. */
@@ -161,6 +172,7 @@ export const ADD_KIND: Record<ConnectionPickerKind, AddKind | undefined> = {
   image: "image",
   video: "video",
   audio: "voice",
+  music: "music",
   decision: "decision",
   all: undefined,
 };
@@ -188,7 +200,10 @@ export function catalogMatchesKind(
       : !MEDIA_NAME_PART.test(model);
   if (facts?.outputModalities?.length)
     return facts.outputModalities.some(
-      (output) => output.toLowerCase() === kind || (kind === "audio" && output.toLowerCase() === "speech"),
+      (output) =>
+        output.toLowerCase() === kind ||
+        ((kind === "audio" || kind === "music") &&
+          (output.toLowerCase() === "audio" || output.toLowerCase() === "speech")),
     );
   // ponytail: names are only a fallback when the provider omits output modalities; a provider catalog with
   // structured model types is the upgrade path for ambiguous names and speech-to-text models.
@@ -295,7 +310,7 @@ export function foundForJob(
     if (job.key === "decision") return isChatProvider(provider) && !!model.capabilities?.logprobs;
     if (job.key === "embeddings") return isChatProvider(provider) && embedding(model);
     if (job.kind === "chat") return isChatProvider(provider) && catalogMatchesKind(model.id, model, "chat");
-    const kind = job.kind as MediaKind | undefined;
+    const kind = (job.kind === "music" ? "audio" : job.kind) as MediaKind | undefined;
     return !!kind && drives(provider, kind) && catalogMatchesKind(model.id, model, kind);
   };
   const hits = catalogs

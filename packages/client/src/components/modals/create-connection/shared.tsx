@@ -20,7 +20,7 @@ import type { DeviceItem } from "../../../hooks/use-device-setup";
 
 /** "On this device" (decision 32): built-in parts set up with their own controls, listed here so people find them. */
 export type DeviceService = "local_model" | "tts" | "stt";
-export type MediaServiceId = `media:${string}` | `audio:${string}` | `decision:${string}`;
+export type MediaServiceId = `media:${string}` | `audio:${string}` | `music:${string}` | `decision:${string}`;
 export type ServiceId = APIProvider | DeviceService | MediaServiceId | HostedServiceId | typeof DECISION_BUILTIN;
 /** The experimental built-in decision model: its tile under "Other" opens its own installer. */
 export const DECISION_BUILTIN = "decision_builtin";
@@ -46,7 +46,7 @@ export const hostedServiceOf = (service: ServiceId | null): HostedService | null
 export const DEVICE_ITEMS: Record<DeviceService, DeviceItem> = { local_model: "local-model", tts: "tts", stt: "stt" };
 export const isDevice = (service: ServiceId | null): service is DeviceService => !!service && service in DEVICE_ITEMS;
 export const isLinkApiUrl = (url: string) => /^https?:\/\/(?:[^/]*\.)?linkapi\.ai(?:[:/]|$)/iu.test(url.trim());
-export type Kind = "chat" | "image" | "video" | "voice" | "decision" | "local";
+export type Kind = "chat" | "image" | "video" | "voice" | "music" | "decision" | "local";
 export type AddableKind = "chat" | "image" | "video" | "decision" | "voice";
 export type ModelPick = { connectionId: string; modelId: string; kind: AddableKind };
 
@@ -59,8 +59,8 @@ export type MediaBackend = {
   requiresApiKey: boolean;
   image: boolean;
   video: boolean;
-  /** A voice or decision source: its Model is an audio or decision row under the Connection. */
-  job?: "voice" | "decision";
+  /** A voice, music, or decision source: its Model is an audio, audio_generation, or decision row under the Connection. */
+  job?: "voice" | "music" | "decision";
 };
 /** Voice and decision sources with no chat service of their own; OpenAI, xAI, OpenRouter… set up through theirs. */
 export const JOB_BACKENDS: MediaBackend[] = [
@@ -74,6 +74,46 @@ export const JOB_BACKENDS: MediaBackend[] = [
     video: false,
     job: "voice" as const,
   })),
+  {
+    id: "music:comfyui",
+    source: "comfyui",
+    name: "ComfyUI Music",
+    defaultBaseUrl: "http://127.0.0.1:8188",
+    requiresApiKey: false,
+    image: false,
+    video: false,
+    job: "music",
+  },
+  {
+    id: "music:custom",
+    source: "custom",
+    name: "Custom Audio Server",
+    defaultBaseUrl: "",
+    requiresApiKey: false,
+    image: false,
+    video: false,
+    job: "music",
+  },
+  {
+    id: "music:elevenlabs",
+    source: "elevenlabs",
+    name: "ElevenLabs Music & SFX",
+    defaultBaseUrl: "https://api.elevenlabs.io",
+    requiresApiKey: true,
+    image: false,
+    video: false,
+    job: "music",
+  },
+  {
+    id: "music:sunoapi",
+    source: "sunoapi",
+    name: "SunoAPI",
+    defaultBaseUrl: "https://apibox.erweima.ai",
+    requiresApiKey: true,
+    image: false,
+    video: false,
+    job: "music",
+  },
   {
     id: "decision:typesafe",
     source: "typesafe",
@@ -96,7 +136,7 @@ export const JOB_BACKENDS: MediaBackend[] = [
     job: "decision",
   },
 ];
-export const JOB_PROVIDER = { voice: "audio", decision: "decision" } as const;
+export const JOB_PROVIDER = { voice: "audio", music: "audio_generation", decision: "decision" } as const;
 
 /** Image sources that share a chat service's key or login; Codex images come with the ChatGPT plan. */
 export const IMAGE_VENDOR: Record<string, string> = { ...IMAGE_SOURCE_VENDOR, codex_chatgpt: "openai_chatgpt" };
@@ -232,10 +272,11 @@ export const KIND_ICONS = {
   image: ImageIcon,
   video: Film,
   voice: JOB.voice.icon,
+  music: JOB.music.icon,
   decision: JOB.decision.icon,
 } as const;
 export type ChipKind = keyof typeof KIND_ICONS;
-export const CHIP_KINDS: ChipKind[] = ["chat", "image", "video", "voice", "decision"];
+export const CHIP_KINDS: ChipKind[] = ["chat", "image", "video", "voice", "music", "decision"];
 export const MODEL_CHIP_KINDS = new Set<ChipKind>(["chat", "image", "video"]);
 /** Vendors and plans with an offline model list, in the order "A specific model…" picks from. */
 export const MODEL_SERVICES: APIProvider[] = [

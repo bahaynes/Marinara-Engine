@@ -1,6 +1,6 @@
 /** Saved model kinds the Engine can select. Audio means an audio-generation model;
  * embeddings, voice and transcription sources have separate device/settings flows. */
-export type ConnectionPickerKind = "chat" | "image" | "video" | "audio" | "decision" | "all";
+export type ConnectionPickerKind = "chat" | "image" | "video" | "audio" | "music" | "decision" | "all";
 
 export interface ConnectionPickerOptions {
   /** Saved Model row id, not an account id or a provider's catalog model id. */

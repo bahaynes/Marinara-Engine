@@ -13,7 +13,18 @@ import {
   type MouseEvent,
   type ReactNode,
 } from "react";
-import { AudioLines, Film, ImageIcon, Info, KeyRound, Power, Scale, UserCog, type LucideIcon } from "lucide-react";
+import {
+  AudioLines,
+  Film,
+  ImageIcon,
+  Info,
+  KeyRound,
+  Music,
+  Power,
+  Scale,
+  UserCog,
+  type LucideIcon,
+} from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { type ConnectionAccountListItem, ConnectionModelCost, ModelCatalogPricing } from "@marinara-engine/shared";
@@ -69,6 +80,7 @@ const KIND_PILL: Record<Exclude<ModelKind, "chat">, { icon: LucideIcon; label: s
   image: { icon: ImageIcon, label: "connections.accounts.kind.image" },
   video: { icon: Film, label: "connections.accounts.kind.video" },
   voice: { icon: AudioLines, label: "connections.add.kind.voice" },
+  music: { icon: Music, label: "connections.add.type.music" },
   decision: { icon: Scale, label: "connections.decision.label" },
 };
 

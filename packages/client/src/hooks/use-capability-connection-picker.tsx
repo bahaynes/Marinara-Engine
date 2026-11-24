@@ -7,7 +7,7 @@ import type { CapabilityClientUi, ConnectionPickerKind, ConnectionPickerResult }
 
 type PickerModule = typeof import("../components/connections/ModelPicker");
 
-const KINDS: readonly ConnectionPickerKind[] = ["chat", "image", "video", "audio", "decision", "all"];
+const KINDS: readonly ConnectionPickerKind[] = ["chat", "image", "video", "audio", "music", "decision", "all"];
 const MAX_ID = 200;
 const MAX_TITLE = 240;
 const MAX_LABEL = 500;

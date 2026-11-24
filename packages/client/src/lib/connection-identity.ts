@@ -150,13 +150,14 @@ export function modelSubtitle(row: ConnectionIdentityRow, upstream: string | nul
   );
 }
 
-export type ModelKind = "chat" | "image" | "video" | "voice" | "decision";
+export type ModelKind = "chat" | "image" | "video" | "voice" | "music" | "decision";
 /** The order kinds sort in inside a model list. */
-export const MODEL_KINDS: readonly ModelKind[] = ["chat", "image", "video", "voice", "decision"];
+export const MODEL_KINDS: readonly ModelKind[] = ["chat", "image", "video", "voice", "music", "decision"];
 const KIND_OF_PROVIDER: Record<string, ModelKind> = {
   image_generation: "image",
   video_generation: "video",
   audio: "voice",
+  audio_generation: "music",
   decision: "decision",
 };
 export const modelKindOf = (provider: string | null | undefined): ModelKind =>

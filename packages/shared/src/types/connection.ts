@@ -123,7 +123,7 @@ export const AUDIO_SOURCE_OPTIONS: Array<{
   },
 ];
 /** Music and sound effects are independent of the character's speech connection. */
-export const GENERATIVE_AUDIO_SOURCES = ["elevenlabs", "sunoapi", "custom"] as const;
+export const GENERATIVE_AUDIO_SOURCES = ["elevenlabs", "sunoapi", "custom", "comfyui"] as const;
 export type GenerativeAudioSource = (typeof GENERATIVE_AUDIO_SOURCES)[number];
 
 export const GENERATIVE_AUDIO_DEFAULTS = {
@@ -134,6 +134,7 @@ export const GENERATIVE_AUDIO_DEFAULTS = {
   },
   sunoapi: { baseUrl: "https://apibox.erweima.ai", model: "V6", soundEffectsModel: "V6" },
   custom: { baseUrl: "", model: "", soundEffectsModel: "" },
+  comfyui: { baseUrl: "http://127.0.0.1:8188", model: "", soundEffectsModel: "" },
 } as const;
 
 /** Explicit capabilities: compatible endpoints must be configured before Game can use them. */
@@ -145,6 +146,7 @@ export function audioConnectionSupportsGeneration(
     audioSoundEffects?: boolean | string;
     audioMusicEndpoint?: string | null;
     audioSoundEffectsEndpoint?: string | null;
+    comfyuiWorkflow?: string | null;
   },
   kind: "music" | "sfx",
 ): boolean {
@@ -154,6 +156,7 @@ export function audioConnectionSupportsGeneration(
   return (
     source === "elevenlabs" ||
     source === "sunoapi" ||
+    source === "comfyui" ||
     ((source === "openai" || source === "custom") &&
       Boolean((kind === "music" ? connection.audioMusicEndpoint : connection.audioSoundEffectsEndpoint)?.trim()))
   );

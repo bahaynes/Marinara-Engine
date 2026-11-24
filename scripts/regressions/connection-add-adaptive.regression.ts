@@ -5,9 +5,9 @@ import {
   missingAddJobs,
 } from "../../packages/client/src/lib/connection-add-adaptive.js";
 
-
 assert.deepEqual(jobsForAddedKinds(["image"]), ["images"]);
 assert.deepEqual(jobsForAddedKinds(["voice"]), ["voice"]);
+assert.deepEqual(jobsForAddedKinds(["music"]), ["music"]);
 assert.deepEqual(jobsForAddedKinds(["decision"]), ["decision"]);
 assert.deepEqual(jobsForAddedKinds([]), []);
 assert(jobsForAddedKinds(["chat", "image"]).includes("main"));
@@ -44,6 +44,7 @@ assert.deepEqual(missingAddJobs([{ provider: "image_generation" }], undefined), 
   "images",
   "video",
   "voice",
+  "music",
   "decision",
   "embeddings",
   "vision",
