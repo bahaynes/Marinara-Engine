@@ -198,7 +198,8 @@ export function CyoaChoices({ messages }: Props) {
       if (action === "impersonate") {
         const { impersonatePresetId, impersonateBlockAgents, impersonatePublicFaces, impersonatePromptTemplate } =
           useUIStore.getState();
-        const impersonated = await generate(
+        // Fork: stop after the impersonated turn so the player can edit it before sending.
+        await generate(
           buildCyoaChoiceSubmissionPayload({
             chatId: activeChatId,
             text,
@@ -211,9 +212,6 @@ export function CyoaChoices({ messages }: Props) {
             },
           }),
         );
-        if (impersonated) {
-          await generate({ chatId: activeChatId, connectionId: null });
-        }
         return;
       }
 
