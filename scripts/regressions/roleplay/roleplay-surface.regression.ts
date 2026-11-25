@@ -108,8 +108,14 @@ assert.equal(
 );
 assert.match(
   cyoaChoicesSource,
-  /extra: \{ cyoaChoices: \[\] \}[\s\S]{0,900}if \(impersonated\)[\s\S]{0,160}connectionId: null/u,
-  "selecting a CYOA prompt must consume it permanently and follow impersonation with a character reply",
+  /extra: \{ cyoaChoices: \[\] \}/u,
+  "selecting a CYOA prompt must consume it permanently",
+);
+// Fork: a CYOA impersonate stops at the player's turn so it can be edited before the narrator replies.
+assert.doesNotMatch(
+  cyoaChoicesSource,
+  /if \(impersonated\)[\s\S]{0,160}connectionId: null/u,
+  "a CYOA impersonate must not chain a character reply",
 );
 assert.match(
   assignedSweepChatAreaSource,
